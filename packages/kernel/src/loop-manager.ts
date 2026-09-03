@@ -10,7 +10,10 @@ import type { Disposable, JsonValue, ModelMessage } from "@borg/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import { CostLedger } from "./cost-ledger";
 import { ModelRouter } from "./model-router";
+import type { PersonaService } from "./persona-service";
+import type { PromptAssembler } from "./prompt-assembler";
 import { ToolInvocationError, ToolService } from "./tool-service";
+import type { WorkspaceService } from "./workspace-service";
 
 interface LoopRun {
   snapshot: LoopRunSnapshot;
@@ -26,7 +29,19 @@ interface LoopRun {
   resumeFromPause?: (() => void) | undefined;
 }
 
+interface LoopEventSubscription {
+  readonly runId: string;
+  readonly subscriber: (event: LoopEvent) => void | Promise<void>;
+  active: boolean;
+  tail: Promise<void>;
+}
+
 type ParsedLoopStartInput = ReturnType<typeof loopStartInputSchema.parse>;
+type ResolvedLoopStartInput = ParsedLoopStartInput & {
+  readonly allowedTools: readonly string[];
+  readonly additionalAllowedTools?: readonly string[] | undefined;
+  readonly systemPrompt?: string | undefined;
+};
 type WithoutTimestamp<T> = T extends { readonly timestamp: string }
   ? Omit<T, "timestamp">
   : never;
@@ -50,7 +65,7 @@ export class LoopManager {
   >();
   readonly #eventSubscribers = new Map<
     symbol,
-    (event: LoopEvent) => void | Promise<void>
+    LoopEventSubscription
   >();
   readonly #eventHistory = new Map<string, LoopEvent[]>();
   readonly #announcedInteractionIds = new Set<string>();
@@ -61,6 +76,9 @@ export class LoopManager {
     readonly costs: CostLedger,
     readonly canInvokeTools: (pluginId: string) => boolean = (pluginId) =>
       pluginId === "kernel.loop",
+    readonly personas?: PersonaService,
+    readonly prompts?: PromptAssembler,
+    readonly workspaces?: WorkspaceService,
   ) {
     this.tools.interactions.subscribe((pending) => {
       const waitingRunIds = new Set(
@@ -120,7 +138,74 @@ export class LoopManager {
     toolInvocationAllowed = this.canInvokeTools(ownerPluginId),
   ): LoopRunSnapshot {
     ownerSignal?.throwIfAborted();
-    const input = loopStartInputSchema.parse(candidate);
+    const parsedInput = loopStartInputSchema.parse(candidate);
+    const persona = this.personas
+      ? parsedInput.personaId
+        ? this.personas.get(parsedInput.personaId)
+        : this.personas.getDefault()
+      : undefined;
+    if (this.personas && (!persona || persona.archived)) {
+      throw new Error(`Persona ${parsedInput.personaId} is unavailable`);
+    }
+    if (persona?.loopStrategy !== undefined && persona.loopStrategy !== "react") {
+      throw new Error(`Loop strategy ${persona.loopStrategy} is not implemented`);
+    }
+    if (
+      persona?.toolExecutionMode !== undefined &&
+      persona.toolExecutionMode !== "sequential-partial"
+    ) {
+      throw new Error(
+        `Tool execution mode ${persona.toolExecutionMode} is not implemented`,
+      );
+    }
+    const preferredModel = persona?.preferredModels[0];
+    const resolvedPreference = persona
+      ? this.models.resolvePreferences(persona.preferredModels)
+      : undefined;
+    const separator = preferredModel?.indexOf(":") ?? -1;
+    const preferredProviderId =
+      preferredModel && separator > 0
+        ? preferredModel.slice(0, separator)
+        : undefined;
+    const preferredModelId =
+      preferredModel && separator > 0
+        ? preferredModel.slice(separator + 1)
+        : preferredModel;
+    const workspace = parsedInput.sessionId
+      ? this.workspaces?.get(ownerPluginId, parsedInput.sessionId)
+      : undefined;
+    if (parsedInput.sessionId && !workspace) {
+      throw new Error(
+        `Workspace for session ${parsedInput.sessionId} is unavailable`,
+      );
+    }
+    const input: ResolvedLoopStartInput = {
+      ...parsedInput,
+      personaId: persona?.id ?? parsedInput.personaId,
+      providerId:
+        parsedInput.providerId ??
+        (parsedInput.modelId
+          ? undefined
+          : resolvedPreference?.providerId ?? preferredProviderId),
+      modelId:
+        parsedInput.modelId ??
+        (parsedInput.providerId
+          ? undefined
+          : resolvedPreference?.modelId ?? preferredModelId),
+      allowedTools: persona?.allowedTools ?? parsedInput.allowedTools ?? ["*"],
+      additionalAllowedTools:
+        persona && parsedInput.allowedTools
+          ? parsedInput.allowedTools
+          : undefined,
+      systemPrompt:
+        persona && this.prompts
+          ? this.prompts.assemble({
+              personaId: persona.id,
+              sessionId: parsedInput.sessionId,
+              feature: ownerPluginId,
+            }).system
+          : undefined,
+    };
     const now = new Date().toISOString();
     const controller = new AbortController();
     let run: LoopRun;
@@ -138,6 +223,8 @@ export class LoopManager {
         id: randomUUID(),
         status: "running",
         prompt: input.prompt,
+        personaId: input.personaId,
+        sessionId: input.sessionId,
         providerId: input.providerId,
         modelId: input.modelId,
         inputTokens: 0,
@@ -151,6 +238,11 @@ export class LoopManager {
       run.snapshot.id,
       ownerPluginId,
       input.allowedTools,
+      {
+        sessionId: input.sessionId,
+        workspaceRoot: workspace?.rootPath,
+        additionalAllowedTools: input.additionalAllowedTools,
+      },
     );
     this.#runs.set(run.snapshot.id, run);
     ownerSignal?.addEventListener("abort", onOwnerAbort, { once: true });
@@ -240,12 +332,20 @@ export class LoopManager {
     return true;
   }
 
-  cancelOwned(pluginId: string): void {
-    for (const run of this.#runs.values()) {
-      if (run.ownerPluginId === pluginId) {
-        this.cancel(run.snapshot.id, pluginId);
-      }
+  async cancelOwned(pluginId: string): Promise<void> {
+    const runIds = new Set(
+      [...this.#runs.values()]
+        .filter(({ ownerPluginId }) => ownerPluginId === pluginId)
+        .map(({ snapshot }) => snapshot.id),
+    );
+    for (const runId of runIds) {
+      this.cancel(runId, pluginId);
     }
+    await Promise.allSettled(
+      [...this.#eventSubscribers.values()]
+        .filter(({ runId }) => runIds.has(runId))
+        .map(({ tail }) => tail),
+    );
   }
 
   shutdown(): void {
@@ -277,28 +377,32 @@ export class LoopManager {
       throw new Error(`Loop ${runId} is unavailable`);
     }
     const token = Symbol("loop-event-subscriber");
-    const runSubscriber = (event: LoopEvent): void | Promise<void> => {
-      if (event.runId === runId) {
-        return subscriber(event);
-      }
+    const subscription: LoopEventSubscription = {
+      runId,
+      subscriber,
+      active: true,
+      tail: Promise.resolve(),
     };
-    this.#eventSubscribers.set(token, runSubscriber);
+    this.#eventSubscribers.set(token, subscription);
     for (const event of this.#eventHistory.get(runId) ?? []) {
-      Promise.resolve()
-        .then(async () => runSubscriber(event))
-        .catch((error: unknown) =>
-          console.error("[kernel] loop event replay subscriber failed", error),
-        );
+      this.#deliverEvent(subscription, event);
     }
     return {
       dispose: () => {
+        subscription.active = false;
         this.#eventSubscribers.delete(token);
       },
     };
   }
 
-  async #execute(run: LoopRun, input: ParsedLoopStartInput): Promise<void> {
-    const messages: ModelMessage[] = [{ role: "user", content: input.prompt }];
+  async #execute(run: LoopRun, input: ResolvedLoopStartInput): Promise<void> {
+    const messages: ModelMessage[] = [
+      ...(input.systemPrompt
+        ? [{ role: "system" as const, content: input.systemPrompt }]
+        : []),
+      ...(input.conversation ?? []),
+      { role: "user", content: input.prompt },
+    ];
     let providerId = input.providerId;
     let modelId = input.modelId;
     try {
@@ -314,6 +418,7 @@ export class LoopManager {
           providerId,
           modelId,
         });
+        let streamed = false;
         const completion = await this.models.complete(
           {
             providerId,
@@ -322,15 +427,26 @@ export class LoopManager {
             correlationId: run.snapshot.id,
             messages,
             tools: run.toolInvocationAllowed
-              ? this.tools.listDefinitions(input.allowedTools)
+              ? this.tools.listDefinitions(
+                  input.allowedTools,
+                  input.additionalAllowedTools,
+                )
               : [],
           },
           run.controller.signal,
+          (token) => {
+            streamed = true;
+            this.#emit({
+              type: "model_token",
+              runId: run.snapshot.id,
+              token,
+            });
+          },
         );
         providerId = completion.providerId;
         modelId = completion.modelId;
         await this.#waitAtSafePoint(run);
-        if (completion.result.content) {
+        if (completion.result.content && !streamed) {
           this.#emit({
             type: "model_token",
             runId: run.snapshot.id,
@@ -589,12 +705,26 @@ export class LoopManager {
       history.shift();
     }
     this.#eventHistory.set(event.runId, history);
-    for (const subscriber of this.#eventSubscribers.values()) {
-      Promise.resolve()
-        .then(async () => subscriber(event))
-        .catch((error: unknown) =>
-          console.error("[kernel] loop event subscriber failed", error),
-        );
+    for (const subscription of this.#eventSubscribers.values()) {
+      this.#deliverEvent(subscription, event);
     }
+  }
+
+  #deliverEvent(
+    subscription: LoopEventSubscription,
+    event: LoopEvent,
+  ): void {
+    if (subscription.runId !== event.runId) {
+      return;
+    }
+    subscription.tail = subscription.tail
+      .then(async () => {
+        if (subscription.active) {
+          await subscription.subscriber(event);
+        }
+      })
+      .catch((error: unknown) =>
+        console.error("[kernel] loop event subscriber failed", error),
+      );
   }
 }

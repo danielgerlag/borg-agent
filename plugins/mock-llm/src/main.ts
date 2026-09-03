@@ -9,13 +9,48 @@ function readFixtureResult(
   candidate: unknown,
 ): string {
   let value = candidate;
-  for (const segment of fixture.resultPath) {
+  for (const segment of fixture.resultPath ?? []) {
     if (!value || typeof value !== "object") {
       throw new Error(`Mock fixture ${fixture.id} received an invalid tool result`);
     }
     value = (value as Record<string, unknown>)[segment];
   }
   return typeof value === "string" ? value : String(value ?? "");
+}
+
+async function waitForFixture(
+  milliseconds: number,
+  signal: AbortSignal,
+): Promise<void> {
+  if (milliseconds <= 0) {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function streamContent(
+  content: string,
+  signal: AbortSignal,
+  onToken?: (token: string) => void | Promise<void>,
+): Promise<void> {
+  if (!onToken) {
+    return;
+  }
+  for (const token of content.match(/\S+\s*/g) ?? [content]) {
+    signal.throwIfAborted();
+    await onToken(token);
+    await waitForFixture(20, signal);
+  }
 }
 
 export default definePlugin({
@@ -32,30 +67,58 @@ export default definePlugin({
     context.models.registerProvider({
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete(request, signal) {
+      async complete(request, signal, onToken) {
         signal.throwIfAborted();
-        const first = request.messages[0]?.content ?? "";
         const last = request.messages.at(-1);
-        const fixture =
-          mockTranscriptFixtures.find(({ prompt }) => prompt === first) ??
-          mockTranscriptFixtures[0]!;
+        const userPrompt =
+          [...request.messages]
+            .reverse()
+            .find(({ role }) => role === "user")?.content ?? "";
+        const fixture = mockTranscriptFixtures.find(
+          ({ prompt }) => prompt === userPrompt,
+        );
         const usage = {
-          inputTokens: Math.max(1, Math.ceil(first.length / 4)),
+          inputTokens: Math.max(1, Math.ceil(userPrompt.length / 4)),
           outputTokens: 8,
           amount: 0.001,
           currency: "USD",
         };
 
         if (last?.role === "tool") {
-          return {
-            content: `${fixture.finalPrefix}${readFixtureResult(
+          if (!fixture?.finalPrefix) {
+            throw new Error("Mock tool result has no matching transcript fixture");
+          }
+          const content = `${fixture.finalPrefix}${readFixtureResult(
               fixture,
               JSON.parse(last.content),
-            )}`,
+            )}`;
+          await streamContent(content, signal, onToken);
+          return {
+            content,
             usage,
           };
         }
 
+        if (!fixture) {
+          const content = `Mock reply: ${userPrompt}`;
+          await streamContent(content, signal, onToken);
+          return {
+            content,
+            usage,
+          };
+        }
+        await waitForFixture(fixture.delayMs ?? 0, signal);
+        signal.throwIfAborted();
+        if (fixture.content !== undefined) {
+          await streamContent(fixture.content, signal, onToken);
+          return {
+            content: fixture.content,
+            usage,
+          };
+        }
+        if (!fixture.toolCall) {
+          throw new Error(`Mock fixture ${fixture.id} has no response`);
+        }
         return {
           toolCalls: [fixture.toolCall],
           usage,

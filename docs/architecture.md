@@ -353,8 +353,19 @@ Commands/events are for cross-plugin product collaboration. Contributions descri
 | `borg.graphs.instance.completed` | event | `borg.graphs` | graph output available |
 | `borg.graphs.instance.failed` | event | `borg.graphs` | terminal graph failure |
 | `borg.graphs.step.completed` | event | `borg.graphs` | step trace for Flight Deck |
-| `borg.chat.append` | command | `borg.chat` | append a typed transcript entry |
-| `borg.chat.turn.completed` | event | `borg.chat` | terminal chat-turn delta |
+| `borg.chat.createSession` | command | `borg.chat` | create a persona-backed chat session |
+| `borg.chat.listSessions` | command | `borg.chat` | list root, child, or all sessions |
+| `borg.chat.getSession` | command | `borg.chat` | read one session and transcript |
+| `borg.chat.sendMessage` | command | `borg.chat` | append user input and start its loop |
+| `borg.chat.append` | command | `borg.chat` | append a typed non-user transcript entry |
+| `borg.chat.deleteSession` | command | `borg.chat` | durably delete a session |
+| `borg.chat.spawnSubAgent` | command | `borg.chat` | create a child session through the same loop pipeline |
+| `borg.chat.listWorkspace` | command | `borg.chat` | list session-scoped workspace files |
+| `borg.chat.message.appended` | event | `borg.chat` | transcript entry was appended |
+| `borg.chat.turn.started` | event | `borg.chat` | chat turn accepted a loop |
+| `borg.chat.turn.completed` | event | `borg.chat` | durably finalized chat-turn delta |
+| `borg.chat.session.updated` | event | `borg.chat` | session metadata/status changed |
+| `borg.chat.session.deleted` | event | `borg.chat` | session was durably deleted |
 | `borg.channel.inboundMessage` | event | channel plugins | normalized inbound communication |
 | `borg.feedback.ask` | command | `borg.feedback` | ask and wait through kernel interactions |
 | `borg.feedback.requested` | event | `borg.feedback` | human-input request was queued |
@@ -401,7 +412,7 @@ output: {
 input: {
   sessionId: string;
   entry: {
-    role: "system" | "assistant" | "tool";
+    role: "system" | "assistant" | "tool" | "event";
     content: string;
     metadata?: Record<string, unknown>;
   };
@@ -1120,3 +1131,17 @@ The bundled Slice 3 plugins use normal discovery and lifecycle paths:
 Renderer loop calls and subscriptions remain capability-scoped to the owning UI plugin, and run reads/cancellation are owner-filtered in main. Pending interaction responses require the shell capability. Hiding the window leaves runs and interactions in main; the tray title and menu project live pending/running counts. Usage returned by a provider is recorded even when cancellation or provider revocation rejects the completion, terminal snapshots receive that accounting update, and monetary totals remain separated by currency. Plugin deactivation first revokes commands, tools, and models, aborts and drains tracked callbacks to a deadline, then disposes resources; a lifecycle change reloads the renderer so stale UI contributions and capabilities do not survive. Quit cancels loops and outstanding interactions before plugin disposal.
 
 Contract tests cover approval grant/deny without execution, authoritative allowlists, registration revocation, usage and multi-currency cost records, replayable loop events, ask-user wait/resume, absent-feedback `unavailable`, response conflicts, cancellation races, operation-scoped loop starts, and interaction timeouts. Electron acceptance covers both approval choices, disabled-feedback behavior, typed human input, native window visibility, and hiding/reopening Borg while the tray title and queue retain a pending question.
+
+## Slice 4 implementation record
+
+Slice 4 makes personas an enforced loop input rather than optional metadata. `PersonaService` persists versioned, recursively immutable records, always resolves an active default, and ships `system/general` with the bundled offline model preference. Setup validates and edits that preference from the capability-discovered model catalog. `ModelRouter` publishes permission-scoped model descriptors and resolves each persona's ordered preference patterns against active providers. Every loop resolves a persona, rejects unsupported tool execution modes, assembles the kernel and persona system prompt through `PromptAssembler`, and intersects persona and request tool restrictions instead of allowing either layer to widen the other. Plugins can contribute namespaced, deterministically ordered prompt slots through the SDK.
+
+`WorkspaceService` allocates owner- and session-scoped directories and rejects malformed IDs and symlink escapes. The bundled `borg.tools.core` plugin contributes `filesystem.read` and approval-gated `filesystem.write`; both are limited to the invoking run's workspace, validate physical paths, reject traversal and symlink ancestors, and normalize exposed paths to `/`. A plugin cannot inspect or release another plugin's workspace by reusing its session ID.
+
+`borg.chat` owns versioned session documents and transcript entries in its scoped store. It serializes each session's creates, appends, loop transitions, deletion, and sub-agent spawning; allocates the workspace before publishing a session; recovers interrupted runs on activation; and records completed, failed, cancelled, and interrupted turns. A send durably appends the user entry, starts the kernel loop with the selected persona and conversation, persists the run association, and subscribes before projecting tokens and terminal state. Feedback requested/resolved events add transcript hints without moving interaction ownership out of the kernel queue.
+
+The Chat workspace provides session selection, token streaming, transcript history, workspace files, persona/model setup, and child-session delegation. Its initialization coalesces concurrent refreshes so event delivery cannot create duplicate empty sessions; selection and loop subscription generations suppress stale async results. The Flight Deck widget subscribes before reading its first active-session snapshot. The lower-level mock loop debugger remains a secondary workspace tab rather than replacing the product surface.
+
+The fixed preload bridge now exposes capability-scoped persona, model-catalog, loop, and declared-event APIs. Main validates model read permissions and rejects event subscriptions that no active plugin declared. Renderer subscriptions are disposed with their plugin activation scope and when the sender is destroyed. `createTestHarness` in the SDK activates and deactivates a plugin against supplied host doubles, enabling direct lifecycle/persistence tests without weakening production context construction.
+
+Slice 4 verification covers persona persistence/default integrity, prompt and model resolution, layered tool policy, workspace ownership and symlink defenses, chat lifecycle and deletion through the plugin harness, real token streaming, file approval and workspace projection, feedback in thread, persona creation, sub-agent sessions, hidden-window completion, Flight Deck counts, and all prior shell/recovery journeys.

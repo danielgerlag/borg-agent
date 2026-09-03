@@ -1,4 +1,5 @@
 import type {
+  BusEnvelope,
   CommandDefinition,
   CommandInput,
   CommandOutput,
@@ -6,17 +7,31 @@ import type {
   EventPayload,
 } from "@borg/contracts";
 import type { Disposable } from "@borg/plugin-sdk";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import { CommandInvocationError } from "./errors";
 
 interface CommandHandlerRecord {
   readonly pluginId: string;
   readonly command: CommandDefinition;
-  readonly handler: (input: unknown, signal: AbortSignal) => unknown | Promise<unknown>;
+  readonly handler: (
+    input: unknown,
+    signal: AbortSignal,
+    envelope: BusEnvelope,
+  ) => unknown | Promise<unknown>;
 }
 
 interface EventSubscriberRecord {
   readonly pluginId: string;
-  readonly handler: (payload: unknown) => void | Promise<void>;
+  readonly handler: (
+    payload: unknown,
+    envelope: BusEnvelope,
+  ) => void | Promise<void>;
+}
+
+interface CorrelationContext {
+  readonly correlationId: string;
+  readonly operationId: string;
 }
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
@@ -24,6 +39,7 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 export class CommandEventBus {
   readonly #commandHandlers = new Map<string, CommandHandlerRecord>();
   readonly #eventSubscribers = new Map<string, Map<symbol, EventSubscriberRecord>>();
+  readonly #correlationContext = new AsyncLocalStorage<CorrelationContext>();
 
   handle<TCommand extends CommandDefinition>(
     pluginId: string,
@@ -32,6 +48,7 @@ export class CommandEventBus {
     handler: (
       input: CommandInput<TCommand>,
       signal: AbortSignal,
+      envelope: BusEnvelope,
     ) => CommandOutput<TCommand> | Promise<CommandOutput<TCommand>>,
   ): Disposable {
     if (!declaredCommandIds.has(command.id)) {
@@ -64,7 +81,10 @@ export class CommandEventBus {
   async invoke<TCommand extends CommandDefinition>(
     command: TCommand,
     input: CommandInput<TCommand>,
-    options?: { readonly signal?: AbortSignal | undefined },
+    options?: {
+      readonly signal?: AbortSignal | undefined;
+      readonly source?: BusEnvelope["source"] | undefined;
+    },
   ): Promise<CommandOutput<TCommand>> {
     return (await this.invokeById(
       command.id,
@@ -76,7 +96,10 @@ export class CommandEventBus {
   async invokeById(
     commandId: string,
     input: unknown,
-    options?: { readonly signal?: AbortSignal | undefined },
+    options?: {
+      readonly signal?: AbortSignal | undefined;
+      readonly source?: BusEnvelope["source"] | undefined;
+    },
   ): Promise<unknown> {
     const record = this.#commandHandlers.get(commandId);
     if (!record) {
@@ -104,6 +127,15 @@ export class CommandEventBus {
       );
     }
     const timeoutMs = record.command.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+    const parent = this.#correlationContext.getStore();
+    const envelope: BusEnvelope = Object.freeze({
+      correlationId: parent?.correlationId ?? randomUUID(),
+      causationId: parent?.operationId,
+      source: Object.freeze(
+        options?.source ?? { kind: "kernel" as const, id: "kernel" },
+      ),
+      timestamp: new Date().toISOString(),
+    });
     let timer: ReturnType<typeof setTimeout> | undefined;
     let removeCancellationListener: (() => void) | undefined;
 
@@ -113,8 +145,8 @@ export class CommandEventBus {
           "timeout",
           `Command ${commandId} exceeded its ${timeoutMs}ms timeout`,
         );
-        reject(timeoutError);
         controller.abort(timeoutError);
+        reject(timeoutError);
       }, timeoutMs);
     });
     const cancellation = new Promise<never>((_resolve, reject) => {
@@ -127,8 +159,8 @@ export class CommandEventBus {
           `Command ${commandId} was cancelled`,
           { cause: options.signal?.reason },
         );
-        reject(error);
         controller.abort(error);
+        reject(error);
       };
       options.signal.addEventListener("abort", onAbort, { once: true });
       removeCancellationListener = () =>
@@ -140,10 +172,29 @@ export class CommandEventBus {
 
     try {
       const result = await Promise.race([
-        Promise.resolve(record.handler(parsedInput.data, controller.signal)),
+        this.#correlationContext.run(
+          {
+            correlationId: envelope.correlationId,
+            operationId: commandId,
+          },
+          () =>
+            Promise.resolve(
+              record.handler(parsedInput.data, controller.signal, envelope),
+            ),
+        ),
         timeout,
         cancellation,
       ]);
+      if (controller.signal.aborted) {
+        const reason = controller.signal.reason;
+        throw reason instanceof CommandInvocationError
+          ? reason
+          : new CommandInvocationError(
+              "failed",
+              `Command ${commandId} was cancelled`,
+              { cause: reason },
+            );
+      }
       const parsedOutput = record.command.output.safeParse(result);
       if (!parsedOutput.success) {
         throw new CommandInvocationError(
@@ -175,21 +226,42 @@ export class CommandEventBus {
   on<TEvent extends EventDefinition>(
     pluginId: string,
     event: TEvent,
-    handler: (payload: EventPayload<TEvent>) => void | Promise<void>,
+    handler: (
+      payload: EventPayload<TEvent>,
+      envelope: BusEnvelope,
+    ) => void | Promise<void>,
   ): Disposable {
-    const token = Symbol(event.id);
-    const subscribers = this.#eventSubscribers.get(event.id) ?? new Map();
+    return this.onById(
+      pluginId,
+      event.id,
+      handler as (
+        payload: unknown,
+        envelope: BusEnvelope,
+      ) => void | Promise<void>,
+    );
+  }
+
+  onById(
+    pluginId: string,
+    eventId: string,
+    handler: (
+      payload: unknown,
+      envelope: BusEnvelope,
+    ) => void | Promise<void>,
+  ): Disposable {
+    const token = Symbol(eventId);
+    const subscribers = this.#eventSubscribers.get(eventId) ?? new Map();
     subscribers.set(token, {
       pluginId,
-      handler: handler as EventSubscriberRecord["handler"],
+      handler,
     });
-    this.#eventSubscribers.set(event.id, subscribers);
+    this.#eventSubscribers.set(eventId, subscribers);
 
     return {
       dispose: () => {
         subscribers.delete(token);
         if (subscribers.size === 0) {
-          this.#eventSubscribers.delete(event.id);
+          this.#eventSubscribers.delete(eventId);
         }
       },
     };
@@ -213,8 +285,23 @@ export class CommandEventBus {
     }
 
     const subscribers = [...(this.#eventSubscribers.get(event.id)?.values() ?? [])];
+    const parent = this.#correlationContext.getStore();
+    const envelope: BusEnvelope = Object.freeze({
+      correlationId: parent?.correlationId ?? randomUUID(),
+      causationId: parent?.operationId,
+      source: Object.freeze({ kind: "plugin" as const, id: pluginId }),
+      timestamp: new Date().toISOString(),
+    });
     await Promise.allSettled(
-      subscribers.map(async (subscriber) => subscriber.handler(parsedPayload.data)),
+      subscribers.map(async (subscriber) =>
+        this.#correlationContext.run(
+          {
+            correlationId: envelope.correlationId,
+            operationId: event.id,
+          },
+          () => subscriber.handler(parsedPayload.data, envelope),
+        ),
+      ),
     );
   }
 

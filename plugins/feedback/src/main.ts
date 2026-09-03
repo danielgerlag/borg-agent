@@ -115,6 +115,7 @@ export default definePlugin({
             source: {
               ...input.source,
               runId: execution.runId ?? input.source.runId,
+              sessionId: execution.sessionId ?? input.source.sessionId,
               toolCallId: execution.toolCallId,
             },
           }, {

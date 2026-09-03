@@ -11,6 +11,13 @@ export {
 } from "./interaction-service";
 export { LoopManager } from "./loop-manager";
 export { ModelRouter, type RoutedCompletion } from "./model-router";
+export { PersonaService, DEFAULT_PERSONA_ID } from "./persona-service";
+export {
+  PromptAssembler,
+  type AssembledPrompt,
+  type PromptAssemblyContext,
+  type PromptSlot,
+} from "./prompt-assembler";
 export {
   NotificationService,
   type KernelNotification,
@@ -35,3 +42,8 @@ export {
   type PluginSource,
   type PluginStatus,
 } from "./plugin-manager";
+export {
+  WorkspaceService,
+  type WorkspaceFile,
+  type WorkspaceHandle,
+} from "./workspace-service";

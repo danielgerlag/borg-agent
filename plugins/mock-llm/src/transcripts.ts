@@ -1,13 +1,15 @@
 export interface MockTranscriptFixture {
   readonly id: string;
   readonly prompt: string;
-  readonly toolCall: {
+  readonly toolCall?: {
     readonly id: string;
     readonly name: string;
     readonly input: unknown;
   };
-  readonly finalPrefix: string;
-  readonly resultPath: readonly string[];
+  readonly finalPrefix?: string;
+  readonly resultPath?: readonly string[];
+  readonly content?: string;
+  readonly delayMs?: number;
 }
 
 export const mockTranscriptFixtures: readonly MockTranscriptFixture[] =
@@ -41,5 +43,25 @@ export const mockTranscriptFixtures: readonly MockTranscriptFixture[] =
       },
       finalPrefix: "User answered: ",
       resultPath: ["answer", "text"],
+    },
+    {
+      id: "workspace-file",
+      prompt: "scenario:file",
+      toolCall: {
+        id: "mock-file-call",
+        name: "filesystem.write",
+        input: {
+          path: "notes/hello.txt",
+          content: "Created by Borg chat.",
+        },
+      },
+      finalPrefix: "File created: ",
+      resultPath: ["path"],
+    },
+    {
+      id: "background-turn",
+      prompt: "scenario:background",
+      content: "Background turn completed while Borg was hidden.",
+      delayMs: 1_000,
     },
   ]);

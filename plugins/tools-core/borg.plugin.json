@@ -1,0 +1,17 @@
+{
+  "id": "borg.tools.core",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-tools-core/main",
+  "permissions": [
+    "fs:sessionWorkspace",
+    "tools.register"
+  ],
+  "contributes": {
+    "kinds": [
+      "tool"
+    ]
+  }
+}

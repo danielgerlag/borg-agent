@@ -28,6 +28,7 @@ import {
   Match,
   Show,
   Switch,
+  createMemo,
   createSignal,
   type Component,
 } from "solid-js";
@@ -67,7 +68,7 @@ const navigation = [
 
 export const App: Component<AppProps> = (props) => {
   const [surface, setSurface] = createSignal<Surface>(
-    props.setupCompleted ? "flightDeck" : "wizard",
+    props.setupCompleted ? "workspace" : "wizard",
   );
   const [completingSetup, setCompletingSetup] = createSignal(false);
   const [selectedInteractionId, setSelectedInteractionId] =
@@ -103,7 +104,7 @@ export const App: Component<AppProps> = (props) => {
     setCompletingSetup(true);
     try {
       await props.completeSetup();
-      setSurface("flightDeck");
+      setSurface("workspace");
     } finally {
       setCompletingSetup(false);
     }
@@ -191,13 +192,7 @@ export const App: Component<AppProps> = (props) => {
         <main class="min-w-0 p-8">
           <Switch>
             <Match when={surface() === "workspace"}>
-              <EmptySurface
-                testId="surface-workspace"
-                eyebrow="Main workspace"
-                title="No workspace view yet"
-                description="Chat arrives in Slice 4 as a plugin contribution."
-                contributions={props.workspaceViews}
-              />
+              <WorkspaceSurface contributions={props.workspaceViews} />
             </Match>
             <Match when={surface() === "settings"}>
               <EmptySurface
@@ -492,6 +487,76 @@ interface EmptySurfaceProps {
     readonly component: Component;
   }[];
 }
+
+const WorkspaceSurface: Component<{
+  readonly contributions: readonly WorkspaceViewContribution<Component>[];
+}> = (props) => {
+  const [selectedId, setSelectedId] = createSignal(
+    props.contributions[0]?.id ?? "",
+  );
+  const selected = createMemo(
+    () =>
+      props.contributions.find(({ id }) => id === selectedId()) ??
+      props.contributions[0],
+  );
+  return (
+    <section data-testid="surface-workspace">
+      <div class="mb-6 flex items-end justify-between gap-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent)]">
+            Main workspace
+          </p>
+          <h2 class="mt-2 text-3xl font-semibold tracking-tight">Workspace</h2>
+        </div>
+        <Show when={props.contributions.length > 1}>
+          <div class="flex gap-2">
+            <For each={props.contributions}>
+              {(contribution) => (
+                <button
+                  type="button"
+                  class="rounded-lg border border-[var(--border)] px-3 py-2 text-xs"
+                  classList={{
+                    "border-[var(--accent)] text-[var(--accent)]":
+                      selected()?.id === contribution.id,
+                  }}
+                  onClick={() => setSelectedId(contribution.id)}
+                  data-testid={`workspace-view-tab-${contribution.id}`}
+                >
+                  {contribution.label}
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
+      <Show
+        keyed
+        when={selected()}
+        fallback={
+          <Panel class="border-dashed">
+            <p class="text-sm text-[var(--text-muted)]">
+              No plugin workspace views are active.
+            </p>
+          </Panel>
+        }
+      >
+        {(contribution) => (
+          <ErrorBoundary
+            fallback={(error) => (
+              <Panel class="border-[var(--danger)]/40 text-[var(--danger)]">
+                <p data-testid="plugin-ui-error">
+                  {contribution.id}: {String(error)}
+                </p>
+              </Panel>
+            )}
+          >
+            <Dynamic component={contribution.component} />
+          </ErrorBoundary>
+        )}
+      </Show>
+    </section>
+  );
+};
 
 const EmptySurface: Component<EmptySurfaceProps> = (props) => (
   <section data-testid={props.testId}>

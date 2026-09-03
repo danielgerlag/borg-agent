@@ -4,7 +4,9 @@ import {
   type ConfigFacade,
   type InteractionService,
   type LoopManager,
+  type ModelRouter,
   type NotificationService,
+  type PersonaService,
   type PluginManager,
   type SecretFacade,
 } from "@borg/kernel";
@@ -13,12 +15,14 @@ import {
   ipcMain,
   type Event as ElectronEvent,
   type IpcMainInvokeEvent,
+  type WebContents,
 } from "electron";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   interactionResponseSchema,
   loopStartInputSchema,
+  personaIdSchema,
 } from "@borg/contracts";
 
 const commandInvokeSchema = z.object({
@@ -152,6 +156,57 @@ const kernelCallSchema = z.discriminatedUnion("method", [
       response: interactionResponseSchema,
     }),
   }),
+  z.object({
+    method: z.literal("personas.list"),
+    args: z.object({
+      capability: z.string().uuid(),
+      includeArchived: z.boolean().optional(),
+    }),
+  }),
+  z.object({
+    method: z.enum(["personas.get", "personas.setDefault"]),
+    args: z.object({
+      capability: z.string().uuid(),
+      personaId: personaIdSchema,
+    }),
+  }),
+  z.object({
+    method: z.literal("personas.getDefault"),
+    args: z.object({ capability: z.string().uuid() }),
+  }),
+  z.object({
+    method: z.literal("personas.create"),
+    args: z.object({
+      capability: z.string().uuid(),
+      candidate: z.unknown(),
+    }),
+  }),
+  z.object({
+    method: z.literal("personas.update"),
+    args: z.object({
+      capability: z.string().uuid(),
+      personaId: personaIdSchema,
+      patch: z.record(z.string(), z.unknown()),
+    }),
+  }),
+  z.object({
+    method: z.literal("events.subscribe"),
+    args: z.object({
+      capability: z.string().uuid(),
+      eventId: z.string().min(1),
+    }),
+  }),
+  z.object({
+    method: z.literal("events.unsubscribe"),
+    args: z.object({
+      capability: z.string().uuid(),
+      subscriptionId: z.string().uuid(),
+    }),
+  }),
+  z.object({
+    method: z.literal("models.list"),
+    args: z.object({ capability: z.string().uuid() }),
+  }),
 ]);
 
 interface IpcSuccess {
@@ -238,6 +293,8 @@ export interface IpcBridgeOptions {
   readonly notifications: NotificationService;
   readonly interactions: InteractionService;
   readonly loops: LoopManager;
+  readonly personas: PersonaService;
+  readonly models: ModelRouter;
   readonly kernelVersion: string;
   readonly startedAt: string;
   readonly shellCapability: string;
@@ -262,6 +319,15 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
       readonly dispose: () => void;
     }
   >();
+  const eventSubscriptions = new Map<
+    string,
+    {
+      readonly senderId: number;
+      readonly pluginId: string;
+      readonly dispose: () => void;
+    }
+  >();
+  const observedSenderIds = new Set<number>();
   const disposeLoopSubscriptions = (senderId?: number): void => {
     for (const [subscriptionId, subscription] of loopSubscriptions) {
       if (senderId === undefined || subscription.senderId === senderId) {
@@ -269,6 +335,29 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
         loopSubscriptions.delete(subscriptionId);
       }
     }
+  };
+  const disposeEventSubscriptions = (senderId?: number): void => {
+    for (const [subscriptionId, subscription] of eventSubscriptions) {
+      if (senderId === undefined || subscription.senderId === senderId) {
+        subscription.dispose();
+        eventSubscriptions.delete(subscriptionId);
+      }
+    }
+  };
+  const observeSender = (sender: WebContents): void => {
+    if (observedSenderIds.has(sender.id)) {
+      return;
+    }
+    observedSenderIds.add(sender.id);
+    sender.once("destroyed", () => {
+      observedSenderIds.delete(sender.id);
+      disposeLoopSubscriptions(sender.id);
+      disposeEventSubscriptions(sender.id);
+      if (bootstrapConsumedBy === sender.id) {
+        bootstrapConsumedBy = undefined;
+      }
+      cancelRendererCommands("Renderer was destroyed");
+    });
   };
   const cancelRendererCommands = (reason: string): void => {
     for (const controller of rendererCommandControllers) {
@@ -300,12 +389,17 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
         };
         try {
           assertTrustedSender(event, options.getMainWindow, options.rendererUrl);
+          observeSender(event.sender);
           const request = commandInvokeSchema.parse(payload);
           rendererCommandControllers.add(controller);
           event.sender.once("destroyed", onDestroyed);
           return success(
             await options.bus.invokeById(request.id, request.input, {
               signal: controller.signal,
+              source: {
+                kind: "renderer",
+                id: String(event.sender.id),
+              },
             }),
           );
         } catch (error) {
@@ -321,6 +415,7 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
     track(async () => {
       try {
       assertTrustedSender(event, options.getMainWindow, options.rendererUrl);
+      observeSender(event.sender);
       if (bootstrapConsumedBy === event.sender.id) {
         throw new Error("Renderer bootstrap capability has already been consumed");
       }
@@ -339,6 +434,7 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
         ) {
           cancelRendererCommands("Renderer navigated");
           disposeLoopSubscriptions(sender.id);
+          disposeEventSubscriptions(sender.id);
           bootstrapConsumedBy = undefined;
           sender.removeListener("did-frame-navigate", resetBootstrap);
         }
@@ -368,6 +464,7 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
     track(async () => {
       try {
       assertTrustedSender(event, options.getMainWindow, options.rendererUrl);
+      observeSender(event.sender);
       const request = kernelCallSchema.parse(payload);
 
       switch (request.method) {
@@ -571,6 +668,122 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
               request.args.response,
             ),
           );
+        case "personas.list": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.read",
+          );
+          return success(
+            options.personas.list(request.args.includeArchived === true),
+          );
+        }
+        case "personas.get": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.read",
+          );
+          return success(options.personas.get(request.args.personaId));
+        }
+        case "personas.getDefault": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.read",
+          );
+          return success(options.personas.getDefault());
+        }
+        case "personas.setDefault": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.write",
+          );
+          return success(
+            await options.personas.setDefault(request.args.personaId),
+          );
+        }
+        case "personas.create": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.write",
+          );
+          return success(await options.personas.create(request.args.candidate));
+        }
+        case "personas.update": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.write",
+          );
+          return success(
+            await options.personas.update(
+              request.args.personaId,
+              request.args.patch,
+            ),
+          );
+        }
+        case "events.subscribe": {
+          if (!options.plugins.hasDeclaredEvent(request.args.eventId)) {
+            throw new Error(
+              `Event ${request.args.eventId} is not declared by an active plugin`,
+            );
+          }
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+          );
+          const sender = event.sender;
+          const subscriptionId = randomUUID();
+          const subscription = options.bus.onById(
+            pluginId,
+            request.args.eventId,
+            (payload, envelope) => {
+              if (!sender.isDestroyed()) {
+                sender.send("borg:event:deliver", {
+                  subscriptionId,
+                  payload,
+                  envelope,
+                });
+              }
+            },
+          );
+          eventSubscriptions.set(subscriptionId, {
+            senderId: sender.id,
+            pluginId,
+            dispose: () => subscription.dispose(),
+          });
+          return success(subscriptionId);
+        }
+        case "events.unsubscribe": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+          );
+          const subscription = eventSubscriptions.get(
+            request.args.subscriptionId,
+          );
+          if (
+            !subscription ||
+            subscription.senderId !== event.sender.id ||
+            subscription.pluginId !== pluginId
+          ) {
+            return success(false);
+          }
+          subscription.dispose();
+          eventSubscriptions.delete(request.args.subscriptionId);
+          return success(true);
+        }
+        case "models.list": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "models.read",
+          );
+          return success(options.models.listModels());
+        }
       }
       } catch (error) {
         return failure(error);
@@ -584,6 +797,7 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
     ipcMain.removeHandler("borg:kernel:call");
     cancelRendererCommands("IPC bridge is shutting down");
     disposeLoopSubscriptions();
+    disposeEventSubscriptions();
     if (activeCalls > 0) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([

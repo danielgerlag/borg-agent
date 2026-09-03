@@ -1,3 +1,4 @@
+import type { BusEnvelope } from "@borg/contracts";
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 interface IpcSuccess<T> {
@@ -54,6 +55,69 @@ const bridge = Object.freeze({
         method: "command.provides",
         args: { id },
       }),
+  }),
+  events: Object.freeze({
+    subscribe: async (
+      capability: string,
+      eventId: string,
+      listener: (payload: unknown, envelope: BusEnvelope) => void,
+    ): Promise<(() => void)> => {
+      let subscriptionId: string | undefined;
+      const pending: {
+        readonly subscriptionId?: unknown;
+        readonly payload?: unknown;
+        readonly envelope: BusEnvelope;
+      }[] = [];
+      const wrapped = (
+        _event: IpcRendererEvent,
+        delivery: {
+          readonly subscriptionId?: unknown;
+          readonly payload?: unknown;
+          readonly envelope: BusEnvelope;
+        },
+      ): void => {
+        if (subscriptionId === undefined) {
+          pending.push(delivery);
+        } else if (delivery?.subscriptionId === subscriptionId) {
+          listener(delivery.payload, delivery.envelope);
+        }
+      };
+      ipcRenderer.on("borg:event:deliver", wrapped);
+      try {
+        subscriptionId = await invokeKernel<string>("borg:kernel:call", {
+          method: "events.subscribe",
+          args: { capability, eventId },
+        });
+        for (const delivery of pending) {
+          if (
+            delivery &&
+            typeof delivery === "object" &&
+            (
+              delivery as {
+                readonly subscriptionId?: unknown;
+              }
+            ).subscriptionId === subscriptionId
+          ) {
+            listener(
+              (delivery as { readonly payload?: unknown }).payload,
+              delivery.envelope,
+            );
+          }
+        }
+      } catch (error) {
+        ipcRenderer.removeListener("borg:event:deliver", wrapped);
+        throw error;
+      }
+      return () => {
+        ipcRenderer.removeListener("borg:event:deliver", wrapped);
+        if (subscriptionId) {
+          void invokeKernel("borg:kernel:call", {
+            method: "events.unsubscribe",
+            args: { capability, subscriptionId },
+          }).catch(() => undefined);
+        }
+      };
+    },
   }),
   kernel: Object.freeze({
     bootstrap: async (): Promise<unknown> => {
@@ -236,6 +300,52 @@ const bridge = Object.freeze({
         ipcRenderer.removeListener("borg:interactions", wrapped);
       };
     },
+  }),
+  personas: Object.freeze({
+    list: (capability: string, includeArchived = false): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "personas.list",
+        args: { capability, includeArchived },
+      }),
+    get: (capability: string, personaId: string): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "personas.get",
+        args: { capability, personaId },
+      }),
+    getDefault: (capability: string): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "personas.getDefault",
+        args: { capability },
+      }),
+    setDefault: (
+      capability: string,
+      personaId: string,
+    ): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "personas.setDefault",
+        args: { capability, personaId },
+      }),
+    create: (capability: string, candidate: unknown): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "personas.create",
+        args: { capability, candidate },
+      }),
+    update: (
+      capability: string,
+      personaId: string,
+      patch: Readonly<Record<string, unknown>>,
+    ): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "personas.update",
+        args: { capability, personaId, patch },
+      }),
+  }),
+  models: Object.freeze({
+    list: (capability: string): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "models.list",
+        args: { capability },
+      }),
   }),
   window: Object.freeze({
     hide: (capability: string): Promise<boolean> => {

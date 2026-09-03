@@ -5,6 +5,56 @@ import type { PluginDefinition } from "@borg/plugin-sdk";
 export const bundledMainPlugins: readonly PluginSource[] = [
   {
     manifest: {
+      "id": "borg.chat",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-chat/main",
+      "ui": "@borg/plugin-chat/ui",
+      "permissions": [
+        "loops.start",
+        "models.read",
+        "personas.read",
+        "personas.write",
+        "tools.invoke",
+        "ui.flightDeck",
+        "ui.settings",
+        "ui.wizard",
+        "ui.workspace",
+        "workspace.manage"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.chat.append",
+          "borg.chat.createSession",
+          "borg.chat.deleteSession",
+          "borg.chat.getSession",
+          "borg.chat.listSessions",
+          "borg.chat.listWorkspace",
+          "borg.chat.sendMessage",
+          "borg.chat.spawnSubAgent"
+        ],
+        "events": [
+          "borg.chat.message.appended",
+          "borg.chat.session.deleted",
+          "borg.chat.session.updated",
+          "borg.chat.turn.completed",
+          "borg.chat.turn.started"
+        ],
+        "kinds": [
+          "flightDeckWidget",
+          "settingsPage",
+          "wizardStep",
+          "workspaceView"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-chat/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.config.sqlite",
       "version": "0.1.0",
       "engines": {
@@ -168,6 +218,27 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-secrets-os/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.tools.core",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-tools-core/main",
+      "permissions": [
+        "fs:sessionWorkspace",
+        "tools.register"
+      ],
+      "contributes": {
+        "kinds": [
+          "tool"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-tools-core/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {

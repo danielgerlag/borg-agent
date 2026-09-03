@@ -18,6 +18,8 @@ import type { InteractionService } from "./interaction-service";
 import type { LoopManager } from "./loop-manager";
 import type { ModelRouter } from "./model-router";
 import type { NotificationService } from "./notification-service";
+import type { PersonaService } from "./persona-service";
+import type { PromptAssembler } from "./prompt-assembler";
 import type {
   ConfigFacade,
   PersistenceRegistry,
@@ -25,6 +27,7 @@ import type {
   StoreFacade,
 } from "./persistence";
 import type { ToolService } from "./tool-service";
+import type { WorkspaceService } from "./workspace-service";
 
 export type PluginStatus =
   | "discovered"
@@ -67,6 +70,9 @@ export interface PluginManagerOptions {
   readonly loops?: LoopManager;
   readonly interactions?: InteractionService;
   readonly costs?: CostLedger;
+  readonly personas?: PersonaService;
+  readonly prompts?: PromptAssembler;
+  readonly workspaces?: WorkspaceService;
   readonly showWindow?: () => void;
   getPluginDataDirectory?(pluginId: string): string;
 }
@@ -384,6 +390,30 @@ export class PluginManager {
         }
         return this.#options.persistence;
       };
+      const requirePersonas = (): PersonaService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.personas) {
+          throw new Error("Persona service is unavailable");
+        }
+        return this.#options.personas;
+      };
+      const requireWorkspaces = (): WorkspaceService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.workspaces) {
+          throw new Error("Workspace service is unavailable");
+        }
+        return this.#options.workspaces;
+      };
+      const requirePrompts = (): PromptAssembler => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.prompts) {
+          throw new Error("Prompt assembler is unavailable");
+        }
+        return this.#options.prompts;
+      };
       const requireTools = (): ToolService => {
         assertContextActive();
         assertOrdinaryContext();
@@ -503,21 +533,28 @@ export class PluginManager {
             assertPermission("tools.register");
             assertContribution("tool");
             return stage(() =>
-              requireTools().register(manifest.id, {
-                ...tool,
-                execute: (input, execution) =>
-                  trackOperation(
-                    Promise.resolve().then(async () =>
-                      tool.execute(input, {
-                        ...execution,
-                        signal: AbortSignal.any([
-                          execution.signal,
-                          controller.signal,
-                        ]),
-                      }),
+              requireTools().register(
+                manifest.id,
+                {
+                  ...tool,
+                  execute: (input, execution) =>
+                    trackOperation(
+                      Promise.resolve().then(async () =>
+                        tool.execute(input, {
+                          ...execution,
+                          signal: AbortSignal.any([
+                            execution.signal,
+                            controller.signal,
+                          ]),
+                        }),
+                      ),
                     ),
-                  ),
-              }),
+                },
+                {
+                  workspaceAccess:
+                    permissions.has("fs:sessionWorkspace"),
+                },
+              ),
             );
           },
           invoke: (toolId, input, invocationOptions) => {
@@ -544,12 +581,13 @@ export class PluginManager {
             return stage(() =>
               requireModels().registerProvider(manifest.id, {
                 ...provider,
-                complete: (request, signal) =>
+                complete: (request, signal, onToken) =>
                   trackOperation(
                     Promise.resolve().then(async () =>
                       provider.complete(
                         request,
                         AbortSignal.any([signal, controller.signal]),
+                        onToken,
                       ),
                     ),
                   ),
@@ -624,7 +662,9 @@ export class PluginManager {
           subscribe: (runId, handler) => {
             assertPermission("loops.start");
             return track(
-              requireLoops().subscribeRun(runId, manifest.id, handler),
+              requireLoops().subscribeRun(runId, manifest.id, (event) =>
+                trackOperation(Promise.resolve(handler(event))),
+              ),
             );
           },
         },
@@ -669,6 +709,66 @@ export class PluginManager {
             this.#options.costs.record(record);
           },
         },
+        personas: {
+          get: (personaId) => {
+            assertPermission("personas.read");
+            return requirePersonas().get(personaId);
+          },
+          list: (includeArchived) => {
+            assertPermission("personas.read");
+            return requirePersonas().list(includeArchived);
+          },
+          getDefault: () => {
+            assertPermission("personas.read");
+            return requirePersonas().getDefault();
+          },
+          setDefault: (personaId) => {
+            assertPermission("personas.write");
+            return requirePersonas().setDefault(personaId);
+          },
+          create: (candidate) => {
+            assertPermission("personas.write");
+            return requirePersonas().create(candidate);
+          },
+          update: (personaId, patch) => {
+            assertPermission("personas.write");
+            return requirePersonas().update(personaId, patch);
+          },
+          archive: (personaId) => {
+            assertPermission("personas.write");
+            return requirePersonas().archive(personaId);
+          },
+        },
+        workspace: {
+          allocate: (sessionId) => {
+            assertPermission("workspace.manage");
+            return requireWorkspaces().allocate(manifest.id, sessionId);
+          },
+          get: (sessionId) => {
+            assertPermission("workspace.manage");
+            return requireWorkspaces().get(manifest.id, sessionId);
+          },
+          listFiles: (sessionId) => {
+            assertPermission("workspace.manage");
+            return requireWorkspaces().listFiles(manifest.id, sessionId);
+          },
+          release: (sessionId) => {
+            assertPermission("workspace.manage");
+            return requireWorkspaces().release(manifest.id, sessionId);
+          },
+        },
+        prompts: {
+          registerSlot: (slot) => {
+            assertPermission("prompts.register");
+            assertContribution("promptSlot");
+            if (!slot.id.startsWith(`${manifest.id}.`)) {
+              throw new Error(
+                `Prompt slot ${slot.id} must use the ${manifest.id} namespace`,
+              );
+            }
+            return stage(() => requirePrompts().registerSlot(slot));
+          },
+        },
         window: {
           show: () => {
             assertContextActive();
@@ -697,7 +797,7 @@ export class PluginManager {
           handle: (command, handler) => {
             assertOrdinaryContext();
             return stage(() =>
-              this.bus.handle(manifest.id, commandIds, command, (input, signal) => {
+              this.bus.handle(manifest.id, commandIds, command, (input, signal, envelope) => {
                 const operationSignal = AbortSignal.any([
                   signal,
                   controller.signal,
@@ -721,7 +821,7 @@ export class PluginManager {
                       expire();
                     }
                     try {
-                      return await handler(input, operationSignal);
+                      return await handler(input, operationSignal, envelope);
                     } finally {
                       expire();
                       operationSignal.removeEventListener("abort", expire);
@@ -739,6 +839,7 @@ export class PluginManager {
             }
             const operation = this.#operationContext.getStore();
             return this.bus.invoke(command, input, {
+              source: { kind: "plugin", id: manifest.id },
               signal: invocationOptions?.signal
                 ? AbortSignal.any([
                     invocationOptions.signal,
@@ -806,6 +907,7 @@ export class PluginManager {
       controller.abort(error);
       this.#options.tools?.removePlugin(manifest.id);
       this.#options.models?.removePlugin(manifest.id);
+      this.#options.prompts?.removePlugin(manifest.id);
       await this.#disposeAll(disposables);
       this.bus.removePlugin(manifest.id);
 
@@ -856,14 +958,24 @@ export class PluginManager {
       version: active.manifest.version,
       status: "deactivating",
     });
+    let deactivationError: unknown;
+    const shutdownDeadline = Date.now() + this.#shutdownTimeoutMs;
     this.bus.removePlugin(pluginId);
     this.#options.tools?.removePlugin(pluginId);
     this.#options.models?.removePlugin(pluginId);
+    this.#options.prompts?.removePlugin(pluginId);
+    try {
+      await withTimeout(
+        async () => this.#options.loops?.cancelOwned(pluginId),
+        Math.max(1, shutdownDeadline - Date.now()),
+        `Plugin ${pluginId} loop cancellation`,
+      );
+    } catch (error) {
+      deactivationError = error;
+      console.error(`[kernel] plugin ${pluginId} loops did not stop`, error);
+    }
     active.controller.abort(new Error(`Plugin ${pluginId} is deactivating`));
-    this.#options.loops?.cancelOwned(pluginId);
 
-    let deactivationError: unknown;
-    const shutdownDeadline = Date.now() + this.#shutdownTimeoutMs;
     if (active.operations.size > 0) {
       try {
         await withTimeout(
@@ -933,6 +1045,12 @@ export class PluginManager {
     return this.#active
       .get(pluginId)
       ?.manifest.permissions.includes(permission) ?? false;
+  }
+
+  hasDeclaredEvent(eventId: string): boolean {
+    return [...this.#active.values()].some(({ manifest }) =>
+      manifest.contributes.events?.includes(eventId),
+    );
   }
 
   resolveUiCapability(capability: string): string | undefined {

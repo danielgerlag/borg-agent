@@ -152,6 +152,35 @@ describe("LoopManager", () => {
     expect(executeEcho).not.toHaveBeenCalled();
   });
 
+  it("drains terminal event subscribers when cancelling owned runs", async () => {
+    const { interactions, loops } = createRuntime();
+    const run = loops.start({
+      prompt: "use echo",
+      allowedTools: ["tools.echo"],
+    });
+    await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    loops.subscribeRun(run.id, "kernel.loop", async (event) => {
+      if (event.type === "state" && event.status === "cancelled") {
+        await gate;
+      }
+    });
+
+    let drained = false;
+    const cancellation = loops.cancelOwned("kernel.loop").then(() => {
+      drained = true;
+    });
+    await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("cancelled"));
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    release();
+    await cancellation;
+    expect(drained).toBe(true);
+  });
+
   it("reports an unavailable feedback tool instead of bypassing the registry", async () => {
     const interactions = new InteractionService();
     const costs = new CostLedger();
@@ -475,6 +504,38 @@ describe("LoopManager", () => {
     ).rejects.toMatchObject({ code: "forbidden" });
     expect(execute).not.toHaveBeenCalled();
     policy.dispose();
+  });
+
+  it("requires tools to satisfy every run policy layer", async () => {
+    const interactions = new InteractionService();
+    const tools = new ToolService(interactions);
+    for (const id of ["tools.allowed", "tools.blocked"]) {
+      tools.register(
+        "borg.tools.layered",
+        defineTool({
+          id,
+          description: id,
+          input: z.object({}).strict(),
+          output: z.object({ id: z.string() }).strict(),
+          approval: "auto",
+          sideEffect: false,
+          execute: () => ({ id }),
+        }),
+      );
+    }
+    tools.registerRunPolicy("run-layered", "borg.owner", ["*"], {
+      additionalAllowedTools: ["tools.allowed"],
+    });
+
+    expect(
+      tools.listDefinitions(["*"], ["tools.allowed"]).map(({ id }) => id),
+    ).toEqual(["tools.allowed"]);
+    await expect(
+      tools.invoke("tools.blocked", {}, {
+        callerPluginId: "borg.owner",
+        runId: "run-layered",
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
   });
 
   it("rejects a result returned after its tool was removed", async () => {

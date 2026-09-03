@@ -1,9 +1,12 @@
 import type {
+  BusEnvelope,
   InteractionResponse,
   LoopEvent,
   LoopRunSnapshot,
   LoopStartInput,
+  ModelDescriptor,
   PendingInteraction,
+  Persona,
 } from "@borg/contracts";
 
 export {};
@@ -60,6 +63,13 @@ declare global {
       invoke(id: string, input: unknown): Promise<unknown>;
       provides(id: string): Promise<boolean>;
     };
+    readonly events: {
+      subscribe(
+        capability: string,
+        eventId: string,
+        listener: (payload: unknown, envelope: BusEnvelope) => void,
+      ): Promise<() => void>;
+    };
     readonly kernel: {
       bootstrap(): Promise<KernelBootstrapSnapshot>;
     };
@@ -115,6 +125,24 @@ declare global {
         shellCapability: string,
         listener: (pending: readonly PendingInteraction[]) => void,
       ): () => void;
+    };
+    readonly personas: {
+      list(
+        capability: string,
+        includeArchived?: boolean,
+      ): Promise<readonly Persona[]>;
+      get(capability: string, personaId: string): Promise<Persona | undefined>;
+      getDefault(capability: string): Promise<Persona>;
+      setDefault(capability: string, personaId: string): Promise<Persona>;
+      create(capability: string, candidate: unknown): Promise<Persona>;
+      update(
+        capability: string,
+        personaId: string,
+        patch: Readonly<Record<string, unknown>>,
+      ): Promise<Persona>;
+    };
+    readonly models: {
+      list(capability: string): Promise<readonly ModelDescriptor[]>;
     };
     readonly window: {
       hide(shellCapability: string): Promise<boolean>;

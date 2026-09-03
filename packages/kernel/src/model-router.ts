@@ -208,6 +208,61 @@ export class ModelRouter {
     }
   }
 
+  listModels(): readonly {
+    readonly providerId: string;
+    readonly modelId: string;
+    readonly preferenceId: string;
+  }[] {
+    return Object.freeze(
+      [...this.#providers.values()]
+        .flatMap(({ provider }) =>
+          provider.models.map((modelId) =>
+            Object.freeze({
+              providerId: provider.id,
+              modelId,
+              preferenceId: `${provider.id}:${modelId}`,
+            }),
+          ),
+        )
+        .sort((left, right) =>
+          left.preferenceId.localeCompare(right.preferenceId),
+        ),
+    );
+  }
+
+  resolvePreferences(
+    preferences: readonly string[],
+  ): { readonly providerId: string; readonly modelId: string } | undefined {
+    const matches = (candidate: string, pattern: string): boolean => {
+      if (pattern === "*") {
+        return true;
+      }
+      if (pattern.endsWith("*")) {
+        return candidate.startsWith(pattern.slice(0, -1));
+      }
+      return candidate === pattern;
+    };
+    for (const preference of preferences) {
+      const separator = preference.indexOf(":");
+      const providerPattern =
+        separator > 0 ? preference.slice(0, separator) : "*";
+      const modelPattern =
+        separator > 0 ? preference.slice(separator + 1) : preference;
+      for (const { provider } of this.#providers.values()) {
+        if (!matches(provider.id, providerPattern)) {
+          continue;
+        }
+        const modelId = provider.models.find((model) =>
+          matches(model, modelPattern),
+        );
+        if (modelId) {
+          return { providerId: provider.id, modelId };
+        }
+      }
+    }
+    return undefined;
+  }
+
   async complete(
     request: Omit<ModelCompletionRequest, "modelId"> & {
       readonly providerId?: string | undefined;
@@ -216,6 +271,7 @@ export class ModelRouter {
       readonly correlationId: string;
     },
     signal: AbortSignal,
+    onToken?: (token: string) => void | Promise<void>,
   ): Promise<RoutedCompletion> {
     signal.throwIfAborted();
     const registration = request.providerId
@@ -263,6 +319,17 @@ export class ModelRouter {
         ),
       },
       signal,
+      onToken
+        ? async (token) => {
+            signal.throwIfAborted();
+            if (typeof token !== "string" || token.length === 0) {
+              throw new Error(
+                `Provider ${registration.provider.id} emitted an invalid token`,
+              );
+            }
+            await onToken(token);
+          }
+        : undefined,
     );
     const result = normalizeResult(
       registration.provider.id,

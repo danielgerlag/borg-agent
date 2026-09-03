@@ -2,6 +2,7 @@ import type {
   CommandDefinition,
   CommandInput,
   CommandOutput,
+  EventPayload,
 } from "@borg/contracts";
 import type {
   Disposable,
@@ -137,6 +138,35 @@ export async function activatePluginUi(
 
     const transaction = createUiTransaction(plugin, registry);
     let activationDisposable: Disposable | undefined;
+    let scopeActive = true;
+    const scopedDisposables = new Set<Disposable>();
+    const trackScoped = (disposable: Disposable): Disposable => {
+      let disposed = false;
+      const tracked = {
+        dispose: async () => {
+          if (disposed) {
+            return;
+          }
+          disposed = true;
+          scopedDisposables.delete(tracked);
+          await disposable.dispose();
+        },
+      };
+      if (scopeActive) {
+        scopedDisposables.add(tracked);
+      } else {
+        void tracked.dispose();
+      }
+      return tracked;
+    };
+    const disposeScope = async (): Promise<void> => {
+      scopeActive = false;
+      await Promise.allSettled(
+        [...scopedDisposables].map(async (disposable) =>
+          disposable.dispose(),
+        ),
+      );
+    };
     try {
       const definition = (await load()).default;
       if (definition.id !== plugin.id) {
@@ -212,7 +242,7 @@ export async function activatePluginUi(
                 );
               },
             );
-            return { dispose: unsubscribe };
+            return trackScoped({ dispose: unsubscribe });
           },
           pause: (runId) => {
             if (!plugin.permissions.includes("loops.start")) {
@@ -241,6 +271,65 @@ export async function activatePluginUi(
             return window.borg.interactions.list(plugin.uiCapability);
           },
         },
+        personas: {
+          get: (personaId) => {
+            if (!plugin.permissions.includes("personas.read")) {
+              throw new Error(`Plugin ${plugin.id} cannot inspect personas`);
+            }
+            return window.borg.personas.get(plugin.uiCapability, personaId);
+          },
+          list: (includeArchived) => {
+            if (!plugin.permissions.includes("personas.read")) {
+              throw new Error(`Plugin ${plugin.id} cannot inspect personas`);
+            }
+            return window.borg.personas.list(
+              plugin.uiCapability,
+              includeArchived,
+            );
+          },
+          getDefault: () => {
+            if (!plugin.permissions.includes("personas.read")) {
+              throw new Error(`Plugin ${plugin.id} cannot inspect personas`);
+            }
+            return window.borg.personas.getDefault(plugin.uiCapability);
+          },
+          setDefault: (personaId) => {
+            if (!plugin.permissions.includes("personas.write")) {
+              throw new Error(`Plugin ${plugin.id} cannot update personas`);
+            }
+            return window.borg.personas.setDefault(
+              plugin.uiCapability,
+              personaId,
+            );
+          },
+          create: (candidate) => {
+            if (!plugin.permissions.includes("personas.write")) {
+              throw new Error(`Plugin ${plugin.id} cannot create personas`);
+            }
+            return window.borg.personas.create(
+              plugin.uiCapability,
+              candidate,
+            );
+          },
+          update: (personaId, patch) => {
+            if (!plugin.permissions.includes("personas.write")) {
+              throw new Error(`Plugin ${plugin.id} cannot update personas`);
+            }
+            return window.borg.personas.update(
+              plugin.uiCapability,
+              personaId,
+              patch,
+            );
+          },
+        },
+        models: {
+          list: () => {
+            if (!plugin.permissions.includes("models.read")) {
+              throw new Error(`Plugin ${plugin.id} cannot inspect models`);
+            }
+            return window.borg.models.list(plugin.uiCapability);
+          },
+        },
         notify: async (request) => {
           if (!plugin.permissions.includes("notifications:send")) {
             throw new Error(`Plugin ${plugin.id} cannot send notifications`);
@@ -256,6 +345,35 @@ export async function activatePluginUi(
               CommandOutput<TCommand>
             >,
           provides: (command) => window.borg.command.provides(command.id),
+          on: async (event, handler) => {
+            const unsubscribe = await window.borg.events.subscribe(
+              plugin.uiCapability,
+              event.id,
+              (candidate, envelope) => {
+                const parsed = event.payload.safeParse(candidate);
+                if (!parsed.success) {
+                  console.error(
+                    `[renderer] event ${event.id} failed validation`,
+                    parsed.error,
+                  );
+                  return;
+                }
+                void Promise.resolve(
+                  handler(
+                    parsed.data as EventPayload<typeof event>,
+                    envelope,
+                  ),
+                ).catch(
+                  (error: unknown) =>
+                    console.error(
+                      `[renderer] event subscriber from ${plugin.id} failed`,
+                      error,
+                    ),
+                );
+              },
+            );
+            return trackScoped({ dispose: unsubscribe });
+          },
         },
       };
 
@@ -266,6 +384,7 @@ export async function activatePluginUi(
           try {
             await activationDisposable?.dispose();
           } finally {
+            await disposeScope();
             await transaction.dispose();
           }
         },
@@ -276,6 +395,7 @@ export async function activatePluginUi(
       } catch (cleanupError) {
         console.error(`[renderer] plugin ${plugin.id} UI cleanup failed`, cleanupError);
       } finally {
+        await disposeScope();
         await transaction.dispose();
       }
       errors.push(error instanceof Error ? error.message : String(error));

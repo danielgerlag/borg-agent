@@ -136,6 +136,9 @@ importers:
       '@borg/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@borg/plugin-chat':
+        specifier: workspace:*
+        version: link:../../plugins/chat
       '@borg/plugin-config-sqlite':
         specifier: workspace:*
         version: link:../../plugins/config-sqlite
@@ -160,6 +163,9 @@ importers:
       '@borg/plugin-tools-echo':
         specifier: workspace:*
         version: link:../../plugins/tools-echo
+      '@borg/plugin-tools-core':
+        specifier: workspace:*
+        version: link:../../plugins/tools-core
       '@borg/ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui-kit
@@ -233,6 +239,24 @@ importers:
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+
+  plugins/chat:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
 
   plugins/feedback:
     dependencies:
@@ -322,6 +346,12 @@ importers:
         version: 1.9.15
 
   plugins/tools-echo:
+    dependencies:
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+
+  plugins/tools-core:
     dependencies:
       '@borg/plugin-sdk':
         specifier: workspace:*

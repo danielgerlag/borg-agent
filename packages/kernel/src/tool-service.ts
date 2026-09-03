@@ -13,12 +13,15 @@ interface RegisteredTool {
   readonly tool: ToolContribution;
   readonly inputSchema: JsonValue;
   readonly controller: AbortController;
+  readonly workspaceAccess: boolean;
 }
 
 interface RunToolPolicy {
   readonly ownerPluginId: string;
-  readonly allowedTools: readonly string[];
+  readonly allowedToolGroups: readonly (readonly string[])[];
   readonly controller: AbortController;
+  readonly sessionId?: string | undefined;
+  readonly workspaceRoot?: string | undefined;
 }
 
 export class ToolInvocationError extends Error {
@@ -50,6 +53,13 @@ function isAllowed(toolId: string, patterns: readonly string[]): boolean {
     }
     return toolId === pattern;
   });
+}
+
+function isAllowedByAll(
+  toolId: string,
+  patternGroups: readonly (readonly string[])[],
+): boolean {
+  return patternGroups.every((patterns) => isAllowed(toolId, patterns));
 }
 
 function asJsonValue(value: unknown): JsonValue {
@@ -89,7 +99,11 @@ export class ToolService {
 
   constructor(readonly interactions: InteractionService) {}
 
-  register(pluginId: string, tool: ToolContribution): Disposable {
+  register(
+    pluginId: string,
+    tool: ToolContribution,
+    options?: { readonly workspaceAccess?: boolean | undefined },
+  ): Disposable {
     if (
       !/^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/.test(tool.id) ||
       tool.description.trim().length === 0 ||
@@ -120,6 +134,7 @@ export class ToolService {
       tool: registeredTool,
       inputSchema,
       controller: new AbortController(),
+      workspaceAccess: options?.workspaceAccess === true,
     };
     this.#tools.set(toolId, registration);
     return {
@@ -138,14 +153,28 @@ export class ToolService {
     runId: string,
     ownerPluginId: string,
     allowedTools: readonly string[],
+    context?: {
+      readonly sessionId?: string | undefined;
+      readonly workspaceRoot?: string | undefined;
+      readonly additionalAllowedTools?: readonly string[] | undefined;
+    },
   ): Disposable {
     if (this.#runPolicies.has(runId)) {
       throw new Error(`Tool policy for run ${runId} is already registered`);
     }
     const policy = {
       ownerPluginId,
-      allowedTools: Object.freeze([...allowedTools]),
+      allowedToolGroups: Object.freeze(
+        [
+          allowedTools,
+          ...(context?.additionalAllowedTools
+            ? [context.additionalAllowedTools]
+            : []),
+        ].map((patterns) => Object.freeze([...patterns])),
+      ),
       controller: new AbortController(),
+      sessionId: context?.sessionId,
+      workspaceRoot: context?.workspaceRoot,
     };
     this.#runPolicies.set(runId, policy);
     return {
@@ -175,13 +204,21 @@ export class ToolService {
     return this.#tools.get(toolId)?.pluginId;
   }
 
-  listDefinitions(allowedTools: readonly string[] = ["*"]): readonly {
+  listDefinitions(
+    allowedTools: readonly string[] = ["*"],
+    additionalAllowedTools?: readonly string[],
+  ): readonly {
     readonly id: string;
     readonly description: string;
     readonly inputSchema: JsonValue;
   }[] {
     return [...this.#tools.values()]
-      .filter(({ tool }) => isAllowed(tool.id, allowedTools))
+      .filter(({ tool }) =>
+        isAllowedByAll(tool.id, [
+          allowedTools,
+          ...(additionalAllowedTools ? [additionalAllowedTools] : []),
+        ]),
+      )
       .map(({ tool, inputSchema }) => ({
         id: tool.id,
         description: tool.description,
@@ -216,8 +253,8 @@ export class ToolService {
         `Tool policy for run ${options.runId} is unavailable to ${options.callerPluginId}`,
       );
     }
-    const allowedTools = runPolicy?.allowedTools ?? ["*"];
-    if (!isAllowed(toolId, allowedTools)) {
+    const allowedToolGroups = runPolicy?.allowedToolGroups ?? [["*"]];
+    if (!isAllowedByAll(toolId, allowedToolGroups)) {
       throw new ToolInvocationError(
         "forbidden",
         `Tool ${toolId} is not allowed for this run`,
@@ -252,6 +289,7 @@ export class ToolService {
             pluginId: options.callerPluginId,
             feature: "tool",
             runId: options.runId,
+            sessionId: runPolicy?.sessionId,
             toolCallId,
           },
         },
@@ -301,6 +339,10 @@ export class ToolService {
       const result = await registration.tool.execute(jsonInput, {
         toolCallId,
         runId: options.runId,
+        sessionId: runPolicy?.sessionId,
+        workspaceRoot: registration.workspaceAccess
+          ? runPolicy?.workspaceRoot
+          : undefined,
         signal: invocationSignal,
       });
       if (

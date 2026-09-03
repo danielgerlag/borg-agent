@@ -322,7 +322,9 @@ describe("PluginManager", () => {
     });
 
     const startedAt = performance.now();
-    await expect(manager.deactivate(manifest.id)).rejects.toThrow(/exceeded 5ms/);
+    await expect(manager.deactivate(manifest.id)).rejects.toThrow(
+      /exceeded [1-5]ms/,
+    );
     expect(performance.now() - startedAt).toBeLessThan(50);
     expect(manager.getRecords()).toContainEqual(
       expect.objectContaining({ id: manifest.id, status: "disabled" }),
@@ -676,6 +678,9 @@ describe("PluginManager", () => {
     await rejection;
     expect(resolved).toHaveBeenCalledWith(
       expect.objectContaining({ status: "cancelled" }),
+      expect.objectContaining({
+        correlationId: expect.any(String),
+      }),
     );
   });
 

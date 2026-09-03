@@ -1,4 +1,5 @@
 import type {
+  BusEnvelope,
   CommandDefinition,
   CommandInput,
   CommandOutput,
@@ -8,8 +9,11 @@ import type {
   LoopEvent,
   LoopRunSnapshot,
   LoopStartInput,
+  ModelDescriptor,
   PendingInteraction,
+  Persona,
   UsageRecord,
+  WorkspaceFile,
 } from "@borg/contracts";
 import { z } from "zod";
 
@@ -100,6 +104,8 @@ export interface NotificationRequest {
 export interface ToolExecutionContext {
   readonly toolCallId: string;
   readonly runId?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly workspaceRoot?: string | undefined;
   readonly signal: AbortSignal;
 }
 
@@ -140,7 +146,7 @@ export interface PluginTools {
 }
 
 export interface ModelMessage {
-  readonly role: "user" | "assistant" | "tool";
+  readonly role: "system" | "user" | "assistant" | "tool";
   readonly content: string;
   readonly toolCallId?: string | undefined;
   readonly toolCalls?: readonly ModelToolCall[] | undefined;
@@ -181,6 +187,7 @@ export interface LlmProviderContribution {
   complete(
     request: ModelCompletionRequest,
     signal: AbortSignal,
+    onToken?: ((token: string) => void | Promise<void>) | undefined,
   ): Promise<ModelCompletionResult>;
 }
 
@@ -261,6 +268,50 @@ export interface PluginCost {
   record(record: UsageRecord): void;
 }
 
+export interface PluginPersonas {
+  get(personaId: string): Persona | undefined;
+  list(includeArchived?: boolean): readonly Persona[];
+  getDefault(): Persona;
+  setDefault(personaId: string): Promise<Persona>;
+  create(candidate: unknown): Promise<Persona>;
+  update(
+    personaId: string,
+    patch: Readonly<Record<string, unknown>>,
+  ): Promise<Persona>;
+  archive(personaId: string): Promise<void>;
+}
+
+export interface PluginWorkspace {
+  allocate(sessionId: string): {
+    readonly sessionId: string;
+    readonly rootPath: string;
+  };
+  get(sessionId: string):
+    | {
+        readonly sessionId: string;
+        readonly rootPath: string;
+      }
+    | undefined;
+  listFiles(sessionId: string): Promise<readonly WorkspaceFile[]>;
+  release(sessionId: string): Promise<void>;
+}
+
+export interface PromptSlotContext {
+  readonly personaId: string;
+  readonly sessionId?: string | undefined;
+  readonly feature?: string | undefined;
+}
+
+export interface PromptSlotContribution {
+  readonly id: string;
+  readonly order: number;
+  render(context: PromptSlotContext): string | undefined;
+}
+
+export interface PluginPrompts {
+  registerSlot(slot: PromptSlotContribution): Disposable;
+}
+
 export interface PluginLogger {
   debug(message: string, metadata?: Readonly<Record<string, unknown>>): void;
   info(message: string, metadata?: Readonly<Record<string, unknown>>): void;
@@ -274,6 +325,7 @@ export interface PluginBus {
     handler: (
       input: CommandInput<TCommand>,
       signal: AbortSignal,
+      envelope: BusEnvelope,
     ) => CommandOutput<TCommand> | Promise<CommandOutput<TCommand>>,
   ): Disposable;
   invoke<TCommand extends CommandDefinition>(
@@ -288,7 +340,10 @@ export interface PluginBus {
   ): Promise<void>;
   on<TEvent extends EventDefinition>(
     event: TEvent,
-    handler: (payload: EventPayload<TEvent>) => void | Promise<void>,
+    handler: (
+      payload: EventPayload<TEvent>,
+      envelope: BusEnvelope,
+    ) => void | Promise<void>,
   ): Disposable;
 }
 
@@ -305,6 +360,9 @@ export interface PluginContext {
   readonly loops: PluginLoops;
   readonly interactions: PluginInteractions;
   readonly cost: PluginCost;
+  readonly personas: PluginPersonas;
+  readonly workspace: PluginWorkspace;
+  readonly prompts: PluginPrompts;
   readonly window: {
     show(): void;
   };
@@ -373,6 +431,40 @@ export function definePlugin<const TPlugin extends PluginDefinition>(plugin: TPl
   return Object.freeze(plugin);
 }
 
+export interface PluginTestHarness {
+  readonly plugin: PluginDefinition;
+  readonly context: PluginContext;
+  deactivate(): Promise<void>;
+}
+
+export async function createTestHarness(
+  plugin: PluginDefinition,
+  context: PluginContext,
+): Promise<PluginTestHarness> {
+  if (plugin.id !== context.pluginId) {
+    throw new Error(
+      `Plugin ${plugin.id} cannot activate in harness context ${context.pluginId}`,
+    );
+  }
+  const activation = await plugin.activate(context);
+  let active = true;
+  return {
+    plugin,
+    context,
+    deactivate: async () => {
+      if (!active) {
+        return;
+      }
+      active = false;
+      try {
+        await plugin.deactivate?.(context);
+      } finally {
+        await activation?.dispose();
+      }
+    },
+  };
+}
+
 export interface FlightDeckWidgetContribution<TComponent = unknown> {
   readonly id: string;
   readonly label: string;
@@ -434,6 +526,29 @@ export interface PluginUiBus {
     input: CommandInput<TCommand>,
   ): Promise<CommandOutput<TCommand>>;
   provides(command: CommandDefinition): Promise<boolean>;
+  on<TEvent extends EventDefinition>(
+    event: TEvent,
+    handler: (
+      payload: EventPayload<TEvent>,
+      envelope: BusEnvelope,
+    ) => void | Promise<void>,
+  ): Promise<Disposable>;
+}
+
+export interface PluginUiPersonas {
+  get(personaId: string): Promise<Persona | undefined>;
+  list(includeArchived?: boolean): Promise<readonly Persona[]>;
+  getDefault(): Promise<Persona>;
+  setDefault(personaId: string): Promise<Persona>;
+  create(candidate: unknown): Promise<Persona>;
+  update(
+    personaId: string,
+    patch: Readonly<Record<string, unknown>>,
+  ): Promise<Persona>;
+}
+
+export interface PluginUiModels {
+  list(): Promise<readonly ModelDescriptor[]>;
 }
 
 export interface PluginUiContext<TComponent = unknown> {
@@ -444,6 +559,8 @@ export interface PluginUiContext<TComponent = unknown> {
   readonly secrets: Pick<PluginSecrets, "set" | "delete" | "has">;
   readonly loops: PluginUiLoops;
   readonly interactions: PluginUiInteractions;
+  readonly personas: PluginUiPersonas;
+  readonly models: PluginUiModels;
   notify(request: NotificationRequest): Promise<void>;
 }
 

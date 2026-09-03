@@ -6,11 +6,14 @@ import {
   LoopManager,
   ModelRouter,
   NotificationService,
+  PersonaService,
   PersistenceRegistry,
   PluginManager,
+  PromptAssembler,
   SecretFacade,
   StoreFacade,
   ToolService,
+  WorkspaceService,
   satisfiesBorgEngine,
   type PluginSource,
 } from "@borg/kernel";
@@ -334,9 +337,9 @@ async function requestQuit(): Promise<void> {
 
   quitting = true;
   try {
-    await removeIpcBridge?.();
     loopManager?.shutdown();
     interactionService?.cancelAll();
+    await removeIpcBridge?.();
     await notificationSubscription?.dispose();
     await interactionSubscription?.dispose();
     await loopSubscription?.dispose();
@@ -417,6 +420,11 @@ if (!app.requestSingleInstanceLock()) {
     const costs = new CostLedger();
     const tools = new ToolService(interactionService);
     const models = new ModelRouter(costs);
+    const personaService = new PersonaService(storeFacade);
+    const promptAssembler = new PromptAssembler(personaService);
+    const workspaceService = new WorkspaceService(
+      path.join(app.getPath("userData"), "workspaces", "sessions"),
+    );
     loopManager = new LoopManager(
       models,
       tools,
@@ -424,6 +432,9 @@ if (!app.requestSingleInstanceLock()) {
       (pluginId) =>
         pluginId === "kernel.loop" ||
         pluginManager?.hasPermission(pluginId, "tools.invoke") === true,
+      personaService,
+      promptAssembler,
+      workspaceService,
     );
     pluginManager = new PluginManager(bus, KERNEL_VERSION, {
       config: configFacade,
@@ -436,6 +447,9 @@ if (!app.requestSingleInstanceLock()) {
       loops: loopManager,
       interactions: interactionService,
       costs,
+      personas: personaService,
+      prompts: promptAssembler,
+      workspaces: workspaceService,
       showWindow: showMainWindow,
       getPluginDataDirectory: (pluginId) => {
         const directory = path.join(
@@ -476,6 +490,7 @@ if (!app.requestSingleInstanceLock()) {
       if (!persistence.hasConfigStore()) {
         throw new Error("The selected config store did not install its provider");
       }
+      await personaService.initialize();
 
       setupSchemaRegistration = configFacade.registerSchema(
         "system.setup",
@@ -548,6 +563,8 @@ if (!app.requestSingleInstanceLock()) {
       notifications: notificationService,
       interactions: interactionService,
       loops: loopManager,
+      personas: personaService,
+      models,
       kernelVersion: KERNEL_VERSION,
       startedAt,
       shellCapability,

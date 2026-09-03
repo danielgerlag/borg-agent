@@ -55,7 +55,19 @@ async function enterFlightDeck(): Promise<void> {
     await expect(page.getByTestId("setup-complete")).toBeEnabled();
     await page.getByTestId("setup-complete").click();
   }
+  if (!(await page.getByTestId("surface-flightDeck").isVisible())) {
+    await page.getByTestId("nav-flightDeck").click();
+  }
   await expect(page.getByTestId("surface-flightDeck")).toBeVisible();
+}
+
+async function enterLoopDebugger(): Promise<void> {
+  await page.getByTestId("nav-workspace").click();
+  const tab = page.getByTestId("workspace-view-tab-borg.mock-llm.debug");
+  if (await tab.isVisible()) {
+    await tab.click();
+  }
+  await expect(page.getByTestId("loop-debug-workspace")).toBeVisible();
 }
 
 test.beforeEach(async () => {
@@ -74,7 +86,10 @@ test.beforeEach(async () => {
 test.afterEach(async () => {
   try {
     if (application.process().exitCode === null) {
-      await application.close();
+      const process = application.process();
+      const exit = waitForExit(process, 3_000);
+      process.kill();
+      await exit;
     }
   } catch {
     // Playwright may already have detached after an explicit application quit.
@@ -197,22 +212,18 @@ test("keeps the kernel and plugin active while the window is hidden", async () =
 });
 
 test("shows the existing window when a second instance is launched", async () => {
-  await application.evaluate(() => {
-    const api = (
-      globalThis as typeof globalThis & {
-        __borgTest?: { hideWindow(): void };
-      }
-    ).__borgTest;
-    api?.hideWindow();
-  });
   await expect
     .poll(() =>
       application.evaluate(() => {
         const api = (
           globalThis as typeof globalThis & {
-            __borgTest?: { isWindowVisible(): boolean };
+            __borgTest?: {
+              hideWindow(): void;
+              isWindowVisible(): boolean;
+            };
           }
         ).__borgTest;
+        api?.hideWindow();
         return api?.isWindowVisible() ?? true;
       }),
     )
@@ -253,7 +264,7 @@ test("completes the setup wizard with the development secret backend", async () 
     "Development secret saved",
   );
   await page.getByTestId("setup-complete").click();
-  await expect(page.getByTestId("surface-flightDeck")).toBeVisible();
+  await expect(page.getByTestId("surface-workspace")).toBeVisible();
 });
 
 test("uses OS-protected secret storage in production mode", async () => {
@@ -316,25 +327,26 @@ test("persists plugin config and wizard completion across a tray quit", async ()
   await expect(exit).resolves.toBe(0);
 
   await launchBorg();
-  await expect(page.getByTestId("surface-flightDeck")).toBeVisible();
+  await enterFlightDeck();
   await expect(page.getByTestId("hello-status-alive")).toContainText(
     "Persisted across restart",
   );
 });
 
 test("opens a recovery shell when durable config cannot start", async () => {
-  const userDataPath = await application.evaluate(() => {
+  const exit = waitForExit(application.process());
+  const userDataPath = await application.evaluate(({ app }) => {
     const api = (
       globalThis as typeof globalThis & {
         __borgTest?: { userDataPath(): string };
       }
     ).__borgTest;
-    return api?.userDataPath() ?? "";
+    const path = api?.userDataPath() ?? "";
+    app.quit();
+    return path;
   });
   expect(userDataPath).not.toBe("");
 
-  const exit = waitForExit(application.process());
-  await application.evaluate(({ app }) => app.quit());
   await expect(exit).resolves.toBe(0);
   writeFileSync(
     path.join(
@@ -360,8 +372,7 @@ test("explicit quit terminates the tray-resident kernel", async () => {
 });
 
 test("renders workspace, settings, and wizard extension points", async () => {
-  await page.getByTestId("nav-workspace").click();
-  await expect(page.getByTestId("loop-debug-workspace")).toBeVisible();
+  await enterLoopDebugger();
 
   await page.getByTestId("nav-settings").click();
   await expect(page.getByTestId("hello-settings-page")).toBeVisible();
@@ -374,7 +385,7 @@ test("renders workspace, settings, and wizard extension points", async () => {
 
 test("runs the scripted loop through tool approval accept and deny", async () => {
   await enterFlightDeck();
-  await page.getByTestId("nav-workspace").click();
+  await enterLoopDebugger();
 
   await page.getByTestId("run-approval-scenario").click();
   await expect(page.getByTestId("interaction-overlay")).toContainText(
@@ -400,7 +411,7 @@ test("runs the scripted loop through tool approval accept and deny", async () =>
 
 test("keeps safety approvals working when feedback is disabled", async () => {
   await enterFlightDeck();
-  await page.getByTestId("nav-workspace").click();
+  await enterLoopDebugger();
   const rendererReloaded = page.waitForEvent("load");
   await application.evaluate(async () => {
     const api = (
@@ -411,8 +422,7 @@ test("keeps safety approvals working when feedback is disabled", async () => {
     await api?.disablePlugin("borg.feedback");
   });
   await rendererReloaded;
-  await page.getByTestId("nav-workspace").click();
-  await expect(page.getByTestId("loop-debug-workspace")).toBeVisible();
+  await enterLoopDebugger();
 
   await page.getByTestId("run-feedback-scenario").click();
   await expect(page.getByTestId("loop-run-status")).toHaveText("failed");
@@ -429,7 +439,7 @@ test("keeps safety approvals working when feedback is disabled", async () => {
 
 test("keeps an ask-user interaction pending while the window is hidden", async () => {
   await enterFlightDeck();
-  await page.getByTestId("nav-workspace").click();
+  await enterLoopDebugger();
   await page.getByTestId("run-feedback-scenario").click();
   await expect(page.getByTestId("interaction-overlay")).toContainText(
     "Mock model question",
