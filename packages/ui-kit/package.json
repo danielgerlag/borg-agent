@@ -1,0 +1,18 @@
+{
+  "name": "@borg/ui-kit",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "dependencies": {
+    "@kobalte/core": "^0.13.13",
+    "class-variance-authority": "^0.7.1",
+    "solid-js": "^1.9.15",
+    "tailwind-merge": "^3.6.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

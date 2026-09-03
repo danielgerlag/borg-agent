@@ -1,0 +1,369 @@
+import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { spawn, type ChildProcess } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+const projectRoot = path.resolve(__dirname, "../..");
+const desktopApp = path.join(projectRoot, "apps/desktop");
+const electronPath = require("electron") as string;
+
+let application: ElectronApplication;
+let page: Page;
+let profileDirectory: string;
+let launchEnvironment: Record<string, string>;
+
+function waitForExit(child: ChildProcess, timeoutMs = 8_000): Promise<number | null> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`Electron process did not exit within ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+}
+
+async function launchBorg(): Promise<void> {
+  application = await electron.launch({
+    args: [desktopApp, `--user-data-dir=${profileDirectory}`],
+    env: launchEnvironment,
+  });
+  page = await application.firstWindow();
+  await page.waitForLoadState("domcontentloaded");
+}
+
+async function enterFlightDeck(): Promise<void> {
+  if (await page.getByTestId("setup-complete").isVisible()) {
+    if (
+      (await page.getByTestId("dev-secret-status").textContent())?.includes(
+        "Verification pending",
+      )
+    ) {
+      await page.getByTestId("dev-secret-input").fill("local-test-secret");
+      await page.getByTestId("dev-secret-save").click();
+      await expect(page.getByTestId("dev-secret-status")).toContainText(
+        "Secret backend verified",
+      );
+    }
+    await expect(page.getByTestId("setup-complete")).toBeEnabled();
+    await page.getByTestId("setup-complete").click();
+  }
+  await expect(page.getByTestId("surface-flightDeck")).toBeVisible();
+}
+
+test.beforeEach(async () => {
+  profileDirectory = mkdtempSync(path.join(tmpdir(), "borg-e2e-"));
+  launchEnvironment = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] =>
+        entry[0] !== "ELECTRON_RUN_AS_NODE" && entry[1] !== undefined,
+    ),
+  );
+  launchEnvironment.BORG_E2E = "1";
+  launchEnvironment.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
+  await launchBorg();
+});
+
+test.afterEach(async () => {
+  try {
+    if (application.process().exitCode === null) {
+      await application.close();
+    }
+  } catch {
+    // Playwright may already have detached after an explicit application quit.
+  }
+  rmSync(profileDirectory, { recursive: true, force: true });
+});
+
+test("loads the hello plugin through the main-process command bus", async () => {
+  await expect(page.getByTestId("app-shell")).toBeVisible();
+  await enterFlightDeck();
+  await expect(page.getByTestId("hello-widget")).toBeVisible();
+  await expect(page.getByTestId("hello-status-alive")).toContainText("Kernel alive");
+  await expect(page.getByTestId("hello-status-alive")).toContainText("borg.hello");
+  await expect(page.getByTestId("plugin-ui-error")).toHaveCount(0);
+});
+
+test("does not expose reusable renderer plugin identities", async () => {
+  const results = await page.evaluate(async () => {
+    const capture = async (operation: () => Promise<unknown>): Promise<string> => {
+      try {
+        await operation();
+        return "unexpected success";
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    };
+    window.location.hash = "bootstrap-replay";
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return Promise.all([
+      capture(() => window.borg.kernel.bootstrap()),
+      capture(() => window.borg.config.get("borg.hello")),
+      capture(() =>
+        window.borg.window.hide("00000000-0000-0000-0000-000000000000"),
+      ),
+    ]);
+  });
+
+  expect(results[0]).toContain("already been consumed");
+  expect(results[1]).toContain("Invalid UUID");
+  expect(results[2]).toContain("shell capability is invalid");
+});
+
+test("keeps the kernel and plugin active while the window is hidden", async () => {
+  await enterFlightDeck();
+  await expect(page.getByTestId("hello-status-alive")).toBeVisible();
+  const trayLabels = await application.evaluate(() => {
+    const api = (
+      globalThis as typeof globalThis & {
+        __borgTest?: { trayMenuLabels(): readonly string[] };
+      }
+    ).__borgTest;
+    return api?.trayMenuLabels() ?? [];
+  });
+  expect(trayLabels).toEqual(
+    expect.arrayContaining([
+      "Show Borg",
+      "Hide Borg",
+      "Pending interactions: 0",
+      "Running — loops 0 · bots 0 · graphs 0",
+      "Quit Borg",
+    ]),
+  );
+  await expect(
+    application.evaluate(() => {
+      const api = (
+        globalThis as typeof globalThis & {
+          __borgTest?: { trayIconIsEmpty(): boolean };
+        }
+      ).__borgTest;
+      return api?.trayIconIsEmpty() ?? true;
+    }),
+  ).resolves.toBe(false);
+
+  await application.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.close();
+  });
+
+  await expect
+    .poll(() =>
+      application.evaluate(() => {
+        const api = (
+          globalThis as typeof globalThis & {
+            __borgTest?: { isWindowVisible(): boolean };
+          }
+        ).__borgTest;
+        return api?.isWindowVisible() ?? true;
+      }),
+    )
+    .toBe(false);
+
+  await expect(
+    application.evaluate(() => {
+      const api = (
+        globalThis as typeof globalThis & {
+          __borgTest?: { activePluginIds(): readonly string[] };
+        }
+      ).__borgTest;
+      return api?.activePluginIds() ?? [];
+    }),
+  ).resolves.toContain("borg.hello");
+  const hiddenStatus = await page.evaluate(() =>
+    window.borg.command.invoke("borg.hello.getStatus", {}),
+  );
+  expect(hiddenStatus).toMatchObject({
+    pluginId: "borg.hello",
+    status: "alive",
+  });
+
+  await application.evaluate(() => {
+    const api = (
+      globalThis as typeof globalThis & {
+        __borgTest?: { showWindow(): void };
+      }
+    ).__borgTest;
+    api?.showWindow();
+  });
+
+  await expect(page.getByTestId("app-shell")).toBeVisible();
+  await expect(page.getByTestId("hello-status-alive")).toContainText("Kernel alive");
+});
+
+test("shows the existing window when a second instance is launched", async () => {
+  await application.evaluate(() => {
+    const api = (
+      globalThis as typeof globalThis & {
+        __borgTest?: { hideWindow(): void };
+      }
+    ).__borgTest;
+    api?.hideWindow();
+  });
+  await expect
+    .poll(() =>
+      application.evaluate(() => {
+        const api = (
+          globalThis as typeof globalThis & {
+            __borgTest?: { isWindowVisible(): boolean };
+          }
+        ).__borgTest;
+        return api?.isWindowVisible() ?? true;
+      }),
+    )
+    .toBe(false);
+
+  const secondInstance = spawn(
+    electronPath,
+    [desktopApp, `--user-data-dir=${profileDirectory}`],
+    {
+      env: launchEnvironment,
+      stdio: "ignore",
+    },
+  );
+  await expect(waitForExit(secondInstance)).resolves.toBe(0);
+  await expect
+    .poll(() =>
+      application.evaluate(() => {
+        const api = (
+          globalThis as typeof globalThis & {
+            __borgTest?: { isWindowVisible(): boolean };
+          }
+        ).__borgTest;
+        return api?.isWindowVisible() ?? false;
+      }),
+    )
+    .toBe(true);
+});
+
+test("completes the setup wizard with the development secret backend", async () => {
+  await expect(page.getByTestId("surface-wizard")).toBeVisible();
+  await expect(page.getByTestId("dev-secrets-step")).toBeVisible();
+  await page.getByTestId("dev-secret-input").fill("local-test-secret");
+  await page.getByTestId("dev-secret-save").click();
+  await expect(page.getByTestId("dev-secret-status")).toContainText(
+    "Secret backend verified",
+  );
+  await expect(page.getByTestId("toast")).toContainText(
+    "Development secret saved",
+  );
+  await page.getByTestId("setup-complete").click();
+  await expect(page.getByTestId("surface-flightDeck")).toBeVisible();
+});
+
+test("uses OS-protected secret storage in production mode", async () => {
+  test.skip(process.platform !== "darwin", "macOS safeStorage acceptance");
+  const oldProfile = profileDirectory;
+  const exit = waitForExit(application.process());
+  await application.evaluate(({ app }) => app.quit());
+  await expect(exit).resolves.toBe(0);
+  rmSync(oldProfile, { recursive: true, force: true });
+
+  profileDirectory = mkdtempSync(path.join(tmpdir(), "borg-e2e-os-"));
+  launchEnvironment.BORG_SECRET_BACKEND = "borg.secrets.os";
+  await launchBorg();
+
+  await expect(page.getByTestId("os-secrets-step")).toBeVisible();
+  await page.getByTestId("os-secret-input").fill("protected-test-secret");
+  await page.getByTestId("os-secret-save").click();
+  await expect(page.getByTestId("toast")).toContainText(
+    "Secure storage verified",
+  );
+
+  const userDataPath = await application.evaluate(() => {
+    const api = (
+      globalThis as typeof globalThis & {
+        __borgTest?: { userDataPath(): string };
+      }
+    ).__borgTest;
+    return api?.userDataPath() ?? "";
+  });
+  const exitAfterSave = waitForExit(application.process());
+  await application.evaluate(({ app }) => app.quit());
+  await expect(exitAfterSave).resolves.toBe(0);
+  const encryptedVault = readFileSync(
+    path.join(
+      userDataPath,
+      "plugins",
+      "borg.secrets.os",
+      "secrets.json",
+    ),
+    "utf8",
+  );
+  expect(encryptedVault).not.toContain("protected-test-secret");
+
+  await launchBorg();
+  await expect(page.getByTestId("os-secret-status")).toContainText(
+    "Secure storage verified",
+  );
+});
+
+test("persists plugin config and wizard completion across a tray quit", async () => {
+  await enterFlightDeck();
+  await page.getByTestId("nav-settings").click();
+  await expect(page.getByTestId("hello-settings-page")).toBeVisible();
+  await page.getByTestId("hello-message-input").fill("Persisted across restart");
+  await page.getByTestId("hello-message-save").click();
+  await expect(page.getByTestId("hello-message-status")).toContainText("Saved");
+
+  const exit = waitForExit(application.process());
+  await application.evaluate(({ app }) => app.quit());
+  await expect(exit).resolves.toBe(0);
+
+  await launchBorg();
+  await expect(page.getByTestId("surface-flightDeck")).toBeVisible();
+  await expect(page.getByTestId("hello-status-alive")).toContainText(
+    "Persisted across restart",
+  );
+});
+
+test("opens a recovery shell when durable config cannot start", async () => {
+  const userDataPath = await application.evaluate(() => {
+    const api = (
+      globalThis as typeof globalThis & {
+        __borgTest?: { userDataPath(): string };
+      }
+    ).__borgTest;
+    return api?.userDataPath() ?? "";
+  });
+  expect(userDataPath).not.toBe("");
+
+  const exit = waitForExit(application.process());
+  await application.evaluate(({ app }) => app.quit());
+  await expect(exit).resolves.toBe(0);
+  writeFileSync(
+    path.join(
+      userDataPath,
+      "plugins",
+      "borg.config.sqlite",
+      "borg.sqlite3",
+    ),
+    "not a sqlite database",
+  );
+
+  await launchBorg();
+  await expect(page.getByTestId("kernel-startup-error")).toBeVisible();
+  await expect(page.getByTestId("kernel-startup-error")).toContainText(
+    "Borg could not initialize",
+  );
+});
+
+test("explicit quit terminates the tray-resident kernel", async () => {
+  const exit = waitForExit(application.process());
+  await application.evaluate(({ app }) => app.quit());
+  await expect(exit).resolves.toBe(0);
+});
+
+test("renders workspace, settings, and wizard extension points", async () => {
+  await page.getByTestId("nav-workspace").click();
+  await expect(page.getByTestId("surface-workspace")).toContainText("No workspace view yet");
+
+  await page.getByTestId("nav-settings").click();
+  await expect(page.getByTestId("hello-settings-page")).toBeVisible();
+  await expect(page.getByTestId("dev-secrets-step")).toBeVisible();
+
+  await page.getByTestId("nav-wizard").click();
+  await expect(page.getByTestId("surface-wizard")).toContainText("Prepare Borg");
+  await expect(page.getByTestId("dev-secrets-step")).toBeVisible();
+});

@@ -1,0 +1,16 @@
+{
+  "id": "borg.config.sqlite",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-config-sqlite/main",
+  "permissions": [
+    "fs:pluginData"
+  ],
+  "contributes": {
+    "kinds": [
+      "configStore"
+    ]
+  }
+}

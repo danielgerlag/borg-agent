@@ -1,0 +1,22 @@
+{
+  "name": "@borg/plugin-config-sqlite",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
+  "exports": {
+    "./main": "./dist/main.js"
+  },
+  "borg": {
+    "id": "borg.config.sqlite",
+    "manifest": "borg.plugin.json",
+    "main": "/main"
+  },
+  "dependencies": {
+    "@borg/plugin-sdk": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

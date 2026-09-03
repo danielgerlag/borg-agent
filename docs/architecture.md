@@ -1061,4 +1061,44 @@ Before starting a later slice, CI should enforce:
 - SDK boundaries contain no `any`;
 - every command handler and event emission was declared by its plugin.
 
-Slice 0 introduces only this document and `docs/research/hivemind.md`. Slice 1 begins application scaffolding after these decisions are accepted.
+Slice 0 introduced only this document and `docs/research/hivemind.md`. Slice 1 began application scaffolding after those decisions were accepted.
+
+## Slice 1 implementation record
+
+Slice 1 establishes:
+
+- pnpm workspaces for `apps/desktop`, kernel/contracts/SDK/UI-kit packages, and bundled plugins;
+- strict TypeScript 7 builds with CommonJS main/preload output and a Vite/Solid renderer;
+- a single main-process `CommandEventBus` with Zod input/output, closed errors, timeouts, exact event subscriptions, and isolated subscribers;
+- transactional in-process plugin activation, engine compatibility checks, declaration enforcement, reverse-order disposal, and incompatible/failed states;
+- build-time discovery from each `plugins/*/package.json` `borg` descriptor, producing separate main and renderer catalogs while preserving one plugin identity;
+- a fixed, sender-validated preload bridge for command invocation, capability lookup, bootstrap, and window actions;
+- an always-present tray, close-to-hide behavior, explicit graceful Quit, and a kernel/plugin lifetime independent of window visibility;
+- renderer extension hosts for workspace, settings, wizard, and Flight Deck contributions;
+- the `borg.hello` plugin, whose UI widget obtains status by invoking `borg.hello.getStatus` through main rather than direct IPC;
+- Vitest coverage for loader/bus contract failures and Playwright journeys against the real Electron app.
+
+The generated catalogs are source-controlled for type checking and regenerated before every build. Bundled discovery metadata determines their contents; neither the kernel nor the shell contains hello-specific behavior.
+
+Native tray menus do not expose a portable Playwright click API on macOS. Slice 1 therefore verifies the real menu model, closes the real `BrowserWindow`, proves main and `borg.hello` remain active, and calls the same show handler used by the tray. The native icon/menu appearance and physical menu click remain the documented manual platform check.
+
+## Slice 2 implementation record
+
+Slice 2 adds the first capability-bootstrap phase. Main statically selects the sole engine-compatible `configStore` contribution and activates it through a constrained loader context before any ordinary plugin. The bootstrap plugin may install only its config/store provider; config schemas must be empty/default-satisfiable at that stage. Once installed, the kernel activates the configured `secretStore` and then all ordinary plugins in deterministic catalog order.
+
+The persistence implementation consists of:
+
+- kernel-owned `ConfigFacade`, `StoreFacade`, `SecretFacade`, and `PersistenceRegistry`;
+- schema-validated JSON config, serialized read-modify-write updates, scoped watchers, runtime provider/result checks, and automatic plugin namespaces;
+- scoped JSON store operations with atomic provider-side transaction batches and prefix listing;
+- `borg.config.sqlite`, backed by Node's SQLite API with WAL mode and separate config/store tables;
+- `borg.secrets.os`, which encrypts values through Electron `safeStorage`, rejects Linux `basic_text`, validates ciphertext, and stores only encrypted blobs;
+- `borg.secrets.dev`, an explicit plaintext development/test backend with a warning and owner-only file permissions.
+
+Both secret plugins validate vault structure, use null-prototype maps, and serialize copy-on-write commits through unique, fsynced temporary files. The selected provider ID and wizard completion state are persisted under the kernel setup namespace. Production defaults to the OS backend; the isolated Electron acceptance environment explicitly selects the development backend.
+
+Settings and wizard descriptors now carry ordering, and required wizard steps expose readiness to the shell. `borg.hello` contributes a schema-backed settings page whose Flight Deck message persists across application restarts. The selected secret plugin contributes its own required setup step and settings page. Completing setup is a shell capability, not a plugin command.
+
+`NotificationService` validates requests, isolates subscribers/native delivery, publishes renderer toast events, and optionally invokes Electron OS notifications. Renderer host APIs are scoped by one-time plugin capability tokens from a single-consumption bootstrap snapshot; main resolves the namespace and permissions rather than trusting a renderer-supplied plugin ID. This is bug isolation for trusted in-process plugins, not a hostile-code sandbox.
+
+If durable bootstrap fails, main still opens the renderer with an explicit kernel recovery state instead of leaving a tray-only process. Slice 2 tests cover facade validation/namespacing, concurrent config updates, provider selection, notification isolation, concurrent durable secret writes, plugin capability expiry, wizard readiness, development secret setup, renderer capability replay rejection, config/wizard persistence across tray Quit, and corrupt-SQLite recovery. The build also runs a plugin import-boundary check.

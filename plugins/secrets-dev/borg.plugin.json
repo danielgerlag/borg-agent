@@ -1,0 +1,24 @@
+{
+  "id": "borg.secrets.dev",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-secrets-dev/main",
+  "ui": "@borg/plugin-secrets-dev/ui",
+  "permissions": [
+    "fs:pluginData",
+    "secrets:read",
+    "secrets:write",
+    "notifications:send",
+    "ui.settings",
+    "ui.wizard"
+  ],
+  "contributes": {
+    "kinds": [
+      "secretStore",
+      "settingsPage",
+      "wizardStep"
+    ]
+  }
+}

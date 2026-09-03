@@ -1,0 +1,23 @@
+{
+  "id": "borg.hello",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-hello/main",
+  "ui": "@borg/plugin-hello/ui",
+  "permissions": [
+    "notifications:send",
+    "ui.flightDeck",
+    "ui.settings"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.hello.getStatus"
+    ],
+    "kinds": [
+      "flightDeckWidget",
+      "settingsPage"
+    ]
+  }
+}

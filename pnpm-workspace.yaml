@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+  - plugins/*
+
+onlyBuiltDependencies:
+  - electron
+  - esbuild

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.vite/
+playwright-report/
+test-results/
+coverage/
+*.tsbuildinfo
+.DS_Store
+
+# Read-only upstream source used during architecture research.
+.research/
