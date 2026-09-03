@@ -1,3 +1,11 @@
+import type {
+  InteractionResponse,
+  LoopEvent,
+  LoopRunSnapshot,
+  LoopStartInput,
+  PendingInteraction,
+} from "@borg/contracts";
+
 export {};
 
 declare global {
@@ -17,6 +25,7 @@ declare global {
     readonly setup: SetupSnapshot;
     readonly shellCapability: string;
     readonly recovery?: { readonly message: string } | undefined;
+    readonly pendingInteractions: readonly PendingInteraction[];
   }
 
   interface SetupSnapshot {
@@ -75,6 +84,37 @@ declare global {
     };
     readonly setup: {
       complete(capability: string): Promise<SetupSnapshot>;
+    };
+    readonly loops: {
+      start(
+        capability: string,
+        input: LoopStartInput,
+      ): Promise<LoopRunSnapshot>;
+      get(
+        capability: string,
+        runId: string,
+      ): Promise<LoopRunSnapshot | undefined>;
+      list(capability: string): Promise<readonly LoopRunSnapshot[]>;
+      subscribe(
+        capability: string,
+        runId: string,
+        listener: (event: LoopEvent) => void,
+      ): Promise<() => void>;
+      pause(capability: string, runId: string): Promise<boolean>;
+      resume(capability: string, runId: string): Promise<boolean>;
+      cancel(capability: string, runId: string): Promise<boolean>;
+    };
+    readonly interactions: {
+      list(capability: string): Promise<readonly PendingInteraction[]>;
+      respond(
+        shellCapability: string,
+        interactionId: string,
+        response: InteractionResponse,
+      ): Promise<boolean>;
+      subscribe(
+        shellCapability: string,
+        listener: (pending: readonly PendingInteraction[]) => void,
+      ): () => void;
     };
     readonly window: {
       hide(shellCapability: string): Promise<boolean>;

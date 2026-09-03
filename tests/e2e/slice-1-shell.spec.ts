@@ -6,7 +6,9 @@ import path from "node:path";
 
 const projectRoot = path.resolve(__dirname, "../..");
 const desktopApp = path.join(projectRoot, "apps/desktop");
-const electronPath = require("electron") as string;
+const electronPath = require(
+  require.resolve("electron", { paths: [desktopApp] }),
+) as string;
 
 let application: ElectronApplication;
 let page: Page;
@@ -28,6 +30,7 @@ function waitForExit(child: ChildProcess, timeoutMs = 8_000): Promise<number | n
 
 async function launchBorg(): Promise<void> {
   application = await electron.launch({
+    executablePath: electronPath,
     args: [desktopApp, `--user-data-dir=${profileDirectory}`],
     env: launchEnvironment,
   });
@@ -36,6 +39,7 @@ async function launchBorg(): Promise<void> {
 }
 
 async function enterFlightDeck(): Promise<void> {
+  await expect(page.getByTestId("app-shell")).toBeVisible();
   if (await page.getByTestId("setup-complete").isVisible()) {
     if (
       (await page.getByTestId("dev-secret-status").textContent())?.includes(
@@ -357,7 +361,7 @@ test("explicit quit terminates the tray-resident kernel", async () => {
 
 test("renders workspace, settings, and wizard extension points", async () => {
   await page.getByTestId("nav-workspace").click();
-  await expect(page.getByTestId("surface-workspace")).toContainText("No workspace view yet");
+  await expect(page.getByTestId("loop-debug-workspace")).toBeVisible();
 
   await page.getByTestId("nav-settings").click();
   await expect(page.getByTestId("hello-settings-page")).toBeVisible();
@@ -366,4 +370,170 @@ test("renders workspace, settings, and wizard extension points", async () => {
   await page.getByTestId("nav-wizard").click();
   await expect(page.getByTestId("surface-wizard")).toContainText("Prepare Borg");
   await expect(page.getByTestId("dev-secrets-step")).toBeVisible();
+});
+
+test("runs the scripted loop through tool approval accept and deny", async () => {
+  await enterFlightDeck();
+  await page.getByTestId("nav-workspace").click();
+
+  await page.getByTestId("run-approval-scenario").click();
+  await expect(page.getByTestId("interaction-overlay")).toContainText(
+    "Approve tools.echo",
+  );
+  await page.getByTestId("interaction-allow").click();
+  await expect(page.getByTestId("interaction-overlay")).toBeHidden();
+  await expect(page.getByTestId("loop-run-status")).toHaveText("completed");
+  await expect(page.getByTestId("loop-output")).toContainText(
+    "Echo completed: hello from the approved tool",
+  );
+  await expect(page.getByTestId("loop-run-result")).toContainText(
+    "tokens · USD 0.002",
+  );
+
+  await page.getByTestId("run-approval-scenario").click();
+  await expect(page.getByTestId("interaction-overlay")).toBeVisible();
+  await page.getByTestId("interaction-deny").click();
+  await expect(page.getByTestId("interaction-overlay")).toBeHidden();
+  await expect(page.getByTestId("loop-run-status")).toHaveText("failed");
+  await expect(page.getByTestId("loop-error")).toContainText("denied");
+});
+
+test("keeps safety approvals working when feedback is disabled", async () => {
+  await enterFlightDeck();
+  await page.getByTestId("nav-workspace").click();
+  const rendererReloaded = page.waitForEvent("load");
+  await application.evaluate(async () => {
+    const api = (
+      globalThis as typeof globalThis & {
+        __borgTest?: { disablePlugin(pluginId: string): Promise<void> };
+      }
+    ).__borgTest;
+    await api?.disablePlugin("borg.feedback");
+  });
+  await rendererReloaded;
+  await page.getByTestId("nav-workspace").click();
+  await expect(page.getByTestId("loop-debug-workspace")).toBeVisible();
+
+  await page.getByTestId("run-feedback-scenario").click();
+  await expect(page.getByTestId("loop-run-status")).toHaveText("failed");
+  await expect(page.getByTestId("loop-error")).toContainText("unavailable");
+  await expect(page.getByTestId("interaction-overlay")).toBeHidden();
+
+  await page.getByTestId("run-approval-scenario").click();
+  await expect(page.getByTestId("interaction-overlay")).toContainText(
+    "Approve tools.echo",
+  );
+  await page.getByTestId("interaction-deny").click();
+  await expect(page.getByTestId("loop-run-status")).toHaveText("failed");
+});
+
+test("keeps an ask-user interaction pending while the window is hidden", async () => {
+  await enterFlightDeck();
+  await page.getByTestId("nav-workspace").click();
+  await page.getByTestId("run-feedback-scenario").click();
+  await expect(page.getByTestId("interaction-overlay")).toContainText(
+    "Mock model question",
+  );
+  await expect(page.getByTestId("interaction-overlay")).toContainText(
+    "What should the mock model do next?",
+  );
+  await expect(page.getByTestId("human-input-interaction")).toBeVisible();
+
+  await application.evaluate(() => {
+    const api = (
+      globalThis as typeof globalThis & {
+        __borgTest?: { hideWindow(): void };
+      }
+    ).__borgTest;
+    api?.hideWindow();
+  });
+  await expect
+    .poll(() =>
+      application.evaluate(() => {
+        const api = (
+          globalThis as typeof globalThis & {
+            __borgTest?: { isWindowVisible(): boolean };
+          }
+        ).__borgTest;
+        return api?.isWindowVisible() ?? true;
+      }),
+    )
+    .toBe(false);
+  await expect
+    .poll(() =>
+      application.evaluate(() => {
+        const api = (
+          globalThis as typeof globalThis & {
+            __borgTest?: { trayMenuLabels(): readonly string[] };
+          }
+        ).__borgTest;
+        return api?.trayMenuLabels() ?? [];
+      }),
+    )
+    .toContain("Pending interactions: 1");
+  await expect
+    .poll(() =>
+      application.evaluate(() => {
+        const api = (
+          globalThis as typeof globalThis & {
+            __borgTest?: { trayTitle(): string };
+          }
+        ).__borgTest;
+        return api?.trayTitle() ?? "";
+      }),
+    )
+    .toBe("1");
+
+  await application.evaluate(() => {
+    const api = (
+      globalThis as typeof globalThis & {
+        __borgTest?: { showWindow(): void };
+      }
+    ).__borgTest;
+    api?.showWindow();
+  });
+  await expect
+    .poll(() =>
+      application.evaluate(() => {
+        const api = (
+          globalThis as typeof globalThis & {
+            __borgTest?: { isWindowVisible(): boolean };
+          }
+        ).__borgTest;
+        return api?.isWindowVisible() ?? false;
+      }),
+    )
+    .toBe(true);
+  await expect(page.getByTestId("human-input-interaction")).toBeVisible();
+  await page.getByTestId("human-input-text").fill("continue safely");
+  await page.getByTestId("human-input-submit").click();
+  await expect(page.getByTestId("interaction-overlay")).toBeHidden();
+  await expect(page.getByTestId("loop-run-status")).toHaveText("completed");
+  await expect(page.getByTestId("loop-output")).toContainText(
+    "User answered: continue safely",
+  );
+  await expect
+    .poll(() =>
+      application.evaluate(() => {
+        const api = (
+          globalThis as typeof globalThis & {
+            __borgTest?: { trayMenuLabels(): readonly string[] };
+          }
+        ).__borgTest;
+        return api?.trayMenuLabels() ?? [];
+      }),
+    )
+    .toContain("Pending interactions: 0");
+  await expect
+    .poll(() =>
+      application.evaluate(() => {
+        const api = (
+          globalThis as typeof globalThis & {
+            __borgTest?: { trayTitle(): string };
+          }
+        ).__borgTest;
+        return api?.trayTitle() ?? "pending";
+      }),
+    )
+    .toBe("");
 });

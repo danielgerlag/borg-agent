@@ -1,9 +1,15 @@
 import type {
   FlightDeckWidgetContribution,
+  InteractionRendererContribution,
+  InteractionRendererProps,
   SettingsPageContribution,
   WizardStepContribution,
   WorkspaceViewContribution,
 } from "@borg/plugin-sdk";
+import type {
+  InteractionResponse,
+  PendingInteraction,
+} from "@borg/contracts";
 import { Panel } from "@borg/ui-kit";
 import {
   Blocks,
@@ -20,6 +26,7 @@ import {
   ErrorBoundary,
   For,
   Match,
+  Show,
   Switch,
   createSignal,
   type Component,
@@ -35,12 +42,20 @@ interface AppProps {
   readonly settingsPages: readonly SettingsPageContribution<Component>[];
   readonly wizardSteps: readonly WizardStepContribution<Component>[];
   readonly widgets: readonly FlightDeckWidgetContribution<Component>[];
+  readonly interactionRenderers: readonly InteractionRendererContribution<
+    (props: InteractionRendererProps) => unknown
+  >[];
+  readonly pendingInteractions: readonly PendingInteraction[];
   readonly pluginErrors: readonly string[];
   readonly setupCompleted: boolean;
   readonly toasts: readonly RendererNotification[];
   completeSetup(): Promise<void>;
   dismissToast(id: string): void;
   hideWindow(): Promise<void>;
+  respondToInteraction(
+    interactionId: string,
+    response: InteractionResponse,
+  ): Promise<void>;
 }
 
 const navigation = [
@@ -55,6 +70,8 @@ export const App: Component<AppProps> = (props) => {
     props.setupCompleted ? "flightDeck" : "wizard",
   );
   const [completingSetup, setCompletingSetup] = createSignal(false);
+  const [selectedInteractionId, setSelectedInteractionId] =
+    createSignal<string>();
   const [wizardReadinessErrors, setWizardReadinessErrors] = createSignal<
     readonly string[]
   >([]);
@@ -90,6 +107,18 @@ export const App: Component<AppProps> = (props) => {
     } finally {
       setCompletingSetup(false);
     }
+  };
+  const activeInteraction = (): PendingInteraction | undefined =>
+    props.pendingInteractions.find(
+      ({ id }) => id === selectedInteractionId(),
+    ) ?? props.pendingInteractions[0];
+  const interactionRenderer = () => {
+    const interaction = activeInteraction();
+    return interaction?.kind === "human_input"
+      ? props.interactionRenderers.find(
+          ({ kind }) => kind === interaction.kind,
+        )
+      : undefined;
   };
 
   return (
@@ -314,6 +343,113 @@ export const App: Component<AppProps> = (props) => {
           </Switch>
         </main>
       </div>
+
+      <Show keyed when={activeInteraction()}>
+        {(interaction) => (
+          <div
+            class="fixed inset-0 z-40 grid place-items-center bg-black/65 p-6 backdrop-blur-sm"
+            data-testid="interaction-overlay"
+          >
+            <section class="w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6 shadow-2xl">
+              <Show when={props.pendingInteractions.length > 1}>
+                <div
+                  class="mb-5 flex gap-2 overflow-x-auto border-b border-[var(--border)] pb-4"
+                  data-testid="pending-interaction-list"
+                >
+                  <For each={props.pendingInteractions}>
+                    {(pending, index) => (
+                      <button
+                        type="button"
+                        class="shrink-0 rounded-lg border border-[var(--border)] px-3 py-2 text-left text-xs hover:border-[var(--accent)]"
+                        onClick={() => setSelectedInteractionId(pending.id)}
+                      >
+                        <span class="text-[var(--text-subtle)]">
+                          {index() + 1}
+                        </span>{" "}
+                        {pending.title}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
+                {interaction.kind.replaceAll("_", " ")}
+              </p>
+              <h2 class="mt-2 text-xl font-semibold">{interaction.title}</h2>
+              <p class="mt-3 text-sm text-[var(--text-muted)]">
+                {interaction.prompt}
+              </p>
+
+              <Show
+                when={interactionRenderer()}
+                fallback={
+                  <Show
+                    when={interaction.kind !== "human_input"}
+                    fallback={
+                      <p class="mt-4 text-sm text-[var(--danger)]">
+                        The feedback interaction renderer is unavailable.
+                      </p>
+                    }
+                  >
+                    <div class="mt-6 grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        class="rounded-xl border border-[var(--danger)]/50 px-4 py-2.5 text-sm text-[var(--danger)]"
+                        onClick={() =>
+                          void props.respondToInteraction(interaction.id, {
+                            kind: "approval",
+                            decision: "deny",
+                          })
+                        }
+                        data-testid="interaction-deny"
+                      >
+                        Deny
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[var(--background)]"
+                        onClick={() =>
+                          void props.respondToInteraction(interaction.id, {
+                            kind: "approval",
+                            decision: "allow",
+                          })
+                        }
+                        data-testid="interaction-allow"
+                      >
+                        Allow once
+                      </button>
+                    </div>
+                  </Show>
+                }
+              >
+                {(renderer) => (
+                  <ErrorBoundary
+                    fallback={(error) => (
+                      <p
+                        class="mt-4 text-sm text-[var(--danger)]"
+                        data-testid="plugin-ui-error"
+                      >
+                        {renderer().id}: {String(error)}
+                      </p>
+                    )}
+                  >
+                    <Dynamic
+                      component={
+                        renderer()
+                          .component as Component<InteractionRendererProps>
+                      }
+                      interaction={interaction}
+                      respond={(response: InteractionResponse) =>
+                        props.respondToInteraction(interaction.id, response)
+                      }
+                    />
+                  </ErrorBoundary>
+                )}
+              </Show>
+            </section>
+          </div>
+        )}
+      </Show>
 
       <div class="fixed bottom-5 right-5 z-50 grid w-80 gap-3" aria-live="polite">
         <For each={props.toasts}>

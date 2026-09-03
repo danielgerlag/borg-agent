@@ -120,7 +120,7 @@ importers:
         version: 4.1.11(vitest@4.1.11)
       electron:
         specifier: ^44.0.0
-        version: 44.0.0(supports-color@7.2.0)
+        version: 44.0.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -139,9 +139,15 @@ importers:
       '@borg/plugin-config-sqlite':
         specifier: workspace:*
         version: link:../../plugins/config-sqlite
+      '@borg/plugin-feedback':
+        specifier: workspace:*
+        version: link:../../plugins/feedback
       '@borg/plugin-hello':
         specifier: workspace:*
         version: link:../../plugins/hello
+      '@borg/plugin-mock-llm':
+        specifier: workspace:*
+        version: link:../../plugins/mock-llm
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
@@ -151,6 +157,9 @@ importers:
       '@borg/plugin-secrets-os':
         specifier: workspace:*
         version: link:../../plugins/secrets-os
+      '@borg/plugin-tools-echo':
+        specifier: workspace:*
+        version: link:../../plugins/tools-echo
       '@borg/ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui-kit
@@ -169,7 +178,7 @@ importers:
         version: 4.3.3(vite@8.2.2(@types/node@26.3.0)(jiti@2.7.0))
       electron:
         specifier: ^44.0.0
-        version: 44.0.0
+        version: 44.0.0(supports-color@7.2.0)
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -225,7 +234,43 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  plugins/feedback:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
   plugins/hello:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
+  plugins/mock-llm:
     dependencies:
       '@borg/contracts':
         specifier: workspace:*
@@ -275,6 +320,12 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+
+  plugins/tools-echo:
+    dependencies:
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
 
 packages:
 

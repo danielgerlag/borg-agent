@@ -2,6 +2,7 @@ import { render } from "solid-js/web";
 import { App } from "./App";
 import { activatePluginUi } from "./plugin-ui-manager";
 import "./styles.css";
+import { InteractionStore } from "./interaction-store";
 import { ToastStore } from "./toast-store";
 
 const rootElement = document.getElementById("root");
@@ -16,9 +17,13 @@ async function start(root: HTMLElement): Promise<void> {
       throw new Error(snapshot.recovery.message);
     }
     const toastStore = new ToastStore(snapshot.shellCapability);
+    const interactionStore = new InteractionStore(
+      snapshot.shellCapability,
+      snapshot.pendingInteractions,
+    );
     const pluginUi = await activatePluginUi(snapshot.activePlugins);
 
-    render(
+    const disposeRoot = render(
       () => (
         <App
           kernelVersion={snapshot.kernelVersion}
@@ -28,6 +33,8 @@ async function start(root: HTMLElement): Promise<void> {
           settingsPages={pluginUi.registry.getSettingsPages()}
           wizardSteps={pluginUi.registry.getWizardSteps()}
           widgets={pluginUi.registry.getFlightDeckWidgets()}
+          interactionRenderers={pluginUi.registry.getInteractionRenderers()}
+          pendingInteractions={interactionStore.pending()}
           pluginErrors={pluginUi.errors}
           setupCompleted={snapshot.setup.wizardCompleted}
           toasts={toastStore.toasts()}
@@ -38,6 +45,9 @@ async function start(root: HTMLElement): Promise<void> {
           hideWindow={async () => {
             await window.borg.window.hide(snapshot.shellCapability);
           }}
+          respondToInteraction={(interactionId, response) =>
+            interactionStore.respond(interactionId, response)
+          }
         />
       ),
       root,
@@ -48,6 +58,8 @@ async function start(root: HTMLElement): Promise<void> {
       () => {
         void pluginUi.dispose();
         toastStore.dispose();
+        interactionStore.dispose();
+        disposeRoot();
       },
       { once: true },
     );

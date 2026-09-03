@@ -1,0 +1,21 @@
+{
+  "id": "borg.mock-llm",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-mock-llm/main",
+  "ui": "@borg/plugin-mock-llm/ui",
+  "permissions": [
+    "models.register",
+    "loops.start",
+    "tools.invoke",
+    "ui.workspace"
+  ],
+  "contributes": {
+    "kinds": [
+      "llmProvider",
+      "workspaceView"
+    ]
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "borg.feedback",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-feedback/main",
+  "ui": "@borg/plugin-feedback/ui",
+  "permissions": [
+    "interactions.read",
+    "interactions.request:human_input",
+    "notifications:send",
+    "tools.register",
+    "window.show",
+    "ui.flightDeck",
+    "ui.interactions",
+    "ui.settings"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.feedback.ask"
+    ],
+    "events": [
+      "borg.feedback.requested",
+      "borg.feedback.resolved"
+    ],
+    "kinds": [
+      "tool",
+      "interactionRenderer",
+      "flightDeckWidget",
+      "settingsPage"
+    ]
+  }
+}

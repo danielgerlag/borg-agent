@@ -1,0 +1,16 @@
+{
+  "id": "borg.tools.echo",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-tools-echo/main",
+  "permissions": [
+    "tools.register"
+  ],
+  "contributes": {
+    "kinds": [
+      "tool"
+    ]
+  }
+}

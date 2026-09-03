@@ -9,9 +9,14 @@ import {
   type PluginLogger,
 } from "@borg/plugin-sdk";
 import { randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { CommandEventBus } from "./command-event-bus";
+import type { CostLedger } from "./cost-ledger";
 import { satisfiesBorgEngine } from "./engine-range";
 import { PluginLoadError } from "./errors";
+import type { InteractionService } from "./interaction-service";
+import type { LoopManager } from "./loop-manager";
+import type { ModelRouter } from "./model-router";
 import type { NotificationService } from "./notification-service";
 import type {
   ConfigFacade,
@@ -19,6 +24,7 @@ import type {
   SecretFacade,
   StoreFacade,
 } from "./persistence";
+import type { ToolService } from "./tool-service";
 
 export type PluginStatus =
   | "discovered"
@@ -56,6 +62,12 @@ export interface PluginManagerOptions {
   readonly secrets?: SecretFacade;
   readonly persistence?: PersistenceRegistry;
   readonly notifications?: NotificationService;
+  readonly tools?: ToolService;
+  readonly models?: ModelRouter;
+  readonly loops?: LoopManager;
+  readonly interactions?: InteractionService;
+  readonly costs?: CostLedger;
+  readonly showWindow?: () => void;
   getPluginDataDirectory?(pluginId: string): string;
 }
 
@@ -65,6 +77,7 @@ interface ActivePlugin {
   readonly controller: AbortController;
   readonly context: PluginContext;
   readonly disposables: Disposable[];
+  readonly operations: Set<Promise<unknown>>;
   readonly uiCapability: string;
 }
 
@@ -178,8 +191,15 @@ export class PluginManager {
   readonly #records = new Map<string, PluginRecord>();
   readonly #active = new Map<string, ActivePlugin>();
   readonly #activationOrder: string[] = [];
+  readonly #subscribers = new Map<symbol, () => void | Promise<void>>();
   readonly #shutdownTimeoutMs: number;
   readonly #options: PluginManagerOptions;
+  readonly #operationContext = new AsyncLocalStorage<{
+    readonly pluginId: string;
+    readonly commandId: string;
+    readonly signal: AbortSignal;
+    active: boolean;
+  }>();
 
   constructor(
     readonly bus: CommandEventBus,
@@ -189,6 +209,16 @@ export class PluginManager {
     this.#shutdownTimeoutMs =
       options.shutdownTimeoutMs ?? DEFAULT_PLUGIN_SHUTDOWN_TIMEOUT_MS;
     this.#options = options;
+  }
+
+  subscribe(subscriber: () => void | Promise<void>): Disposable {
+    const token = Symbol("plugin-lifecycle-subscriber");
+    this.#subscribers.set(token, subscriber);
+    return {
+      dispose: () => {
+        this.#subscribers.delete(token);
+      },
+    };
   }
 
   async activateConfigStore(source: PluginSource): Promise<PluginRecord> {
@@ -234,6 +264,7 @@ export class PluginManager {
         error: `Requires Borg ${manifest.engines.borg}; host is ${this.hostVersion}`,
       };
       this.#records.set(manifest.id, record);
+      this.#publishLifecycle();
       return record;
     }
 
@@ -245,6 +276,7 @@ export class PluginManager {
 
     const controller = new AbortController();
     const disposables: Disposable[] = [];
+    const operations = new Set<Promise<unknown>>();
     const stagedRegistrations: StagedRegistration[] = [];
     let activationCommitted = false;
     let definition: PluginDefinition | undefined;
@@ -266,6 +298,12 @@ export class PluginManager {
       const track = <TDisposable extends Disposable>(disposable: TDisposable): TDisposable => {
         disposables.push(disposable);
         return disposable;
+      };
+      const trackOperation = <T>(operation: Promise<T>): Promise<T> => {
+        operations.add(operation);
+        return operation.finally(() => {
+          operations.delete(operation);
+        });
       };
       const stage = (factory: () => Disposable): Disposable => {
         if (controller.signal.aborted) {
@@ -345,6 +383,38 @@ export class PluginManager {
           throw new Error("Persistence registry is unavailable");
         }
         return this.#options.persistence;
+      };
+      const requireTools = (): ToolService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.tools) {
+          throw new Error("Tool service is unavailable");
+        }
+        return this.#options.tools;
+      };
+      const requireModels = (): ModelRouter => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.models) {
+          throw new Error("Model router is unavailable");
+        }
+        return this.#options.models;
+      };
+      const requireLoops = (): LoopManager => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.loops) {
+          throw new Error("Loop manager is unavailable");
+        }
+        return this.#options.loops;
+      };
+      const requireInteractions = (): InteractionService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.interactions) {
+          throw new Error("Interaction service is unavailable");
+        }
+        return this.#options.interactions;
       };
 
       if (
@@ -428,6 +498,188 @@ export class PluginManager {
             );
           },
         },
+        tools: {
+          register: (tool) => {
+            assertPermission("tools.register");
+            assertContribution("tool");
+            return stage(() =>
+              requireTools().register(manifest.id, {
+                ...tool,
+                execute: (input, execution) =>
+                  trackOperation(
+                    Promise.resolve().then(async () =>
+                      tool.execute(input, {
+                        ...execution,
+                        signal: AbortSignal.any([
+                          execution.signal,
+                          controller.signal,
+                        ]),
+                      }),
+                    ),
+                  ),
+              }),
+            );
+          },
+          invoke: (toolId, input, invocationOptions) => {
+            assertPermission("tools.invoke");
+            const operation = this.#operationContext.getStore();
+            if (operation && !operation.active) {
+              throw new Error(
+                `Command ${operation.commandId} context is no longer active`,
+              );
+            }
+            return requireTools().invoke(toolId, input, {
+              callerPluginId: manifest.id,
+              runId: invocationOptions?.runId,
+              signal: operation
+                ? AbortSignal.any([operation.signal, controller.signal])
+                : controller.signal,
+            });
+          },
+        },
+        models: {
+          registerProvider: (provider) => {
+            assertPermission("models.register");
+            assertContribution("llmProvider");
+            return stage(() =>
+              requireModels().registerProvider(manifest.id, {
+                ...provider,
+                complete: (request, signal) =>
+                  trackOperation(
+                    Promise.resolve().then(async () =>
+                      provider.complete(
+                        request,
+                        AbortSignal.any([signal, controller.signal]),
+                      ),
+                    ),
+                  ),
+              }),
+            );
+          },
+          complete: (request, signal) => {
+            assertOrdinaryContext();
+            assertPermission("models.complete");
+            const operation = this.#operationContext.getStore();
+            if (operation && !operation.active) {
+              throw new Error(
+                `Command ${operation.commandId} context is no longer active`,
+              );
+            }
+            return requireModels().complete(
+              {
+                ...request,
+                tools: [],
+                correlationId: randomUUID(),
+              },
+              signal
+                ? AbortSignal.any([
+                    signal,
+                    ...(operation ? [operation.signal] : []),
+                    controller.signal,
+                  ])
+                : operation
+                  ? AbortSignal.any([operation.signal, controller.signal])
+                  : controller.signal,
+            );
+          },
+        },
+        loops: {
+          start: async (input) => {
+            assertPermission("loops.start");
+            const operation = this.#operationContext.getStore();
+            if (operation && !operation.active) {
+              throw new Error(
+                `Command ${operation.commandId} context is no longer active`,
+              );
+            }
+            return requireLoops().start(
+              input,
+              manifest.id,
+              operation
+                ? AbortSignal.any([operation.signal, controller.signal])
+                : controller.signal,
+              permissions.has("tools.invoke"),
+            );
+          },
+          get: (runId) => {
+            assertPermission("loops.start");
+            return requireLoops().get(runId, manifest.id);
+          },
+          list: () => {
+            assertPermission("loops.start");
+            return requireLoops().list(manifest.id);
+          },
+          pause: (runId) => {
+            assertPermission("loops.start");
+            return requireLoops().pause(runId, manifest.id);
+          },
+          resume: (runId) => {
+            assertPermission("loops.start");
+            return requireLoops().resume(runId, manifest.id);
+          },
+          cancel: (runId) => {
+            assertPermission("loops.start");
+            return requireLoops().cancel(runId, manifest.id);
+          },
+          subscribe: (runId, handler) => {
+            assertPermission("loops.start");
+            return track(
+              requireLoops().subscribeRun(runId, manifest.id, handler),
+            );
+          },
+        },
+        interactions: {
+          requestHumanInput: (request, signal) => {
+            assertPermission("interactions.request:human_input");
+            const operation = this.#operationContext.getStore();
+            if (
+              manifest.id !== "borg.feedback" ||
+              operation?.pluginId !== manifest.id ||
+              operation.commandId !== "borg.feedback.ask" ||
+              !operation.active
+            ) {
+              throw new Error(
+                `Plugin ${manifest.id} may request human input only while handling borg.feedback.ask`,
+              );
+            }
+            const wait = requireInteractions().requestHumanInput(
+              manifest.id,
+              request,
+              signal
+                ? AbortSignal.any([
+                    signal,
+                    operation.signal,
+                    controller.signal,
+                  ])
+                : AbortSignal.any([operation.signal, controller.signal]),
+            );
+            return {
+              interactionId: wait.interaction.id,
+              response: wait.response,
+            };
+          },
+        },
+        cost: {
+          record: (record) => {
+            assertContextActive();
+            assertPermission("cost.record");
+            if (!this.#options.costs) {
+              throw new Error("Cost ledger is unavailable");
+            }
+            this.#options.costs.record(record);
+          },
+        },
+        window: {
+          show: () => {
+            assertContextActive();
+            assertOrdinaryContext();
+            assertPermission("window.show");
+            if (!this.#options.showWindow) {
+              throw new Error("Window service is unavailable");
+            }
+            this.#options.showWindow();
+          },
+        },
         notify: (request) => {
           assertContextActive();
           assertOrdinaryContext();
@@ -445,17 +697,58 @@ export class PluginManager {
           handle: (command, handler) => {
             assertOrdinaryContext();
             return stage(() =>
-              this.bus.handle(manifest.id, commandIds, command, (input, signal) =>
-                handler(input, AbortSignal.any([signal, controller.signal])),
-              ),
+              this.bus.handle(manifest.id, commandIds, command, (input, signal) => {
+                const operationSignal = AbortSignal.any([
+                  signal,
+                  controller.signal,
+                ]);
+                const operation = {
+                  pluginId: manifest.id,
+                  commandId: command.id,
+                  signal: operationSignal,
+                  active: true,
+                };
+                const pending = this.#operationContext.run(
+                  operation,
+                  async () => {
+                    const expire = (): void => {
+                      operation.active = false;
+                    };
+                    operationSignal.addEventListener("abort", expire, {
+                      once: true,
+                    });
+                    if (operationSignal.aborted) {
+                      expire();
+                    }
+                    try {
+                      return await handler(input, operationSignal);
+                    } finally {
+                      expire();
+                      operationSignal.removeEventListener("abort", expire);
+                    }
+                  },
+                );
+                return trackOperation(pending);
+              }),
             );
           },
-          invoke: (command, input) => {
+          invoke: (command, input, invocationOptions) => {
             assertOrdinaryContext();
             if (controller.signal.aborted) {
               throw new Error(`Plugin ${manifest.id} context is no longer active`);
             }
-            return this.bus.invoke(command, input);
+            const operation = this.#operationContext.getStore();
+            return this.bus.invoke(command, input, {
+              signal: invocationOptions?.signal
+                ? AbortSignal.any([
+                    invocationOptions.signal,
+                    ...(operation ? [operation.signal] : []),
+                    controller.signal,
+                  ])
+                : operation
+                  ? AbortSignal.any([operation.signal, controller.signal])
+                  : controller.signal,
+            });
           },
           provides: (command: CommandDefinition) => {
             assertOrdinaryContext();
@@ -463,7 +756,10 @@ export class PluginManager {
           },
           emit: (event, payload) => {
             assertOrdinaryContext();
-            if (!activationCommitted || controller.signal.aborted) {
+            if (
+              !activationCommitted ||
+              (controller.signal.aborted && !this.#active.has(manifest.id))
+            ) {
               throw new Error(
                 `Plugin ${manifest.id} emitted ${event.id} outside its active lifecycle`,
               );
@@ -493,6 +789,7 @@ export class PluginManager {
         controller,
         context,
         disposables,
+        operations,
         uiCapability: randomUUID(),
       });
       this.#activationOrder.push(manifest.id);
@@ -503,9 +800,12 @@ export class PluginManager {
         status: "active",
       };
       this.#records.set(manifest.id, record);
+      this.#publishLifecycle();
       return record;
     } catch (error) {
       controller.abort(error);
+      this.#options.tools?.removePlugin(manifest.id);
+      this.#options.models?.removePlugin(manifest.id);
       await this.#disposeAll(disposables);
       this.bus.removePlugin(manifest.id);
 
@@ -516,6 +816,7 @@ export class PluginManager {
         status: "failed",
         error: message,
       });
+      this.#publishLifecycle();
 
       throw error instanceof PluginLoadError
         ? error
@@ -556,10 +857,27 @@ export class PluginManager {
       status: "deactivating",
     });
     this.bus.removePlugin(pluginId);
+    this.#options.tools?.removePlugin(pluginId);
+    this.#options.models?.removePlugin(pluginId);
     active.controller.abort(new Error(`Plugin ${pluginId} is deactivating`));
+    this.#options.loops?.cancelOwned(pluginId);
 
     let deactivationError: unknown;
     const shutdownDeadline = Date.now() + this.#shutdownTimeoutMs;
+    if (active.operations.size > 0) {
+      try {
+        await withTimeout(
+          async () => {
+            await Promise.allSettled([...active.operations]);
+          },
+          Math.max(1, shutdownDeadline - Date.now()),
+          `Plugin ${pluginId} active operations`,
+        );
+      } catch (error) {
+        deactivationError = error;
+        console.error(`[kernel] plugin ${pluginId} operations did not stop`, error);
+      }
+    }
     try {
       await withTimeout(
         async () => active.definition.deactivate?.(active.context),
@@ -567,7 +885,7 @@ export class PluginManager {
         `Plugin ${pluginId} deactivation`,
       );
     } catch (error) {
-      deactivationError = error;
+      deactivationError ??= error;
       console.error(`[kernel] plugin ${pluginId} deactivation failed`, error);
     } finally {
       await this.#disposeAll(active.disposables, shutdownDeadline);
@@ -581,6 +899,7 @@ export class PluginManager {
         version: active.manifest.version,
         status: "disabled",
       });
+      this.#publishLifecycle();
     }
 
     if (deactivationError !== undefined) {
@@ -640,6 +959,16 @@ export class PluginManager {
           ]
         : [];
     });
+  }
+
+  #publishLifecycle(): void {
+    for (const subscriber of this.#subscribers.values()) {
+      Promise.resolve()
+        .then(async () => subscriber())
+        .catch((error: unknown) =>
+          console.error("[kernel] plugin lifecycle subscriber failed", error),
+        );
+    }
   }
 
   async #disposeAll(

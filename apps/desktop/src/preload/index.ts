@@ -127,6 +127,116 @@ const bridge = Object.freeze({
       });
     },
   }),
+  loops: Object.freeze({
+    start: (capability: string, input: unknown): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "loops.start",
+        args: { capability, input },
+      }),
+    get: (capability: string, runId: string): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "loops.get",
+        args: { capability, runId },
+      }),
+    list: (capability: string): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "loops.list",
+        args: { capability },
+      }),
+    subscribe: async (
+      capability: string,
+      runId: string,
+      listener: (event: unknown) => void,
+    ): Promise<(() => void)> => {
+      let subscriptionId: string | undefined;
+      const pending: unknown[] = [];
+      const wrapped = (
+        _event: IpcRendererEvent,
+        payload: { readonly subscriptionId?: unknown; readonly event?: unknown },
+      ): void => {
+        if (subscriptionId === undefined) {
+          pending.push(payload);
+        } else if (payload?.subscriptionId === subscriptionId) {
+          listener(payload.event);
+        }
+      };
+      ipcRenderer.on("borg:loops:event", wrapped);
+      try {
+        subscriptionId = await invokeKernel<string>("borg:kernel:call", {
+          method: "loops.subscribe",
+          args: { capability, runId },
+        });
+        for (const payload of pending) {
+          if (
+            payload &&
+            typeof payload === "object" &&
+            (payload as { readonly subscriptionId?: unknown }).subscriptionId ===
+              subscriptionId
+          ) {
+            listener((payload as { readonly event?: unknown }).event);
+          }
+        }
+      } catch (error) {
+        ipcRenderer.removeListener("borg:loops:event", wrapped);
+        throw error;
+      }
+      return () => {
+        ipcRenderer.removeListener("borg:loops:event", wrapped);
+        if (subscriptionId) {
+          void invokeKernel("borg:kernel:call", {
+            method: "loops.unsubscribe",
+            args: { capability, subscriptionId },
+          }).catch(() => undefined);
+        }
+      };
+    },
+    pause: (capability: string, runId: string): Promise<boolean> =>
+      invokeKernel("borg:kernel:call", {
+        method: "loops.pause",
+        args: { capability, runId },
+      }),
+    resume: (capability: string, runId: string): Promise<boolean> =>
+      invokeKernel("borg:kernel:call", {
+        method: "loops.resume",
+        args: { capability, runId },
+      }),
+    cancel: (capability: string, runId: string): Promise<boolean> =>
+      invokeKernel("borg:kernel:call", {
+        method: "loops.cancel",
+        args: { capability, runId },
+      }),
+  }),
+  interactions: Object.freeze({
+    list: (capability: string): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "interactions.list",
+        args: { capability },
+      }),
+    respond: (
+      shellCapability: string,
+      interactionId: string,
+      response: unknown,
+    ): Promise<boolean> => {
+      assertShellCapability(shellCapability);
+      return invokeKernel("borg:kernel:call", {
+        method: "interactions.respond",
+        args: { capability: shellCapability, interactionId, response },
+      });
+    },
+    subscribe: (
+      shellCapability: string,
+      listener: (pending: unknown) => void,
+    ): (() => void) => {
+      assertShellCapability(shellCapability);
+      const wrapped = (_event: IpcRendererEvent, pending: unknown): void => {
+        listener(pending);
+      };
+      ipcRenderer.on("borg:interactions", wrapped);
+      return () => {
+        ipcRenderer.removeListener("borg:interactions", wrapped);
+      };
+    },
+  }),
   window: Object.freeze({
     hide: (capability: string): Promise<boolean> => {
       assertShellCapability(capability);

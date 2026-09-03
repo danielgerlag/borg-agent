@@ -25,6 +25,44 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.feedback",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-feedback/main",
+      "ui": "@borg/plugin-feedback/ui",
+      "permissions": [
+        "interactions.read",
+        "interactions.request:human_input",
+        "notifications:send",
+        "tools.register",
+        "window.show",
+        "ui.flightDeck",
+        "ui.interactions",
+        "ui.settings"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.feedback.ask"
+        ],
+        "events": [
+          "borg.feedback.requested",
+          "borg.feedback.resolved"
+        ],
+        "kinds": [
+          "tool",
+          "interactionRenderer",
+          "flightDeckWidget",
+          "settingsPage"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-feedback/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.hello",
       "version": "0.1.0",
       "engines": {
@@ -49,6 +87,31 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-hello/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.mock-llm",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-mock-llm/main",
+      "ui": "@borg/plugin-mock-llm/ui",
+      "permissions": [
+        "models.register",
+        "loops.start",
+        "tools.invoke",
+        "ui.workspace"
+      ],
+      "contributes": {
+        "kinds": [
+          "llmProvider",
+          "workspaceView"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-mock-llm/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {
@@ -105,5 +168,25 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-secrets-os/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.tools.echo",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-tools-echo/main",
+      "permissions": [
+        "tools.register"
+      ],
+      "contributes": {
+        "kinds": [
+          "tool"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-tools-echo/main") as { default: PluginDefinition }).default,
   },
 ];

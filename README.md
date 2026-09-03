@@ -2,7 +2,7 @@
 
 Borg is a privacy-first local desktop agent platform built as a TypeScript microkernel inside Electron.
 
-The repository currently contains Slice 2: the tray-resident Electron shell, in-process plugin loader, typed command/event bus, SQLite config/store persistence, OS-protected and explicit development secret backends, setup wizard, settings pages, and notifications.
+The repository currently contains Slice 3: the tray-resident Electron shell and plugin runtime from Slices 1–2, plus the kernel ReAct loop, model router, tool approval pipeline, interaction queue, and cost ledger. Scripted `borg.mock-llm`, `borg.tools.echo`, and `borg.feedback` plugins provide a debug workspace for approval and ask-user journeys before chat arrives in Slice 4.
 
 ## Prerequisites
 
@@ -25,9 +25,11 @@ npx --yes pnpm@12.0.0 install
 npx --yes pnpm@12.0.0 dev
 ```
 
+If an Azure Artifacts mirror rotates between equivalent `ms-feed-*` hosts, pnpm 12 may reject an unchanged lockfile URL during verification. After reviewing the committed lockfile, use `npx --yes pnpm@12.0.0 install --trust-lockfile` for that mirrored-registry case.
+
 Closing the window hides Borg. Use the tray menu to show it again or quit the kernel.
 
-On first run, Borg selects the OS-protected secret backend and opens the setup wizard. Enter a test value to verify protected storage, then complete setup. The Hello settings page demonstrates schema-validated config that persists across application restarts. Automated tests use the explicit plaintext development backend inside an isolated temporary profile.
+On first run, Borg selects the OS-protected secret backend and opens the setup wizard. Enter a test value to verify protected storage, then complete setup. Open Workspace → Loop debugger to run the tool-approval and ask-user scenarios. Pending questions remain in the main-process queue when the window is hidden and are reflected in the tray.
 
 ## Verification
 

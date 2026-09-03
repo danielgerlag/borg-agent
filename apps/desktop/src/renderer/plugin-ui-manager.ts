@@ -91,6 +91,10 @@ export function createUiTransaction(
         stage("ui.flightDeck", "flightDeckWidget", () =>
           registry.registerFlightDeckWidget(contribution),
         ),
+      registerInteractionRenderer: (contribution) =>
+        stage("ui.interactions", "interactionRenderer", () =>
+          registry.registerInteractionRenderer(contribution),
+        ),
     },
     commit: async () => {
       try {
@@ -171,6 +175,70 @@ export async function activatePluginUi(
             return window.borg.secrets
               .delete(plugin.uiCapability, key)
               .then(() => undefined);
+          },
+        },
+        loops: {
+          start: (input) => {
+            if (!plugin.permissions.includes("loops.start")) {
+              throw new Error(`Plugin ${plugin.id} cannot start loops`);
+            }
+            return window.borg.loops.start(plugin.uiCapability, input);
+          },
+          get: (runId) => {
+            if (!plugin.permissions.includes("loops.start")) {
+              throw new Error(`Plugin ${plugin.id} cannot inspect loops`);
+            }
+            return window.borg.loops.get(plugin.uiCapability, runId);
+          },
+          list: () => {
+            if (!plugin.permissions.includes("loops.start")) {
+              throw new Error(`Plugin ${plugin.id} cannot list loops`);
+            }
+            return window.borg.loops.list(plugin.uiCapability);
+          },
+          subscribe: async (runId, handler) => {
+            if (!plugin.permissions.includes("loops.start")) {
+              throw new Error(`Plugin ${plugin.id} cannot subscribe to loops`);
+            }
+            const unsubscribe = await window.borg.loops.subscribe(
+              plugin.uiCapability,
+              runId,
+              (event) => {
+                void Promise.resolve(handler(event)).catch((error: unknown) =>
+                  console.error(
+                    `[renderer] loop subscriber from ${plugin.id} failed`,
+                    error,
+                  ),
+                );
+              },
+            );
+            return { dispose: unsubscribe };
+          },
+          pause: (runId) => {
+            if (!plugin.permissions.includes("loops.start")) {
+              throw new Error(`Plugin ${plugin.id} cannot pause loops`);
+            }
+            return window.borg.loops.pause(plugin.uiCapability, runId);
+          },
+          resume: (runId) => {
+            if (!plugin.permissions.includes("loops.start")) {
+              throw new Error(`Plugin ${plugin.id} cannot resume loops`);
+            }
+            return window.borg.loops.resume(plugin.uiCapability, runId);
+          },
+          cancel: (runId) => {
+            if (!plugin.permissions.includes("loops.start")) {
+              throw new Error(`Plugin ${plugin.id} cannot cancel loops`);
+            }
+            return window.borg.loops.cancel(plugin.uiCapability, runId);
+          },
+        },
+        interactions: {
+          list: () => {
+            if (!plugin.permissions.includes("interactions.read")) {
+              throw new Error(`Plugin ${plugin.id} cannot inspect interactions`);
+            }
+            return window.borg.interactions.list(plugin.uiCapability);
           },
         },
         notify: async (request) => {

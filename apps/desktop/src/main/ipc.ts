@@ -2,6 +2,8 @@ import {
   CommandInvocationError,
   type CommandEventBus,
   type ConfigFacade,
+  type InteractionService,
+  type LoopManager,
   type NotificationService,
   type PluginManager,
   type SecretFacade,
@@ -12,7 +14,12 @@ import {
   type Event as ElectronEvent,
   type IpcMainInvokeEvent,
 } from "electron";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  interactionResponseSchema,
+  loopStartInputSchema,
+} from "@borg/contracts";
 
 const commandInvokeSchema = z.object({
   id: z.string().min(1),
@@ -84,6 +91,66 @@ const kernelCallSchema = z.discriminatedUnion("method", [
   z.object({
     method: z.literal("setup.complete"),
     args: z.object({ capability: z.string().uuid() }),
+  }),
+  z.object({
+    method: z.literal("loops.start"),
+    args: z.object({
+      capability: z.string().uuid(),
+      input: loopStartInputSchema,
+    }),
+  }),
+  z.object({
+    method: z.literal("loops.get"),
+    args: z.object({
+      capability: z.string().uuid(),
+      runId: z.string().uuid(),
+    }),
+  }),
+  z.object({
+    method: z.literal("loops.list"),
+    args: z.object({
+      capability: z.string().uuid(),
+    }),
+  }),
+  z.object({
+    method: z.literal("loops.subscribe"),
+    args: z.object({
+      capability: z.string().uuid(),
+      runId: z.string().uuid(),
+    }),
+  }),
+  z.object({
+    method: z.literal("loops.unsubscribe"),
+    args: z.object({
+      capability: z.string().uuid(),
+      subscriptionId: z.string().uuid(),
+    }),
+  }),
+  z.object({
+    method: z.literal("loops.cancel"),
+    args: z.object({
+      capability: z.string().uuid(),
+      runId: z.string().uuid(),
+    }),
+  }),
+  z.object({
+    method: z.enum(["loops.pause", "loops.resume"]),
+    args: z.object({
+      capability: z.string().uuid(),
+      runId: z.string().uuid(),
+    }),
+  }),
+  z.object({
+    method: z.literal("interactions.list"),
+    args: z.object({ capability: z.string().uuid() }),
+  }),
+  z.object({
+    method: z.literal("interactions.respond"),
+    args: z.object({
+      capability: z.string().uuid(),
+      interactionId: z.string().uuid(),
+      response: interactionResponseSchema,
+    }),
   }),
 ]);
 
@@ -169,6 +236,8 @@ export interface IpcBridgeOptions {
   readonly config: ConfigFacade;
   readonly secrets: SecretFacade;
   readonly notifications: NotificationService;
+  readonly interactions: InteractionService;
+  readonly loops: LoopManager;
   readonly kernelVersion: string;
   readonly startedAt: string;
   readonly shellCapability: string;
@@ -184,6 +253,28 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
   let bootstrapConsumedBy: number | undefined;
   let activeCalls = 0;
   const drainWaiters = new Set<() => void>();
+  const rendererCommandControllers = new Set<AbortController>();
+  const loopSubscriptions = new Map<
+    string,
+    {
+      readonly senderId: number;
+      readonly pluginId: string;
+      readonly dispose: () => void;
+    }
+  >();
+  const disposeLoopSubscriptions = (senderId?: number): void => {
+    for (const [subscriptionId, subscription] of loopSubscriptions) {
+      if (senderId === undefined || subscription.senderId === senderId) {
+        subscription.dispose();
+        loopSubscriptions.delete(subscriptionId);
+      }
+    }
+  };
+  const cancelRendererCommands = (reason: string): void => {
+    for (const controller of rendererCommandControllers) {
+      controller.abort(new Error(reason));
+    }
+  };
   const track = async <T>(operation: () => Promise<T>): Promise<T> => {
     activeCalls += 1;
     try {
@@ -203,12 +294,25 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
     "borg:command:invoke",
     (event, payload): Promise<IpcResult> =>
       track(async () => {
+        const controller = new AbortController();
+        const onDestroyed = (): void => {
+          controller.abort(new Error("Renderer was destroyed"));
+        };
         try {
           assertTrustedSender(event, options.getMainWindow, options.rendererUrl);
           const request = commandInvokeSchema.parse(payload);
-          return success(await options.bus.invokeById(request.id, request.input));
+          rendererCommandControllers.add(controller);
+          event.sender.once("destroyed", onDestroyed);
+          return success(
+            await options.bus.invokeById(request.id, request.input, {
+              signal: controller.signal,
+            }),
+          );
         } catch (error) {
           return failure(error);
+        } finally {
+          rendererCommandControllers.delete(controller);
+          event.sender.removeListener("destroyed", onDestroyed);
         }
       }),
   );
@@ -233,6 +337,8 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
           isMainFrame &&
           bootstrapConsumedBy === sender.id
         ) {
+          cancelRendererCommands("Renderer navigated");
+          disposeLoopSubscriptions(sender.id);
           bootstrapConsumedBy = undefined;
           sender.removeListener("did-frame-navigate", resetBootstrap);
         }
@@ -250,6 +356,7 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
           : await options.getSetupState(),
         shellCapability: options.shellCapability,
         recovery,
+        pendingInteractions: options.interactions.listPending(),
       });
       } catch (error) {
         return failure(error);
@@ -348,6 +455,122 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
             throw new Error("Renderer shell capability is invalid");
           }
           return success(await options.completeSetup());
+        case "loops.start": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "loops.start",
+          );
+          return success(options.loops.start(request.args.input, pluginId));
+        }
+        case "loops.get": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "loops.start",
+          );
+          return success(options.loops.get(request.args.runId, pluginId));
+        }
+        case "loops.list": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "loops.start",
+          );
+          return success(options.loops.list(pluginId));
+        }
+        case "loops.subscribe": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "loops.start",
+          );
+          const subscriptionId = randomUUID();
+          const sender = event.sender;
+          const subscription = options.loops.subscribeRun(
+            request.args.runId,
+            pluginId,
+            (loopEvent) => {
+              if (!sender.isDestroyed()) {
+                sender.send("borg:loops:event", {
+                  subscriptionId,
+                  event: loopEvent,
+                });
+              }
+            },
+          );
+          loopSubscriptions.set(subscriptionId, {
+            senderId: sender.id,
+            pluginId,
+            dispose: () => subscription.dispose(),
+          });
+          return success(subscriptionId);
+        }
+        case "loops.unsubscribe": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "loops.start",
+          );
+          const subscription = loopSubscriptions.get(
+            request.args.subscriptionId,
+          );
+          if (
+            !subscription ||
+            subscription.senderId !== event.sender.id ||
+            subscription.pluginId !== pluginId
+          ) {
+            return success(false);
+          }
+          subscription.dispose();
+          loopSubscriptions.delete(request.args.subscriptionId);
+          return success(true);
+        }
+        case "loops.cancel": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "loops.start",
+          );
+          return success(options.loops.cancel(request.args.runId, pluginId));
+        }
+        case "loops.pause":
+        case "loops.resume": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "loops.start",
+          );
+          return success(
+            request.method === "loops.pause"
+              ? options.loops.pause(request.args.runId, pluginId)
+              : options.loops.resume(request.args.runId, pluginId),
+          );
+        }
+        case "interactions.list":
+          if (request.args.capability !== options.shellCapability) {
+            const pluginId = resolveUiPlugin(
+              options.plugins,
+              request.args.capability,
+              "interactions.read",
+            );
+            return success(
+              options.interactions
+                .listPending()
+                .filter(({ source }) => source.pluginId === pluginId),
+            );
+          }
+          return success(options.interactions.listPending());
+        case "interactions.respond":
+          if (request.args.capability !== options.shellCapability) {
+            throw new Error("Renderer shell capability is invalid");
+          }
+          return success(
+            options.interactions.respond(
+              request.args.interactionId,
+              request.args.response,
+            ),
+          );
       }
       } catch (error) {
         return failure(error);
@@ -359,6 +582,8 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
     ipcMain.removeHandler("borg:command:invoke");
     ipcMain.removeHandler("borg:kernel:bootstrap");
     ipcMain.removeHandler("borg:kernel:call");
+    cancelRendererCommands("IPC bridge is shutting down");
+    disposeLoopSubscriptions();
     if (activeCalls > 0) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([

@@ -64,11 +64,20 @@ export class CommandEventBus {
   async invoke<TCommand extends CommandDefinition>(
     command: TCommand,
     input: CommandInput<TCommand>,
+    options?: { readonly signal?: AbortSignal | undefined },
   ): Promise<CommandOutput<TCommand>> {
-    return (await this.invokeById(command.id, input)) as CommandOutput<TCommand>;
+    return (await this.invokeById(
+      command.id,
+      input,
+      options,
+    )) as CommandOutput<TCommand>;
   }
 
-  async invokeById(commandId: string, input: unknown): Promise<unknown> {
+  async invokeById(
+    commandId: string,
+    input: unknown,
+    options?: { readonly signal?: AbortSignal | undefined },
+  ): Promise<unknown> {
     const record = this.#commandHandlers.get(commandId);
     if (!record) {
       throw new CommandInvocationError(
@@ -87,8 +96,16 @@ export class CommandEventBus {
     }
 
     const controller = new AbortController();
+    if (options?.signal?.aborted) {
+      throw new CommandInvocationError(
+        "failed",
+        `Command ${commandId} was cancelled`,
+        { cause: options.signal.reason },
+      );
+    }
     const timeoutMs = record.command.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let removeCancellationListener: (() => void) | undefined;
 
     const timeout = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
@@ -100,11 +117,32 @@ export class CommandEventBus {
         controller.abort(timeoutError);
       }, timeoutMs);
     });
+    const cancellation = new Promise<never>((_resolve, reject) => {
+      if (!options?.signal) {
+        return;
+      }
+      const onAbort = (): void => {
+        const error = new CommandInvocationError(
+          "failed",
+          `Command ${commandId} was cancelled`,
+          { cause: options.signal?.reason },
+        );
+        reject(error);
+        controller.abort(error);
+      };
+      options.signal.addEventListener("abort", onAbort, { once: true });
+      removeCancellationListener = () =>
+        options.signal?.removeEventListener("abort", onAbort);
+      if (options.signal.aborted) {
+        onAbort();
+      }
+    });
 
     try {
       const result = await Promise.race([
         Promise.resolve(record.handler(parsedInput.data, controller.signal)),
         timeout,
+        cancellation,
       ]);
       const parsedOutput = record.command.output.safeParse(result);
       if (!parsedOutput.success) {
@@ -126,6 +164,7 @@ export class CommandEventBus {
       if (timer !== undefined) {
         clearTimeout(timer);
       }
+      removeCancellationListener?.();
     }
   }
 

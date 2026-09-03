@@ -1,11 +1,16 @@
 import {
   CommandEventBus,
   ConfigFacade,
+  CostLedger,
+  InteractionService,
+  LoopManager,
+  ModelRouter,
   NotificationService,
   PersistenceRegistry,
   PluginManager,
   SecretFacade,
   StoreFacade,
+  ToolService,
   satisfiesBorgEngine,
   type PluginSource,
 } from "@borg/kernel";
@@ -56,8 +61,13 @@ let pluginManager: PluginManager | undefined;
 let configFacade: ConfigFacade | undefined;
 let secretFacade: SecretFacade | undefined;
 let notificationService: NotificationService | undefined;
+let interactionService: InteractionService | undefined;
+let loopManager: LoopManager | undefined;
 let removeIpcBridge: (() => Promise<void>) | undefined;
 let notificationSubscription: Disposable | undefined;
+let interactionSubscription: Disposable | undefined;
+let loopSubscription: Disposable | undefined;
+let pluginLifecycleSubscription: Disposable | undefined;
 let setupSchemaRegistration: Disposable | undefined;
 let startupRecovery: { readonly message: string } | undefined;
 let windowServicesReady = false;
@@ -65,6 +75,8 @@ let quitting = false;
 let shutdownComplete = false;
 let currentTrayMenuLabels: readonly string[] = [];
 let currentTrayIconIsEmpty = true;
+let currentPendingInteractions = 0;
+let currentRunningLoops = 0;
 
 type SetupState = z.infer<typeof setupSchema>;
 
@@ -132,11 +144,11 @@ function rebuildTrayMenu(): void {
     },
     { type: "separator" },
     {
-      label: "Pending interactions: 0",
+      label: `Pending interactions: ${currentPendingInteractions}`,
       enabled: false,
     },
     {
-      label: "Running — loops 0 · bots 0 · graphs 0",
+      label: `Running — loops ${currentRunningLoops} · bots 0 · graphs 0`,
       enabled: false,
     },
     { type: "separator" },
@@ -150,6 +162,14 @@ function rebuildTrayMenu(): void {
 
   currentTrayMenuLabels = template.flatMap((item) =>
     typeof item.label === "string" ? [item.label] : [],
+  );
+  tray.setTitle(
+    currentPendingInteractions > 0 ? String(currentPendingInteractions) : "",
+  );
+  tray.setToolTip(
+    currentPendingInteractions > 0
+      ? `Borg · ${currentPendingInteractions} pending`
+      : "Borg",
   );
   tray.setContextMenu(Menu.buildFromTemplate(template));
 }
@@ -315,7 +335,12 @@ async function requestQuit(): Promise<void> {
   quitting = true;
   try {
     await removeIpcBridge?.();
+    loopManager?.shutdown();
+    interactionService?.cancelAll();
     await notificationSubscription?.dispose();
+    await interactionSubscription?.dispose();
+    await loopSubscription?.dispose();
+    await pluginLifecycleSubscription?.dispose();
     await pluginManager?.deactivateAll();
     await setupSchemaRegistration?.dispose();
   } finally {
@@ -336,8 +361,10 @@ function installTestApi(): void {
       hideWindow(): void;
       isWindowVisible(): boolean;
       activePluginIds(): readonly string[];
+      disablePlugin(pluginId: string): Promise<void>;
       userDataPath(): string;
       trayMenuLabels(): readonly string[];
+      trayTitle(): string;
       trayIconIsEmpty(): boolean;
     };
   };
@@ -347,8 +374,10 @@ function installTestApi(): void {
     hideWindow: hideMainWindow,
     isWindowVisible: () => mainWindow?.isVisible() ?? false,
     activePluginIds: () => pluginManager?.getActivePluginIds() ?? [],
+    disablePlugin: async (pluginId) => pluginManager?.deactivate(pluginId),
     userDataPath: () => app.getPath("userData"),
     trayMenuLabels: () => currentTrayMenuLabels,
+    trayTitle: () => tray?.getTitle() ?? "",
     trayIconIsEmpty: () => currentTrayIconIsEmpty,
   };
 }
@@ -384,12 +413,30 @@ if (!app.requestSingleInstanceLock()) {
         }).show();
       }
     });
+    interactionService = new InteractionService();
+    const costs = new CostLedger();
+    const tools = new ToolService(interactionService);
+    const models = new ModelRouter(costs);
+    loopManager = new LoopManager(
+      models,
+      tools,
+      costs,
+      (pluginId) =>
+        pluginId === "kernel.loop" ||
+        pluginManager?.hasPermission(pluginId, "tools.invoke") === true,
+    );
     pluginManager = new PluginManager(bus, KERNEL_VERSION, {
       config: configFacade,
       store: storeFacade,
       secrets: secretFacade,
       persistence,
       notifications: notificationService,
+      tools,
+      models,
+      loops: loopManager,
+      interactions: interactionService,
+      costs,
+      showWindow: showMainWindow,
       getPluginDataDirectory: (pluginId) => {
         const directory = path.join(
           app.getPath("userData"),
@@ -399,6 +446,16 @@ if (!app.requestSingleInstanceLock()) {
         mkdirSync(directory, { recursive: true });
         return directory;
       },
+    });
+    pluginLifecycleSubscription = pluginManager.subscribe(() => {
+      if (
+        windowServicesReady &&
+        !quitting &&
+        mainWindow &&
+        !mainWindow.isDestroyed()
+      ) {
+        mainWindow.webContents.reload();
+      }
     });
 
     try {
@@ -460,10 +517,28 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     mainWindow = createMainWindow();
+    currentPendingInteractions = interactionService.listPending().length;
+    currentRunningLoops = loopManager.list().filter(({ status }) =>
+      ["running", "waiting", "paused"].includes(status),
+    ).length;
+    rebuildTrayMenu();
     notificationSubscription = notificationService.subscribe((notification) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("borg:notification", notification);
       }
+    });
+    interactionSubscription = interactionService.subscribe((pending) => {
+      currentPendingInteractions = pending.length;
+      rebuildTrayMenu();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("borg:interactions", pending);
+      }
+    });
+    loopSubscription = loopManager.subscribe(() => {
+      currentRunningLoops = loopManager?.list().filter(({ status }) =>
+        ["running", "waiting", "paused"].includes(status),
+      ).length ?? 0;
+      rebuildTrayMenu();
     });
     removeIpcBridge = registerIpcBridge({
       bus,
@@ -471,6 +546,8 @@ if (!app.requestSingleInstanceLock()) {
       config: configFacade,
       secrets: secretFacade,
       notifications: notificationService,
+      interactions: interactionService,
+      loops: loopManager,
       kernelVersion: KERNEL_VERSION,
       startedAt,
       shellCapability,

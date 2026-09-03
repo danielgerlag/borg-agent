@@ -1,6 +1,8 @@
 import type {
   Disposable,
   FlightDeckWidgetContribution,
+  InteractionRendererContribution,
+  InteractionRendererProps,
   PluginUiHost,
   SettingsPageContribution,
   WizardStepContribution,
@@ -13,6 +15,9 @@ export class UiContributionRegistry implements PluginUiHost<Component> {
   readonly #settingsPages: SettingsPageContribution<Component>[] = [];
   readonly #wizardSteps: WizardStepContribution<Component>[] = [];
   readonly #flightDeckWidgets: FlightDeckWidgetContribution<Component>[] = [];
+  readonly #interactionRenderers: InteractionRendererContribution<
+    (props: InteractionRendererProps) => unknown
+  >[] = [];
 
   registerWorkspaceView(
     contribution: WorkspaceViewContribution<Component>,
@@ -36,6 +41,36 @@ export class UiContributionRegistry implements PluginUiHost<Component> {
     return this.#register(this.#flightDeckWidgets, contribution, "Flight Deck widget");
   }
 
+  registerInteractionRenderer(
+    contribution: InteractionRendererContribution<
+      (props: InteractionRendererProps) => unknown
+    >,
+  ): Disposable {
+    if (
+      !/^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/.test(contribution.id) ||
+      !["tool_approval", "classification", "human_input"].includes(
+        contribution.kind,
+      ) ||
+      typeof contribution.component !== "function" ||
+      this.#interactionRenderers.some(
+        (candidate) =>
+          candidate.id === contribution.id ||
+          candidate.kind === contribution.kind,
+      )
+    ) {
+      throw new Error(`Invalid interaction renderer ${contribution.id}`);
+    }
+    this.#interactionRenderers.push(contribution);
+    return {
+      dispose: () => {
+        const index = this.#interactionRenderers.indexOf(contribution);
+        if (index >= 0) {
+          this.#interactionRenderers.splice(index, 1);
+        }
+      },
+    };
+  }
+
   getWorkspaceViews(): readonly WorkspaceViewContribution<Component>[] {
     return this.#ordered(this.#workspaceViews);
   }
@@ -50,6 +85,12 @@ export class UiContributionRegistry implements PluginUiHost<Component> {
 
   getFlightDeckWidgets(): readonly FlightDeckWidgetContribution<Component>[] {
     return this.#ordered(this.#flightDeckWidgets);
+  }
+
+  getInteractionRenderers(): readonly InteractionRendererContribution<
+    (props: InteractionRendererProps) => unknown
+  >[] {
+    return [...this.#interactionRenderers];
   }
 
   #ordered<TContribution extends { readonly order?: number }>(

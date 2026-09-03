@@ -4,6 +4,12 @@ import type {
   CommandOutput,
   EventDefinition,
   EventPayload,
+  FeedbackAnswer,
+  LoopEvent,
+  LoopRunSnapshot,
+  LoopStartInput,
+  PendingInteraction,
+  UsageRecord,
 } from "@borg/contracts";
 import { z } from "zod";
 
@@ -91,6 +97,170 @@ export interface NotificationRequest {
   readonly os?: boolean | undefined;
 }
 
+export interface ToolExecutionContext {
+  readonly toolCallId: string;
+  readonly runId?: string | undefined;
+  readonly signal: AbortSignal;
+}
+
+export interface ToolContribution<
+  TInput extends z.ZodType = z.ZodType,
+  TOutput extends z.ZodType = z.ZodType,
+> {
+  readonly id: string;
+  readonly description: string;
+  readonly input: TInput;
+  readonly output: TOutput;
+  readonly approval: "auto" | "ask" | "deny";
+  readonly sideEffect: boolean;
+  execute(
+    input: z.output<TInput>,
+    context: ToolExecutionContext,
+  ): z.input<TOutput> | Promise<z.input<TOutput>>;
+}
+
+export function defineTool<
+  const TInput extends z.ZodType,
+  const TOutput extends z.ZodType,
+>(
+  tool: ToolContribution<TInput, TOutput>,
+): ToolContribution<TInput, TOutput> {
+  return Object.freeze(tool);
+}
+
+export interface PluginTools {
+  register(tool: ToolContribution): Disposable;
+  invoke(
+    toolId: string,
+    input: unknown,
+    options?: {
+      readonly runId?: string | undefined;
+    },
+  ): Promise<JsonValue>;
+}
+
+export interface ModelMessage {
+  readonly role: "user" | "assistant" | "tool";
+  readonly content: string;
+  readonly toolCallId?: string | undefined;
+  readonly toolCalls?: readonly ModelToolCall[] | undefined;
+}
+
+export interface ModelToolCall {
+  readonly id: string;
+  readonly name: string;
+  readonly input: unknown;
+}
+
+export interface ModelCompletionRequest {
+  readonly modelId: string;
+  readonly messages: readonly ModelMessage[];
+  readonly tools: readonly {
+    readonly id: string;
+    readonly description: string;
+    readonly inputSchema: JsonValue;
+  }[];
+}
+
+export interface ModelCompletionResult {
+  readonly content?: string | undefined;
+  readonly toolCalls?: readonly ModelToolCall[] | undefined;
+  readonly usage: {
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly cachedInputTokens?: number | undefined;
+    readonly cacheWriteTokens?: number | undefined;
+    readonly amount?: number | undefined;
+    readonly currency?: string | undefined;
+  };
+}
+
+export interface LlmProviderContribution {
+  readonly id: string;
+  readonly models: readonly string[];
+  complete(
+    request: ModelCompletionRequest,
+    signal: AbortSignal,
+  ): Promise<ModelCompletionResult>;
+}
+
+export interface PluginModels {
+  registerProvider(provider: LlmProviderContribution): Disposable;
+  complete(
+    request: {
+      readonly providerId?: string | undefined;
+      readonly modelId?: string | undefined;
+      readonly messages: readonly ModelMessage[];
+    },
+    signal?: AbortSignal,
+  ): Promise<{
+    readonly providerId: string;
+    readonly modelId: string;
+    readonly result: ModelCompletionResult;
+  }>;
+}
+
+export interface PluginLoops {
+  start(input: LoopStartInput): Promise<LoopRunSnapshot>;
+  get(runId: string): LoopRunSnapshot | undefined;
+  list(): readonly LoopRunSnapshot[];
+  pause(runId: string): boolean;
+  resume(runId: string): boolean;
+  cancel(runId: string): boolean;
+  subscribe(
+    runId: string,
+    handler: (event: LoopEvent) => void | Promise<void>,
+  ): Disposable;
+}
+
+export interface PluginUiLoops {
+  start(input: LoopStartInput): Promise<LoopRunSnapshot>;
+  get(runId: string): Promise<LoopRunSnapshot | undefined>;
+  list(): Promise<readonly LoopRunSnapshot[]>;
+  subscribe(
+    runId: string,
+    handler: (event: LoopEvent) => void | Promise<void>,
+  ): Promise<Disposable>;
+  pause(runId: string): Promise<boolean>;
+  resume(runId: string): Promise<boolean>;
+  cancel(runId: string): Promise<boolean>;
+}
+
+export interface PluginUiInteractions {
+  list(): Promise<readonly PendingInteraction[]>;
+}
+
+export interface HumanInputRequest {
+  readonly title?: string | undefined;
+  readonly prompt: string;
+  readonly form: "text" | "confirm" | "choice";
+  readonly choices?:
+    | readonly { readonly id: string; readonly label: string }[]
+    | undefined;
+  readonly source: {
+    readonly sessionId?: string | undefined;
+    readonly runId?: string | undefined;
+    readonly instanceId?: string | undefined;
+    readonly stepId?: string | undefined;
+    readonly toolCallId?: string | undefined;
+  };
+  readonly timeoutMs?: number | undefined;
+}
+
+export interface PluginInteractions {
+  requestHumanInput(
+    request: HumanInputRequest,
+    signal?: AbortSignal,
+  ): {
+    readonly interactionId: string;
+    readonly response: Promise<FeedbackAnswer>;
+  };
+}
+
+export interface PluginCost {
+  record(record: UsageRecord): void;
+}
+
 export interface PluginLogger {
   debug(message: string, metadata?: Readonly<Record<string, unknown>>): void;
   info(message: string, metadata?: Readonly<Record<string, unknown>>): void;
@@ -109,6 +279,7 @@ export interface PluginBus {
   invoke<TCommand extends CommandDefinition>(
     command: TCommand,
     input: CommandInput<TCommand>,
+    options?: { readonly signal?: AbortSignal | undefined },
   ): Promise<CommandOutput<TCommand>>;
   provides(command: CommandDefinition): boolean;
   emit<TEvent extends EventDefinition>(
@@ -129,6 +300,14 @@ export interface PluginContext {
   readonly store: PluginStore;
   readonly secrets: PluginSecrets;
   readonly persistence: PluginPersistenceContributions;
+  readonly tools: PluginTools;
+  readonly models: PluginModels;
+  readonly loops: PluginLoops;
+  readonly interactions: PluginInteractions;
+  readonly cost: PluginCost;
+  readonly window: {
+    show(): void;
+  };
   readonly dataDir: string;
   notify(request: NotificationRequest): void;
   readonly logger: PluginLogger;
@@ -224,12 +403,28 @@ export interface WizardStepContribution<TComponent = unknown> {
   readonly component: TComponent;
 }
 
+export interface InteractionRendererProps {
+  readonly interaction: PendingInteraction;
+  respond(response: import("@borg/contracts").InteractionResponse): Promise<void>;
+}
+
+export interface InteractionRendererContribution<TComponent = unknown> {
+  readonly id: string;
+  readonly kind: "tool_approval" | "classification" | "human_input";
+  readonly component: TComponent;
+}
+
 export interface PluginUiHost<TComponent = unknown> {
   registerWorkspaceView(contribution: WorkspaceViewContribution<TComponent>): Disposable;
   registerSettingsPage(contribution: SettingsPageContribution<TComponent>): Disposable;
   registerWizardStep(contribution: WizardStepContribution<TComponent>): Disposable;
   registerFlightDeckWidget(
     contribution: FlightDeckWidgetContribution<TComponent>,
+  ): Disposable;
+  registerInteractionRenderer(
+    contribution: InteractionRendererContribution<
+      (props: InteractionRendererProps) => unknown
+    >,
   ): Disposable;
 }
 
@@ -247,6 +442,8 @@ export interface PluginUiContext<TComponent = unknown> {
   readonly ui: PluginUiHost<TComponent>;
   readonly config: Pick<PluginConfig, "get" | "update">;
   readonly secrets: Pick<PluginSecrets, "set" | "delete" | "has">;
+  readonly loops: PluginUiLoops;
+  readonly interactions: PluginUiInteractions;
   notify(request: NotificationRequest): Promise<void>;
 }
 
