@@ -35,6 +35,14 @@ for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {
     "optionalDependencies",
   ]) {
     for (const dependency of Object.keys(packageJson[field] ?? {})) {
+      if (
+        entry.name === "graphs" &&
+        (dependency === "langgraph" || dependency.startsWith("@langchain/langgraph"))
+      ) {
+        failures.push(
+          `${packageJson.name} declares forbidden graph engine dependency ${dependency}`,
+        );
+      }
       if (dependency.startsWith("@borg/plugin-") && dependency !== "@borg/plugin-sdk") {
         failures.push(
           `${packageJson.name} declares forbidden plugin dependency ${dependency}`,
@@ -53,6 +61,14 @@ for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {
       const specifier = match[1];
       if (!specifier) {
         continue;
+      }
+      if (
+        entry.name === "graphs" &&
+        (specifier === "langgraph" || specifier.startsWith("@langchain/langgraph"))
+      ) {
+        failures.push(
+          `${path.relative(projectRoot, filename)} imports forbidden graph engine ${specifier}`,
+        );
       }
       if (specifier.startsWith("@borg/plugin-") && specifier !== "@borg/plugin-sdk") {
         failures.push(

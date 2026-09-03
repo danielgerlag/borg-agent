@@ -2,7 +2,7 @@
 
 Borg is a privacy-first local desktop agent platform built as a TypeScript microkernel inside Electron.
 
-The repository currently contains Slice 4: the tray-resident Electron microkernel, persona-backed ReAct runtime, and the first chat-first product experience. The `borg.chat` plugin provides durable conversations, streaming replies, delegated sub-agents, feedback in thread, and scoped files; `borg.tools.core` adds workspace-scoped file reads and approval-gated writes. The scripted `borg.mock-llm` provider keeps the complete product path deterministic and offline.
+The repository currently contains Slice 5: the tray-resident Electron microkernel, chat-first product experience, persona-backed ReAct runtime, and persisted graph workflows. The `borg.chat` plugin provides durable conversations, streaming replies, delegated sub-agents, feedback in thread, and scoped files; `borg.graphs` adds a Cytoscape designer, a HiveMind-inspired executor, scheduled and inbound triggers, feedback gates, agent/tool/prompt steps, and Activity state. The scripted `borg.mock-llm` provider keeps the complete product path deterministic and offline.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ If an Azure Artifacts mirror rotates between equivalent `ms-feed-*` hosts, pnpm 
 
 Closing the window hides Borg. Use the tray menu to show it again or quit the kernel.
 
-On first run, Borg opens a guided setup: welcome, one-click secure-storage verification, assistant selection, and a final review. Setup finishes directly in Chat, where **New chat** and the conversation history use familiar user-facing language. The deterministic prompts `scenario:file`, `scenario:feedback`, and `scenario:background` exercise file approval, ask-user, and hidden-window execution. Settings includes an Advanced area for the loop debugger and implementation diagnostics, while Activity shows running work and requests that need attention. Pending questions and active work remain in main when the window is hidden and are reflected in the tray.
+On first run, Borg opens a guided setup: welcome, one-click secure-storage verification, assistant selection, and a final review. Setup finishes directly in Chat, where **New chat** and the conversation history use familiar user-facing language. The deterministic prompts `scenario:file`, `scenario:feedback`, `scenario:background`, and `scenario:graph` exercise file approval, ask-user, hidden-window execution, and chat-launched workflows. Open the **Graphs** workspace tab to design and run workflows; Activity shows graph runs alongside other work and requests that need attention. Settings includes an Advanced area for the loop debugger and implementation diagnostics. Pending questions and active work remain in main when the window is hidden and are reflected in the tray.
 
 ## Verification
 

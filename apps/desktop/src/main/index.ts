@@ -2,6 +2,7 @@ import {
   CommandEventBus,
   ConfigFacade,
   CostLedger,
+  GraphContributionRegistry,
   InteractionService,
   LoopManager,
   ModelRouter,
@@ -10,6 +11,7 @@ import {
   PersistenceRegistry,
   PluginManager,
   PromptAssembler,
+  SchedulerCore,
   SecretFacade,
   StoreFacade,
   ToolService,
@@ -66,6 +68,7 @@ let secretFacade: SecretFacade | undefined;
 let notificationService: NotificationService | undefined;
 let interactionService: InteractionService | undefined;
 let loopManager: LoopManager | undefined;
+let scheduler: SchedulerCore | undefined;
 let removeIpcBridge: (() => Promise<void>) | undefined;
 let notificationSubscription: Disposable | undefined;
 let interactionSubscription: Disposable | undefined;
@@ -341,8 +344,6 @@ async function requestQuit(): Promise<void> {
     app.exit(0);
   }, 5_000);
   try {
-    loopManager?.shutdown();
-    interactionService?.cancelAll();
     const window = mainWindow;
     if (window && !window.isDestroyed()) {
       await new Promise<void>((resolve) => {
@@ -364,7 +365,13 @@ async function requestQuit(): Promise<void> {
     await interactionSubscription?.dispose();
     await loopSubscription?.dispose();
     await pluginLifecycleSubscription?.dispose();
-    await pluginManager?.deactivateAll();
+    try {
+      await pluginManager?.deactivateAll();
+    } finally {
+      scheduler?.shutdown();
+      loopManager?.shutdown();
+      interactionService?.cancelAll();
+    }
     await setupSchemaRegistration?.dispose();
   } finally {
     shutdownComplete = true;
@@ -447,6 +454,8 @@ if (!app.requestSingleInstanceLock()) {
     const workspaceService = new WorkspaceService(
       path.join(app.getPath("userData"), "workspaces", "sessions"),
     );
+    const graphContributions = new GraphContributionRegistry();
+    scheduler = new SchedulerCore();
     loopManager = new LoopManager(
       models,
       tools,
@@ -472,6 +481,8 @@ if (!app.requestSingleInstanceLock()) {
       personas: personaService,
       prompts: promptAssembler,
       workspaces: workspaceService,
+      graphContributions,
+      scheduler,
       showWindow: showMainWindow,
       getPluginDataDirectory: (pluginId) => {
         const directory = path.join(

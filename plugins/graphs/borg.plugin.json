@@ -1,0 +1,57 @@
+{
+  "id": "borg.graphs",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-graphs/main",
+  "ui": "@borg/plugin-graphs/ui",
+  "permissions": [
+    "graphs.readContributions",
+    "loops.start",
+    "models.complete",
+    "personas.read",
+    "runtime.background",
+    "scheduler.manage",
+    "tools.invoke",
+    "tools.register",
+    "ui.flightDeck",
+    "ui.settings",
+    "ui.workspace",
+    "workspace.manage"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.graphs.cancelInstance",
+      "borg.graphs.deleteDefinition",
+      "borg.graphs.getDefinition",
+      "borg.graphs.getInstance",
+      "borg.graphs.launch",
+    "borg.graphs.listContributions",
+      "borg.graphs.listDefinitions",
+      "borg.graphs.listInstances",
+      "borg.graphs.listRunning",
+      "borg.graphs.saveDefinition"
+    ],
+    "events": [
+      "borg.graphs.definition.deleted",
+      "borg.graphs.definition.saved",
+      "borg.graphs.instance.completed",
+      "borg.graphs.instance.failed",
+      "borg.graphs.instance.started",
+      "borg.graphs.instance.updated",
+      "borg.graphs.step.completed"
+    ],
+    "extensionPoints": [
+      "borg.graphs.graphStep",
+      "borg.graphs.graphTrigger"
+    ],
+    "kinds": [
+      "flightDeckWidget",
+      "graphEngine",
+      "settingsPage",
+      "tool",
+      "workspaceView"
+    ]
+  }
+}

@@ -9,6 +9,7 @@
     "@borg/plugin-chat": "workspace:*",
     "@borg/plugin-config-sqlite": "workspace:*",
     "@borg/plugin-feedback": "workspace:*",
+    "@borg/plugin-graphs": "workspace:*",
     "@borg/plugin-hello": "workspace:*",
     "@borg/plugin-mock-llm": "workspace:*",
     "@borg/plugin-sdk": "workspace:*",

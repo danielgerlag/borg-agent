@@ -14,12 +14,14 @@ import { CommandEventBus } from "./command-event-bus";
 import type { CostLedger } from "./cost-ledger";
 import { satisfiesBorgEngine } from "./engine-range";
 import { PluginLoadError } from "./errors";
+import type { GraphContributionRegistry } from "./graph-contribution-registry";
 import type { InteractionService } from "./interaction-service";
 import type { LoopManager } from "./loop-manager";
 import type { ModelRouter } from "./model-router";
 import type { NotificationService } from "./notification-service";
 import type { PersonaService } from "./persona-service";
 import type { PromptAssembler } from "./prompt-assembler";
+import type { SchedulerCore } from "./scheduler-core";
 import type {
   ConfigFacade,
   PersistenceRegistry,
@@ -73,6 +75,8 @@ export interface PluginManagerOptions {
   readonly personas?: PersonaService;
   readonly prompts?: PromptAssembler;
   readonly workspaces?: WorkspaceService;
+  readonly graphContributions?: GraphContributionRegistry;
+  readonly scheduler?: SchedulerCore;
   readonly showWindow?: () => void;
   getPluginDataDirectory?(pluginId: string): string;
 }
@@ -446,6 +450,22 @@ export class PluginManager {
         }
         return this.#options.interactions;
       };
+      const requireScheduler = (): SchedulerCore => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.scheduler) {
+          throw new Error("Scheduler service is unavailable");
+        }
+        return this.#options.scheduler;
+      };
+      const requireGraphContributions = (): GraphContributionRegistry => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.graphContributions) {
+          throw new Error("Graph contribution registry is unavailable");
+        }
+        return this.#options.graphContributions;
+      };
 
       if (
         definition.configSchema &&
@@ -557,6 +577,31 @@ export class PluginManager {
               ),
             );
           },
+          registerExecutionScope: (
+            runId,
+            sessionId,
+            allowedTools = ["*"],
+          ) => {
+            assertPermission("tools.invoke");
+            assertPermission("workspace.manage");
+            const workspace = requireWorkspaces().get(manifest.id, sessionId);
+            if (!workspace) {
+              throw new Error(
+                `Workspace ${sessionId} is unavailable to ${manifest.id}`,
+              );
+            }
+            return stage(() =>
+              requireTools().registerRunPolicy(
+                runId,
+                manifest.id,
+                allowedTools,
+                {
+                  sessionId,
+                  workspaceRoot: workspace.rootPath,
+                },
+              ),
+            );
+          },
           invoke: (toolId, input, invocationOptions) => {
             assertPermission("tools.invoke");
             const operation = this.#operationContext.getStore();
@@ -568,9 +613,13 @@ export class PluginManager {
             return requireTools().invoke(toolId, input, {
               callerPluginId: manifest.id,
               runId: invocationOptions?.runId,
-              signal: operation
-                ? AbortSignal.any([operation.signal, controller.signal])
-                : controller.signal,
+              signal: AbortSignal.any([
+                ...(invocationOptions?.signal
+                  ? [invocationOptions.signal]
+                  : []),
+                ...(operation ? [operation.signal] : []),
+                controller.signal,
+              ]),
             });
           },
         },
@@ -769,6 +818,128 @@ export class PluginManager {
             return stage(() => requirePrompts().registerSlot(slot));
           },
         },
+        graphs: {
+          registerStep: (contribution) => {
+            assertPermission("graphs.contribute");
+            assertContribution("graphStep");
+            return stage(() =>
+              requireGraphContributions().registerStep(
+                manifest.id,
+                {
+                  ...contribution,
+                  execute: (config, graphContext) => {
+                    const signal = AbortSignal.any([
+                      graphContext.signal,
+                      controller.signal,
+                    ]);
+                    return this.#operationContext.exit(() =>
+                      trackOperation(
+                        Promise.resolve().then(() =>
+                          contribution.execute(config, {
+                            ...graphContext,
+                            signal,
+                          }),
+                        ),
+                      ),
+                    );
+                  },
+                },
+              ),
+            );
+          },
+          registerTrigger: (contribution) => {
+            assertPermission("graphs.contribute");
+            assertContribution("graphTrigger");
+            return stage(() =>
+              requireGraphContributions().registerTrigger(
+                manifest.id,
+                {
+                  ...contribution,
+                  subscribe: (config, trigger, graphSignal) => {
+                    const signal = AbortSignal.any([
+                      graphSignal,
+                      controller.signal,
+                    ]);
+                    return this.#operationContext.exit(() =>
+                      trackOperation(
+                        Promise.resolve().then(() =>
+                          contribution.subscribe(
+                            config,
+                            async (input) => {
+                              signal.throwIfAborted();
+                              await trigger(input);
+                            },
+                            signal,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                },
+              ),
+            );
+          },
+          listSteps: () => {
+            assertPermission("graphs.readContributions");
+            return requireGraphContributions().listSteps();
+          },
+          listTriggers: () => {
+            assertPermission("graphs.readContributions");
+            return requireGraphContributions().listTriggers();
+          },
+        },
+        scheduler: {
+          schedule: (id, runAt, callback) => {
+            assertPermission("scheduler.manage");
+            return stage(() =>
+              requireScheduler().schedule(manifest.id, id, runAt, (signal) =>
+                this.#operationContext.exit(() =>
+                  trackOperation(
+                    Promise.resolve(
+                      callback(
+                        AbortSignal.any([signal, controller.signal]),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+          cancel: (id) => {
+            assertPermission("scheduler.manage");
+            return requireScheduler().cancel(manifest.id, id);
+          },
+        },
+        runtime: {
+          spawn: (task) => {
+            assertOrdinaryContext();
+            assertPermission("runtime.background");
+            assertContextActive();
+            const taskController = new AbortController();
+            const signal = AbortSignal.any([
+              taskController.signal,
+              controller.signal,
+            ]);
+            const operation = this.#operationContext.exit(() =>
+              Promise.resolve().then(() => task(signal)),
+            );
+            void trackOperation(operation).catch((error: unknown) => {
+              if (!signal.aborted) {
+                console.error(
+                  `[kernel] background task from ${manifest.id} failed`,
+                  error,
+                );
+              }
+            });
+            return track({
+              dispose: () => {
+                taskController.abort(
+                  new Error(`Background task from ${manifest.id} was cancelled`),
+                );
+              },
+            });
+          },
+        },
         window: {
           show: () => {
             assertContextActive();
@@ -961,9 +1132,12 @@ export class PluginManager {
     let deactivationError: unknown;
     const shutdownDeadline = Date.now() + this.#shutdownTimeoutMs;
     this.bus.removePlugin(pluginId);
+    active.controller.abort(new Error(`Plugin ${pluginId} is deactivating`));
     this.#options.tools?.removePlugin(pluginId);
     this.#options.models?.removePlugin(pluginId);
     this.#options.prompts?.removePlugin(pluginId);
+    this.#options.graphContributions?.removePlugin(pluginId);
+    this.#options.scheduler?.cancelOwned(pluginId);
     try {
       await withTimeout(
         async () => this.#options.loops?.cancelOwned(pluginId),
@@ -974,7 +1148,6 @@ export class PluginManager {
       deactivationError = error;
       console.error(`[kernel] plugin ${pluginId} loops did not stop`, error);
     }
-    active.controller.abort(new Error(`Plugin ${pluginId} is deactivating`));
 
     if (active.operations.size > 0) {
       try {

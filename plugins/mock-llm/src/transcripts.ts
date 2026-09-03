@@ -64,4 +64,20 @@ export const mockTranscriptFixtures: readonly MockTranscriptFixture[] =
       content: "Background turn completed while Borg was hidden.",
       delayMs: 1_000,
     },
+    {
+      id: "graph-launch",
+      prompt: "scenario:graph",
+      toolCall: {
+        id: "mock-graph-call",
+        name: "graphs.run",
+        input: {
+          graphId: "quick-start",
+          input: {
+            source: "chat",
+          },
+        },
+      },
+      finalPrefix: "Graph started: ",
+      resultPath: ["instanceId"],
+    },
   ]);

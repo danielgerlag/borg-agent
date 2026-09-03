@@ -1,5 +1,6 @@
 export { CommandEventBus } from "./command-event-bus";
 export { CostLedger, type CostRecord } from "./cost-ledger";
+export { GraphContributionRegistry } from "./graph-contribution-registry";
 export { satisfiesBorgEngine } from "./engine-range";
 export { CommandInvocationError, PluginLoadError } from "./errors";
 export {
@@ -42,6 +43,7 @@ export {
   type PluginSource,
   type PluginStatus,
 } from "./plugin-manager";
+export { SchedulerCore } from "./scheduler-core";
 export {
   WorkspaceService,
   type WorkspaceFile,

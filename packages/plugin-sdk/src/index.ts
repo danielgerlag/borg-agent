@@ -136,11 +136,17 @@ export function defineTool<
 
 export interface PluginTools {
   register(tool: ToolContribution): Disposable;
+  registerExecutionScope(
+    runId: string,
+    sessionId: string,
+    allowedTools?: readonly string[],
+  ): Disposable;
   invoke(
     toolId: string,
     input: unknown,
     options?: {
       readonly runId?: string | undefined;
+      readonly signal?: AbortSignal | undefined;
     },
   ): Promise<JsonValue>;
 }
@@ -312,6 +318,57 @@ export interface PluginPrompts {
   registerSlot(slot: PromptSlotContribution): Disposable;
 }
 
+export interface GraphStepExecutionContext {
+  readonly instanceId: string;
+  readonly nodeId: string;
+  readonly input: Readonly<Record<string, JsonValue>>;
+  readonly variables: Readonly<Record<string, JsonValue>>;
+  readonly signal: AbortSignal;
+}
+
+export interface GraphStepContribution {
+  readonly kind: string;
+  readonly type: "task" | "control";
+  readonly label: string;
+  readonly replaySafe?: boolean;
+  readonly configSchema: z.ZodType;
+  execute(
+    config: JsonValue,
+    context: GraphStepExecutionContext,
+  ): JsonValue | Promise<JsonValue>;
+}
+
+export interface GraphTriggerContribution {
+  readonly kind: string;
+  readonly label: string;
+  readonly configSchema: z.ZodType;
+  subscribe(
+    config: JsonValue,
+    trigger: (input?: Readonly<Record<string, JsonValue>>) => void | Promise<void>,
+    signal: AbortSignal,
+  ): Disposable | Promise<Disposable>;
+}
+
+export interface PluginGraphs {
+  registerStep(contribution: GraphStepContribution): Disposable;
+  registerTrigger(contribution: GraphTriggerContribution): Disposable;
+  listSteps(): readonly GraphStepContribution[];
+  listTriggers(): readonly GraphTriggerContribution[];
+}
+
+export interface PluginScheduler {
+  schedule(
+    id: string,
+    runAt: string,
+    callback: (signal: AbortSignal) => void | Promise<void>,
+  ): Disposable;
+  cancel(id: string): boolean;
+}
+
+export interface PluginRuntime {
+  spawn(task: (signal: AbortSignal) => void | Promise<void>): Disposable;
+}
+
 export interface PluginLogger {
   debug(message: string, metadata?: Readonly<Record<string, unknown>>): void;
   info(message: string, metadata?: Readonly<Record<string, unknown>>): void;
@@ -363,6 +420,9 @@ export interface PluginContext {
   readonly personas: PluginPersonas;
   readonly workspace: PluginWorkspace;
   readonly prompts: PluginPrompts;
+  readonly graphs: PluginGraphs;
+  readonly scheduler: PluginScheduler;
+  readonly runtime: PluginRuntime;
   readonly window: {
     show(): void;
   };

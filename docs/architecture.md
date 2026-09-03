@@ -126,7 +126,7 @@ Later bundled plugins get one directory each under `plugins/`. A plugin package 
 | `A2AService` | Agent2Agent server plumbing and task-to-loop mapping | persona/agent product UI |
 | `WindowTrayService` | window visibility, tray menu/counts, application quit | product feature state |
 
-Generic graph support in the kernel is limited to `RunRegistry`, `WorkspaceService`, `SchedulerCore`, bus events, interactions, and store hooks. Definition validation, step scheduling, graph persistence shape, triggers, and designer behavior live in `borg.graphs`.
+Generic graph support in the kernel is limited to `GraphContributionRegistry`, `RunRegistry`, `WorkspaceService`, `SchedulerCore`, bus events, interactions, and store hooks. Definition validation, step scheduling, graph persistence shape, triggers, and designer behavior live in `borg.graphs`.
 
 ## Contracts and shared types
 
@@ -834,6 +834,8 @@ The custom executor:
 8. resumes from persisted state and kernel timer/event hooks;
 9. resolves graph output and publishes terminal events.
 
+Long-running instances are detached from the command that launches them through the kernel-owned `PluginRuntime`; this prevents an expired command capability from being reused by later graph steps while still tying cancellation and shutdown to the owning plugin. Delay and recurring-trigger deadlines use owner-scoped `SchedulerCore` registrations. The plugin persists each deadline before registration and recreates it during activation, so hiding the window has no effect and process restart resumes from the checkpoint.
+
 Base Slice 5 triggers are manual, schedule, and incoming message. Base tasks are call tool, invoke agent, delay, set variable, invoke prompt, and feedback gate. Control nodes are branch, for-each, and end.
 
 - `call_tool` invokes `ctx.tools` and therefore the kernel pipeline.
@@ -843,7 +845,7 @@ Base Slice 5 triggers are manual, schedule, and incoming message. Base tasks are
 - `feedback_gate` invokes `borg.feedback.ask`; it does not import chat or call `ctx.interactions` directly.
 - `incoming_message` subscribes to `borg.channel.inboundMessage`.
 
-A child step plugin contributes schema, editor metadata, validation, and a wrapped executor callback through `borg.graphs.graphStep`. The graphs plugin asks the kernel registry for contributions and never imports the child package.
+A child plugin contributes step schema, editor metadata, validation, and a lifecycle-wrapped executor callback through `borg.graphs.graphStep`. Steps are treated as unsafe to replay after an indeterminate restart unless they explicitly declare `replaySafe`. Trigger contributions provide a lifecycle-wrapped subscription that launches the owning graph through the same persisted instance path. The designer reads contribution descriptors through `borg.graphs.listContributions`; the graphs plugin asks the kernel registry for executable contributions and never imports the child package.
 
 The `plugins/graphs` package must have an automated dependency assertion that rejects `langgraph` and any plugin-package import.
 
