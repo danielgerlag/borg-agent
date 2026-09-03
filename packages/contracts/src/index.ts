@@ -494,9 +494,15 @@ export const chatCreateSession = defineCommand({
       personaId: personaIdSchema.optional(),
       title: z.string().min(1).optional(),
       parentSessionId: z.string().uuid().optional(),
+      initialMessage: z.string().trim().min(1).optional(),
     })
     .strict(),
-  output: z.object({ sessionId: z.string().uuid() }).strict(),
+  output: z
+    .object({
+      sessionId: z.string().uuid(),
+      startError: z.string().min(1).optional(),
+    })
+    .strict(),
 });
 
 export const chatListSessions = defineCommand({

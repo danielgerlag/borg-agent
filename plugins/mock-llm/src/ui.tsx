@@ -234,6 +234,7 @@ export default defineUiPlugin<Component>({
       id: "borg.mock-llm.debug",
       label: "Loop debugger",
       order: 10,
+      placement: "developer",
       component: DebugLoop,
     });
   },

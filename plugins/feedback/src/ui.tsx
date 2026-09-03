@@ -1,7 +1,7 @@
 import type { PendingInteraction } from "@borg/contracts";
 import type { InteractionRendererProps } from "@borg/plugin-sdk";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Panel } from "@borg/ui-kit";
+import { Button, Panel } from "@borg/ui-kit";
 import { MessageCircleQuestion } from "lucide-solid";
 import {
   For,
@@ -11,6 +11,8 @@ import {
   onMount,
   type Component,
 } from "solid-js";
+
+const timeoutPresets = [60_000, 300_000, 900_000, 3_600_000, 86_400_000];
 
 export default defineUiPlugin<Component>({
   id: "borg.feedback",
@@ -200,21 +202,32 @@ export default defineUiPlugin<Component>({
       return (
         <section data-testid="feedback-settings-page">
           <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
-            Human feedback
+            Attention
           </p>
-          <h3 class="mt-2 text-lg font-semibold">Question behavior</h3>
+          <h3 class="mt-2 text-xl font-semibold">When Borg needs your input</h3>
+          <p class="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+            Choose how long work should wait and how Borg should get your attention.
+          </p>
           <label class="mt-4 block text-sm text-[var(--text-muted)]">
-            Default timeout in milliseconds
-            <input
-              type="number"
-              min="1000"
-              max="86400000"
+            Wait for an answer
+            <select
               value={timeoutMs()}
               onInput={(event) =>
-                setTimeoutMs(event.currentTarget.valueAsNumber)
+                setTimeoutMs(Number(event.currentTarget.value))
               }
               class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-            />
+            >
+              <Show when={!timeoutPresets.includes(timeoutMs())}>
+                <option value={timeoutMs()}>
+                  Current setting ({Math.round(timeoutMs() / 1000)} seconds)
+                </option>
+              </Show>
+              <option value={60_000}>1 minute</option>
+              <option value={300_000}>5 minutes</option>
+              <option value={900_000}>15 minutes</option>
+              <option value={3_600_000}>1 hour</option>
+              <option value={86_400_000}>Until tomorrow</option>
+            </select>
           </label>
           <label class="mt-4 flex items-center gap-3 text-sm">
             <input
@@ -224,7 +237,7 @@ export default defineUiPlugin<Component>({
                 setNotifyOnRequest(event.currentTarget.checked)
               }
             />
-            Notify when a question is requested
+            Send a notification when Borg needs an answer
           </label>
           <label class="mt-3 flex items-center gap-3 text-sm">
             <input
@@ -234,16 +247,15 @@ export default defineUiPlugin<Component>({
                 setFocusOnRequest(event.currentTarget.checked)
               }
             />
-            Allow the feedback surface to request focus
+            Bring Borg to the front when work is blocked
           </label>
           <div class="mt-5 flex items-center gap-3">
-            <button
+            <Button
               type="button"
-              class="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--background)]"
               onClick={() => void save()}
             >
-              Save feedback settings
-            </button>
+              Save attention settings
+            </Button>
             <span class="text-xs text-[var(--text-muted)]">{status()}</span>
           </div>
         </section>
@@ -263,7 +275,7 @@ export default defineUiPlugin<Component>({
     });
     const settings = context.ui.registerSettingsPage({
       id: "borg.feedback.settings",
-      label: "Human feedback",
+      label: "Attention",
       order: 30,
       component: FeedbackSettings,
     });

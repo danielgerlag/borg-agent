@@ -2,7 +2,7 @@
 
 Borg is a privacy-first local desktop agent platform built as a TypeScript microkernel inside Electron.
 
-The repository currently contains Slice 4: the tray-resident Electron microkernel, persona-backed ReAct runtime, and the first product workspace. The `borg.chat` plugin provides durable sessions, streaming transcripts, sub-agents, feedback in thread, and session workspaces; `borg.tools.core` adds workspace-scoped file reads and approval-gated writes. The scripted `borg.mock-llm` provider keeps the complete product path deterministic and offline.
+The repository currently contains Slice 4: the tray-resident Electron microkernel, persona-backed ReAct runtime, and the first chat-first product experience. The `borg.chat` plugin provides durable conversations, streaming replies, delegated sub-agents, feedback in thread, and scoped files; `borg.tools.core` adds workspace-scoped file reads and approval-gated writes. The scripted `borg.mock-llm` provider keeps the complete product path deterministic and offline.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ If an Azure Artifacts mirror rotates between equivalent `ms-feed-*` hosts, pnpm 
 
 Closing the window hides Borg. Use the tray menu to show it again or quit the kernel.
 
-On first run, Borg selects the OS-protected secret backend and opens the setup wizard. Verify protected storage, choose the available default model for the bundled General persona, and complete setup. The Chat workspace then supports normal messages and the deterministic prompts `scenario:file`, `scenario:feedback`, and `scenario:background` for exercising workspace approval, ask-user, and hidden-window execution. Workspace → Loop debugger remains available for lower-level loop inspection. Pending questions and active runs remain in main when the window is hidden and are reflected in the tray and Flight Deck.
+On first run, Borg opens a guided setup: welcome, one-click secure-storage verification, assistant selection, and a final review. Setup finishes directly in Chat, where **New chat** and the conversation history use familiar user-facing language. The deterministic prompts `scenario:file`, `scenario:feedback`, and `scenario:background` exercise file approval, ask-user, and hidden-window execution. Settings includes an Advanced area for the loop debugger and implementation diagnostics, while Activity shows running work and requests that need attention. Pending questions and active work remain in main when the window is hidden and are reflected in the tray.
 
 ## Verification
 

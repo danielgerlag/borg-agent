@@ -6,6 +6,7 @@ import {
   chatSendMessage,
   chatSpawnSubAgent,
   personaSchema,
+  type ChatSession,
   type LoopEvent,
   type LoopRunSnapshot,
   type LoopStartInput,
@@ -246,6 +247,50 @@ function createChatHarnessContext(
 }
 
 describe("borg.chat harness", () => {
+  it("persists the first user message atomically with a new chat", async () => {
+    const fixture = createChatHarnessContext();
+    const harness = await createTestHarness(chatPlugin, fixture.context);
+
+    fixture.failNextStoreSets(1);
+    await expect(
+      fixture.invoke(chatCreateSession, {
+        initialMessage: "Do not leave an empty chat",
+      }),
+    ).rejects.toThrow("Injected store failure");
+    expect(
+      await fixture.invoke<{ sessions: readonly ChatSession[] }>(
+        chatListSessions,
+        {},
+      ),
+    ).toEqual({ sessions: [] });
+    expect(fixture.release).toHaveBeenCalledOnce();
+
+    fixture.failNextLoopStart();
+    const created = await fixture.invoke<{
+      sessionId: string;
+      startError?: string;
+    }>(
+      chatCreateSession,
+      { initialMessage: "Keep this accepted message" },
+    );
+    expect(created.startError).toContain("Injected loop start failure");
+    const document = await fixture.invoke<{
+      session: ChatSession;
+      entries: readonly { role: string; content: string }[];
+    }>(chatGetSession, { sessionId: created.sessionId });
+    expect(document.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: "Keep this accepted message",
+        }),
+      ]),
+    );
+    expect(document.session.status).toBe("error");
+
+    await harness.deactivate();
+  });
+
   it("persists a persona-backed turn and projects its final transcript", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);

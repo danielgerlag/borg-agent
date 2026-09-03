@@ -57,8 +57,8 @@ Electron application
 │  └─ no plugin-authored IPC channels and no Node exposure
 │
 └─ renderer: SolidJS shell
-   ├─ chrome, navigation, themes, toasts
-   ├─ workspace/settings/wizard/Flight Deck slots
+   ├─ chat-first chrome, navigation, themes, toasts
+   ├─ sequential setup, settings, activity, and developer slots
    ├─ fallback safety interaction UI
    ├─ active plugin UI modules
    └─ snapshot + event projections of main state
@@ -353,7 +353,7 @@ Commands/events are for cross-plugin product collaboration. Contributions descri
 | `borg.graphs.instance.completed` | event | `borg.graphs` | graph output available |
 | `borg.graphs.instance.failed` | event | `borg.graphs` | terminal graph failure |
 | `borg.graphs.step.completed` | event | `borg.graphs` | step trace for Flight Deck |
-| `borg.chat.createSession` | command | `borg.chat` | create a persona-backed chat session |
+| `borg.chat.createSession` | command | `borg.chat` | create a persona-backed chat, atomically including its optional first message |
 | `borg.chat.listSessions` | command | `borg.chat` | list root, child, or all sessions |
 | `borg.chat.getSession` | command | `borg.chat` | read one session and transcript |
 | `borg.chat.sendMessage` | command | `borg.chat` | append user input and start its loop |
@@ -979,8 +979,10 @@ Force termination after the deadline is logged. Closing a window never starts th
 
 The renderer shell owns:
 
-- window chrome and navigation among contributed surfaces;
-- workspace/settings/wizard/Flight Deck extension hosts;
+- compact window chrome and navigation among chat, settings, and activity;
+- a full-screen sequential setup host composed from ordered plugin steps;
+- placement of product and developer contributions for progressive disclosure;
+- workspace, categorized settings, and activity extension hosts;
 - theme tokens and UI-kit providers;
 - toasts and kernel fallback safety interactions;
 - loading, incompatible-plugin, and kernel-recovery states.
@@ -997,7 +999,7 @@ Each feature keeps a small Solid projection store:
 4. discard stale async responses;
 5. dispose subscriptions with the UI contribution.
 
-No mega-`App.tsx` or mega-Flight Deck component is allowed. The shell iterates contribution descriptors; adding a plugin view does not add a central `Switch` branch.
+No mega-`App.tsx` or mega-Activity component is allowed. The shell iterates contribution descriptors; workspace contributions declare `primary` or `developer` placement, and adding a feature view does not add a plugin-specific central `Switch` branch. User-facing copy says chat or conversation; `session` remains the internal runtime and persistence term.
 
 ## Testing strategy
 
@@ -1085,7 +1087,7 @@ Slice 1 establishes:
 - build-time discovery from each `plugins/*/package.json` `borg` descriptor, producing separate main and renderer catalogs while preserving one plugin identity;
 - a fixed, sender-validated preload bridge for command invocation, capability lookup, bootstrap, and window actions;
 - an always-present tray, close-to-hide behavior, explicit graceful Quit, and a kernel/plugin lifetime independent of window visibility;
-- renderer extension hosts for workspace, settings, wizard, and Flight Deck contributions;
+- renderer extension hosts for primary/developer workspace views, categorized settings, sequential wizard steps, and activity widgets;
 - the `borg.hello` plugin, whose UI widget obtains status by invoking `borg.hello.getStatus` through main rather than direct IPC;
 - Vitest coverage for loader/bus contract failures and Playwright journeys against the real Electron app.
 
@@ -1140,7 +1142,7 @@ Slice 4 makes personas an enforced loop input rather than optional metadata. `Pe
 
 `borg.chat` owns versioned session documents and transcript entries in its scoped store. It serializes each session's creates, appends, loop transitions, deletion, and sub-agent spawning; allocates the workspace before publishing a session; recovers interrupted runs on activation; and records completed, failed, cancelled, and interrupted turns. A send durably appends the user entry, starts the kernel loop with the selected persona and conversation, persists the run association, and subscribes before projecting tokens and terminal state. Feedback requested/resolved events add transcript hints without moving interaction ownership out of the kernel queue.
 
-The Chat workspace provides session selection, token streaming, transcript history, workspace files, persona/model setup, and child-session delegation. Its initialization coalesces concurrent refreshes so event delivery cannot create duplicate empty sessions; selection and loop subscription generations suppress stale async results. The Flight Deck widget subscribes before reading its first active-session snapshot. The lower-level mock loop debugger remains a secondary workspace tab rather than replacing the product surface.
+The chat-first shell presents conversations as the product home, with token streaming, transcript history, friendly persona/status copy, optional generated-file inspection, and advanced child-session delegation. A new chat remains ephemeral until its first message, avoiding empty persisted records. Setup is a full-screen Welcome → Secure storage → Choose assistant → Ready flow adapted from HiveMind's stepper rather than a stacked plugin checklist. Settings and Activity remain plugin-composed, while developer contributions such as the mock loop debugger and hello diagnostics are explicitly placed under Advanced. Selection and loop-subscription generations continue to suppress stale async results, and the activity widget subscribes before reading its first active-session snapshot.
 
 The fixed preload bridge now exposes capability-scoped persona, model-catalog, loop, and declared-event APIs. Main validates model read permissions and rejects event subscriptions that no active plugin declared. Renderer subscriptions are disposed with their plugin activation scope and when the sender is destroyed. `createTestHarness` in the SDK activates and deactivates a plugin against supplied host doubles, enabling direct lifecycle/persistence tests without weakening production context construction.
 

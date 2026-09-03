@@ -151,7 +151,7 @@ function rebuildTrayMenu(): void {
       enabled: false,
     },
     {
-      label: `Running — loops ${currentRunningLoops} · bots 0 · graphs 0`,
+      label: `Running tasks: ${currentRunningLoops}`,
       enabled: false,
     },
     { type: "separator" },
@@ -336,9 +336,29 @@ async function requestQuit(): Promise<void> {
   }
 
   quitting = true;
+  setTimeout(() => {
+    console.error("[kernel] graceful shutdown exceeded 5000ms; forcing exit");
+    app.exit(0);
+  }, 5_000);
   try {
     loopManager?.shutdown();
     interactionService?.cancelAll();
+    const window = mainWindow;
+    if (window && !window.isDestroyed()) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          if (!window.isDestroyed()) {
+            window.destroy();
+          }
+          resolve();
+        }, 1_000);
+        window.once("closed", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        window.close();
+      });
+    }
     await removeIpcBridge?.();
     await notificationSubscription?.dispose();
     await interactionSubscription?.dispose();
@@ -349,7 +369,9 @@ async function requestQuit(): Promise<void> {
   } finally {
     shutdownComplete = true;
     tray?.destroy();
-    app.quit();
+    setImmediate(() => {
+      app.quit();
+    });
   }
 }
 

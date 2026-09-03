@@ -1,5 +1,10 @@
 import { spawn } from "node:child_process";
-import electronPath from "electron";
+import { createRequire } from "node:module";
+
+const requireFromDesktop = createRequire(
+  new URL("../apps/desktop/package.json", import.meta.url),
+);
+const electronPath = requireFromDesktop("electron");
 
 const { ELECTRON_RUN_AS_NODE: _runAsNode, ...environment } = process.env;
 const child = spawn(electronPath, ["apps/desktop", ...process.argv.slice(2)], {

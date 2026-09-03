@@ -371,10 +371,63 @@ export default definePlugin({
       }
     }
 
+    const startTurn = async (
+      sessionId: string,
+      text: string,
+      conversation: {
+        readonly role: "user" | "assistant";
+        readonly content: string;
+      }[],
+    ): Promise<string> => {
+      const current = documents.get(sessionId);
+      if (!current) {
+        throw new Error(`Chat session ${sessionId} is unavailable`);
+      }
+      let run: Awaited<ReturnType<typeof context.loops.start>>;
+      try {
+        run = await context.loops.start({
+          prompt: text,
+          personaId: current.session.personaId,
+          sessionId,
+          conversation,
+        });
+      } catch (error) {
+        await append(
+          sessionId,
+          createEntry("event", `The turn could not start: ${String(error)}`, {
+            status: "failed_to_start",
+          }),
+        );
+        await updateSession(sessionId, { status: "error" });
+        throw error;
+      }
+      let running: ChatDocument;
+      try {
+        running = await updateSession(sessionId, {
+          status: "running",
+          activeRunId: run.id,
+        });
+      } catch (error) {
+        context.loops.cancel(run.id);
+        throw error;
+      }
+      await context.bus.emit(chatTurnStarted, {
+        sessionId,
+        runId: run.id,
+        personaId: running.session.personaId,
+      });
+      const subscription = context.loops.subscribe(run.id, (event) =>
+        handleLoopEvent(sessionId, event),
+      );
+      runSubscriptions.set(run.id, subscription);
+      return run.id;
+    };
+
     const createSession = async (input: {
       readonly personaId?: string | undefined;
       readonly title?: string | undefined;
       readonly parentSessionId?: string | undefined;
+      readonly initialMessage?: string | undefined;
     }): Promise<string> => {
       const persona = input.personaId
         ? context.personas.get(input.personaId)
@@ -391,16 +444,25 @@ export default definePlugin({
         );
       }
       const now = new Date().toISOString();
+      const initialMessage = input.initialMessage?.trim();
+      const initialEntry = initialMessage
+        ? createEntry("user", initialMessage)
+        : undefined;
       const session = chatSessionSchema.parse({
         id: randomUUID(),
-        title: input.title ?? "New session",
+        title:
+          input.title ??
+          (initialMessage?.slice(0, 48) || "New session"),
         personaId: persona.id,
         parentSessionId: input.parentSessionId,
         status: "idle",
         createdAt: now,
         updatedAt: now,
       });
-      const document = chatDocumentSchema.parse({ session, entries: [] });
+      const document = chatDocumentSchema.parse({
+        session,
+        entries: initialEntry ? [initialEntry] : [],
+      });
       context.workspace.allocate(session.id);
       try {
         await persist(document);
@@ -410,6 +472,12 @@ export default definePlugin({
         throw error;
       }
       await publishSession(document);
+      if (initialEntry && initialMessage) {
+        await context.bus.emit(chatMessageAppended, {
+          sessionId: session.id,
+          entry: initialEntry,
+        });
+      }
       return session.id;
     };
 
@@ -449,49 +517,27 @@ export default definePlugin({
           sessionId,
           entry: userEntry,
         });
-        let run: Awaited<ReturnType<typeof context.loops.start>>;
-        try {
-          run = await context.loops.start({
-            prompt: text,
-            personaId: titledSession.personaId,
-            sessionId,
-            conversation,
-          });
-        } catch (error) {
-          await append(
-            sessionId,
-            createEntry("event", `The turn could not start: ${String(error)}`, {
-              status: "failed_to_start",
-            }),
-          );
-          await updateSession(sessionId, { status: "error" });
-          throw error;
-        }
-        let running: ChatDocument;
-        try {
-          running = await updateSession(sessionId, {
-            status: "running",
-            activeRunId: run.id,
-          });
-        } catch (error) {
-          context.loops.cancel(run.id);
-          throw error;
-        }
-        await context.bus.emit(chatTurnStarted, {
-          sessionId,
-          runId: run.id,
-          personaId: running.session.personaId,
-        });
-        const subscription = context.loops.subscribe(run.id, (event) =>
-          handleLoopEvent(sessionId, event),
-        );
-        runSubscriptions.set(run.id, subscription);
-        return run.id;
+        return startTurn(sessionId, text, conversation);
       });
 
-    context.bus.handle(chatCreateSession, async (input) => ({
-      sessionId: await createSession(input),
-    }));
+    context.bus.handle(chatCreateSession, async (input) => {
+      const sessionId = await createSession(input);
+      let startError: string | undefined;
+      const initialMessage = input.initialMessage;
+      if (initialMessage) {
+        try {
+          await enqueue(sessionId, () =>
+            startTurn(sessionId, initialMessage, []),
+          );
+        } catch (error) {
+          startError = error instanceof Error ? error.message : String(error);
+        }
+      }
+      return {
+        sessionId,
+        ...(startError ? { startError } : {}),
+      };
+    });
 
     context.bus.handle(chatListSessions, (input) => ({
       sessions: [...documents.values()]

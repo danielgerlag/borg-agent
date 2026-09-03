@@ -149,12 +149,14 @@ export default defineUiPlugin<Component>({
     const widget = context.ui.registerFlightDeckWidget({
       id: "borg.hello.kernel-status",
       label: "Kernel status",
+      placement: "developer",
       component: HelloWidget,
     });
     const settings = context.ui.registerSettingsPage({
       id: "borg.hello.settings",
       label: "Hello",
       order: 10,
+      placement: "developer",
       component: HelloSettings,
     });
     return {

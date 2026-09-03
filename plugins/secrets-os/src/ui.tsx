@@ -1,6 +1,6 @@
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Panel } from "@borg/ui-kit";
-import { KeyRound, ShieldCheck } from "lucide-solid";
+import { Button, Panel } from "@borg/ui-kit";
+import { CheckCircle2, ShieldCheck } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";
 
 export default defineUiPlugin<Component>({
@@ -8,27 +8,35 @@ export default defineUiPlugin<Component>({
   activate(context) {
     const [configured, setConfigured] = createSignal(false);
     const OsSecrets: Component = () => {
-      const [secret, setSecret] = createSignal("");
       const [saving, setSaving] = createSignal(false);
+      const [error, setError] = createSignal<string>();
 
       onMount(() => {
-        void context.secrets.has("setup-check").then(setConfigured);
+        void context.secrets
+          .has("setup-check")
+          .then(setConfigured)
+          .catch((failure: unknown) =>
+            setError(failure instanceof Error ? failure.message : String(failure)),
+          );
       });
 
-      const save = async (): Promise<void> => {
-        if (secret().length === 0) {
-          return;
-        }
+      const verify = async (): Promise<void> => {
         setSaving(true);
+        setError(undefined);
         try {
-          await context.secrets.set("setup-check", secret());
-          setSecret("");
+          await context.secrets.set("setup-check", crypto.randomUUID());
+          if (!(await context.secrets.has("setup-check"))) {
+            throw new Error("Borg could not read the verification marker");
+          }
           setConfigured(true);
           await context.notify({
             title: "Secure storage verified",
-            body: "Borg can encrypt secrets with the operating system.",
+            body: "Borg can protect credentials with your operating system.",
             level: "success",
           });
+        } catch (failure) {
+          setConfigured(false);
+          setError(failure instanceof Error ? failure.message : String(failure));
         } finally {
           setSaving(false);
         }
@@ -42,49 +50,42 @@ export default defineUiPlugin<Component>({
             </div>
             <div class="min-w-0 flex-1">
               <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
-                OS-protected backend
+                Protected by your device
               </p>
-              <h3 class="mt-2 text-lg font-semibold">Verify secure secret storage</h3>
+              <h3 class="mt-2 text-xl font-semibold">Protect your credentials</h3>
               <p class="mt-2 text-sm text-[var(--text-muted)]">
-                Values are encrypted using the operating system’s protected storage
-                before they are written to Borg’s local data directory.
+                Borg uses your operating system’s secure storage for API keys and other
+                credentials. Verify access before continuing.
               </p>
 
-              <label class="mt-5 block text-xs font-medium text-[var(--text-muted)]">
-                Test secret
-                <div class="mt-2 flex gap-2">
-                  <div class="relative min-w-0 flex-1">
-                    <KeyRound
-                      class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-subtle)]"
-                      aria-hidden="true"
-                      size={16}
-                    />
-                    <input
-                      type="password"
-                      value={secret()}
-                      onInput={(event) => setSecret(event.currentTarget.value)}
-                      class="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-[var(--accent)]"
-                      placeholder="Enter any test value"
-                      data-testid="os-secret-input"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    class="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--background)] disabled:opacity-50"
-                    disabled={saving() || secret().length === 0}
-                    onClick={() => void save()}
-                    data-testid="os-secret-save"
-                  >
-                    {saving() ? "Saving…" : "Save"}
-                  </button>
-                </div>
-              </label>
+              <Button
+                type="button"
+                class="mt-6"
+                disabled={saving() || configured()}
+                onClick={() => void verify()}
+                data-testid="os-secret-save"
+              >
+                <CheckCircle2 aria-hidden="true" size={16} />
+                {saving()
+                  ? "Checking…"
+                  : configured()
+                    ? "Storage verified"
+                    : "Verify secure storage"}
+              </Button>
 
               <p
-                class="mt-3 text-xs text-[var(--text-muted)]"
+                class="mt-3 text-xs"
+                classList={{
+                  "text-[var(--success)]": configured(),
+                  "text-[var(--text-muted)]": !configured() && !error(),
+                  "text-[var(--danger)]": Boolean(error()),
+                }}
                 data-testid="os-secret-status"
               >
-                {configured() ? "Secure storage verified." : "Verification pending."}
+                {error() ??
+                  (configured()
+                    ? "Secure credential storage is ready."
+                    : "Verification takes only a moment.")}
               </p>
             </div>
           </div>

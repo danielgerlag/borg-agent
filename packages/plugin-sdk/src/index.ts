@@ -469,6 +469,7 @@ export interface FlightDeckWidgetContribution<TComponent = unknown> {
   readonly id: string;
   readonly label: string;
   readonly order?: number;
+  readonly placement?: "primary" | "developer";
   readonly component: TComponent;
 }
 
@@ -476,6 +477,7 @@ export interface WorkspaceViewContribution<TComponent = unknown> {
   readonly id: string;
   readonly label: string;
   readonly order?: number;
+  readonly placement?: "primary" | "developer";
   readonly component: TComponent;
 }
 
@@ -483,6 +485,7 @@ export interface SettingsPageContribution<TComponent = unknown> {
   readonly id: string;
   readonly label: string;
   readonly order?: number;
+  readonly placement?: "primary" | "developer";
   readonly component: TComponent;
 }
 

@@ -90,6 +90,31 @@ describe("plugin UI transactions", () => {
     expect(registry.getWizardSteps()).toHaveLength(0);
   });
 
+  it("validates and retains developer contribution placement", () => {
+    const registry = new UiContributionRegistry();
+    registry.registerWorkspaceView({
+      id: "test.debugger",
+      label: "Debugger",
+      placement: "developer",
+      component: EmptyComponent,
+    });
+
+    expect(registry.getWorkspaceViews()).toEqual([
+      expect.objectContaining({
+        id: "test.debugger",
+        placement: "developer",
+      }),
+    ]);
+    expect(() =>
+      registry.registerWorkspaceView({
+        id: "test.invalid-placement",
+        label: "Invalid",
+        placement: "internal" as "primary",
+        component: EmptyComponent,
+      }),
+    ).toThrow(/Invalid workspace view/);
+  });
+
   it("removes committed contributions during UI deactivation", async () => {
     const registry = new UiContributionRegistry();
     const transaction = createUiTransaction(allowedPlugin, registry);

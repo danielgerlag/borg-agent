@@ -1,6 +1,6 @@
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Panel } from "@borg/ui-kit";
-import { FlaskConical, KeyRound } from "lucide-solid";
+import { Button, Panel } from "@borg/ui-kit";
+import { CheckCircle2, FlaskConical } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";
 
 export default defineUiPlugin<Component>({
@@ -8,27 +8,35 @@ export default defineUiPlugin<Component>({
   activate(context) {
     const [configured, setConfigured] = createSignal(false);
     const DevelopmentSecrets: Component = () => {
-      const [secret, setSecret] = createSignal("");
       const [saving, setSaving] = createSignal(false);
+      const [error, setError] = createSignal<string>();
 
       onMount(() => {
-        void context.secrets.has("setup-check").then(setConfigured);
+        void context.secrets
+          .has("setup-check")
+          .then(setConfigured)
+          .catch((failure: unknown) =>
+            setError(failure instanceof Error ? failure.message : String(failure)),
+          );
       });
 
-      const save = async (): Promise<void> => {
-        if (secret().length === 0) {
-          return;
-        }
+      const verify = async (): Promise<void> => {
         setSaving(true);
+        setError(undefined);
         try {
-          await context.secrets.set("setup-check", secret());
-          setSecret("");
+          await context.secrets.set("setup-check", crypto.randomUUID());
+          if (!(await context.secrets.has("setup-check"))) {
+            throw new Error("Borg could not read the verification marker");
+          }
           setConfigured(true);
           await context.notify({
-            title: "Development secret saved",
-            body: "The local development secret backend is ready.",
+            title: "Local storage verified",
+            body: "Borg can save credentials for this development profile.",
             level: "success",
           });
+        } catch (failure) {
+          setConfigured(false);
+          setError(failure instanceof Error ? failure.message : String(failure));
         } finally {
           setSaving(false);
         }
@@ -42,49 +50,43 @@ export default defineUiPlugin<Component>({
             </div>
             <div class="min-w-0 flex-1">
               <p class="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">
-                Development backend
+                Development profile
               </p>
-              <h3 class="mt-2 text-lg font-semibold">Verify local secret storage</h3>
+              <h3 class="mt-2 text-xl font-semibold">Protect your credentials</h3>
               <p class="mt-2 text-sm text-[var(--text-muted)]">
-                This explicit development option stores plaintext in Borg’s local plugin
-                data directory. Do not use it for production credentials.
+                Confirm that Borg can save the credentials your assistants will need.
+                This development profile uses local storage and should not hold production
+                secrets.
               </p>
 
-              <label class="mt-5 block text-xs font-medium text-[var(--text-muted)]">
-                Test secret
-                <div class="mt-2 flex gap-2">
-                  <div class="relative min-w-0 flex-1">
-                    <KeyRound
-                      class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-subtle)]"
-                      aria-hidden="true"
-                      size={16}
-                    />
-                    <input
-                      type="password"
-                      value={secret()}
-                      onInput={(event) => setSecret(event.currentTarget.value)}
-                      class="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-[var(--accent)]"
-                      placeholder="Enter any test value"
-                      data-testid="dev-secret-input"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    class="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--background)] disabled:opacity-50"
-                    disabled={saving() || secret().length === 0}
-                    onClick={() => void save()}
-                    data-testid="dev-secret-save"
-                  >
-                    {saving() ? "Saving…" : "Save"}
-                  </button>
-                </div>
-              </label>
+              <Button
+                type="button"
+                class="mt-6"
+                disabled={saving() || configured()}
+                onClick={() => void verify()}
+                data-testid="dev-secret-save"
+              >
+                <CheckCircle2 aria-hidden="true" size={16} />
+                {saving()
+                  ? "Checking…"
+                  : configured()
+                    ? "Storage verified"
+                    : "Verify local storage"}
+              </Button>
 
               <p
-                class="mt-3 text-xs text-[var(--text-muted)]"
+                class="mt-3 text-xs"
+                classList={{
+                  "text-[var(--success)]": configured(),
+                  "text-[var(--text-muted)]": !configured() && !error(),
+                  "text-[var(--danger)]": Boolean(error()),
+                }}
                 data-testid="dev-secret-status"
               >
-                {configured() ? "Secret backend verified." : "Verification pending."}
+                {error() ??
+                  (configured()
+                    ? "Local credential storage is ready."
+                    : "Verification takes only a moment.")}
               </p>
             </div>
           </div>

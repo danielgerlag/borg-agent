@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { completeSetup } from "./setup";
 
 const projectRoot = path.resolve(__dirname, "../..");
 const desktopApp = path.join(projectRoot, "apps/desktop");
@@ -38,35 +39,26 @@ async function launchBorg(): Promise<void> {
   await page.waitForLoadState("domcontentloaded");
 }
 
-async function enterFlightDeck(): Promise<void> {
+async function ensureSetup(): Promise<void> {
   await expect(page.getByTestId("app-shell")).toBeVisible();
-  if (await page.getByTestId("setup-complete").isVisible()) {
-    if (
-      (await page.getByTestId("dev-secret-status").textContent())?.includes(
-        "Verification pending",
-      )
-    ) {
-      await page.getByTestId("dev-secret-input").fill("local-test-secret");
-      await page.getByTestId("dev-secret-save").click();
-      await expect(page.getByTestId("dev-secret-status")).toContainText(
-        "Secret backend verified",
-      );
-    }
-    await expect(page.getByTestId("setup-complete")).toBeEnabled();
-    await page.getByTestId("setup-complete").click();
+  if (await page.getByTestId("surface-wizard").isVisible()) {
+    await completeSetup(page);
   }
-  if (!(await page.getByTestId("surface-flightDeck").isVisible())) {
-    await page.getByTestId("nav-flightDeck").click();
-  }
-  await expect(page.getByTestId("surface-flightDeck")).toBeVisible();
+  await expect(page.getByTestId("chat-workspace")).toBeVisible();
+}
+
+async function enterDeveloperTool(
+  kind: "workspace" | "settings" | "widget",
+  contributionId: string,
+): Promise<void> {
+  await ensureSetup();
+  await page.getByTestId("nav-settings").click();
+  await page.getByTestId("settings-developer-tools").click();
+  await page.getByTestId(`developer-tool-${kind}-${contributionId}`).click();
 }
 
 async function enterLoopDebugger(): Promise<void> {
-  await page.getByTestId("nav-workspace").click();
-  const tab = page.getByTestId("workspace-view-tab-borg.mock-llm.debug");
-  if (await tab.isVisible()) {
-    await tab.click();
-  }
+  await enterDeveloperTool("workspace", "borg.mock-llm.debug");
   await expect(page.getByTestId("loop-debug-workspace")).toBeVisible();
 }
 
@@ -99,7 +91,7 @@ test.afterEach(async () => {
 
 test("loads the hello plugin through the main-process command bus", async () => {
   await expect(page.getByTestId("app-shell")).toBeVisible();
-  await enterFlightDeck();
+  await enterDeveloperTool("widget", "borg.hello.kernel-status");
   await expect(page.getByTestId("hello-widget")).toBeVisible();
   await expect(page.getByTestId("hello-status-alive")).toContainText("Kernel alive");
   await expect(page.getByTestId("hello-status-alive")).toContainText("borg.hello");
@@ -133,8 +125,7 @@ test("does not expose reusable renderer plugin identities", async () => {
 });
 
 test("keeps the kernel and plugin active while the window is hidden", async () => {
-  await enterFlightDeck();
-  await expect(page.getByTestId("hello-status-alive")).toBeVisible();
+  await ensureSetup();
   const trayLabels = await application.evaluate(() => {
     const api = (
       globalThis as typeof globalThis & {
@@ -148,7 +139,7 @@ test("keeps the kernel and plugin active while the window is hidden", async () =
       "Show Borg",
       "Hide Borg",
       "Pending interactions: 0",
-      "Running — loops 0 · bots 0 · graphs 0",
+      "Running tasks: 0",
       "Quit Borg",
     ]),
   );
@@ -208,7 +199,7 @@ test("keeps the kernel and plugin active while the window is hidden", async () =
   });
 
   await expect(page.getByTestId("app-shell")).toBeVisible();
-  await expect(page.getByTestId("hello-status-alive")).toContainText("Kernel alive");
+  await expect(page.getByTestId("chat-workspace")).toBeVisible();
 });
 
 test("shows the existing window when a second instance is launched", async () => {
@@ -254,17 +245,10 @@ test("shows the existing window when a second instance is launched", async () =>
 
 test("completes the setup wizard with the development secret backend", async () => {
   await expect(page.getByTestId("surface-wizard")).toBeVisible();
-  await expect(page.getByTestId("dev-secrets-step")).toBeVisible();
-  await page.getByTestId("dev-secret-input").fill("local-test-secret");
-  await page.getByTestId("dev-secret-save").click();
-  await expect(page.getByTestId("dev-secret-status")).toContainText(
-    "Secret backend verified",
-  );
-  await expect(page.getByTestId("toast")).toContainText(
-    "Development secret saved",
-  );
-  await page.getByTestId("setup-complete").click();
-  await expect(page.getByTestId("surface-workspace")).toBeVisible();
+  await expect(page.getByTestId("setup-welcome")).toBeVisible();
+  await completeSetup(page);
+  await expect(page.getByTestId("chat-empty-state")).toBeVisible();
+  await expect(page.getByTestId("kernel-indicator")).toHaveCount(0);
 });
 
 test("uses OS-protected secret storage in production mode", async () => {
@@ -279,8 +263,9 @@ test("uses OS-protected secret storage in production mode", async () => {
   launchEnvironment.BORG_SECRET_BACKEND = "borg.secrets.os";
   await launchBorg();
 
+  await expect(page.getByTestId("setup-welcome")).toBeVisible();
+  await page.getByTestId("setup-continue").click();
   await expect(page.getByTestId("os-secrets-step")).toBeVisible();
-  await page.getByTestId("os-secret-input").fill("protected-test-secret");
   await page.getByTestId("os-secret-save").click();
   await expect(page.getByTestId("toast")).toContainText(
     "Secure storage verified",
@@ -306,17 +291,19 @@ test("uses OS-protected secret storage in production mode", async () => {
     ),
     "utf8",
   );
-  expect(encryptedVault).not.toContain("protected-test-secret");
+  expect(encryptedVault).not.toMatch(
+    /[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i,
+  );
 
   await launchBorg();
+  await page.getByTestId("setup-continue").click();
   await expect(page.getByTestId("os-secret-status")).toContainText(
-    "Secure storage verified",
+    "credential storage is ready",
   );
 });
 
 test("persists plugin config and wizard completion across a tray quit", async () => {
-  await enterFlightDeck();
-  await page.getByTestId("nav-settings").click();
+  await enterDeveloperTool("settings", "borg.hello.settings");
   await expect(page.getByTestId("hello-settings-page")).toBeVisible();
   await page.getByTestId("hello-message-input").fill("Persisted across restart");
   await page.getByTestId("hello-message-save").click();
@@ -327,7 +314,7 @@ test("persists plugin config and wizard completion across a tray quit", async ()
   await expect(exit).resolves.toBe(0);
 
   await launchBorg();
-  await enterFlightDeck();
+  await enterDeveloperTool("widget", "borg.hello.kernel-status");
   await expect(page.getByTestId("hello-status-alive")).toContainText(
     "Persisted across restart",
   );
@@ -375,16 +362,18 @@ test("renders workspace, settings, and wizard extension points", async () => {
   await enterLoopDebugger();
 
   await page.getByTestId("nav-settings").click();
-  await expect(page.getByTestId("hello-settings-page")).toBeVisible();
+  await page
+    .getByTestId("settings-section-borg.secrets.dev.settings")
+    .click();
   await expect(page.getByTestId("dev-secrets-step")).toBeVisible();
 
-  await page.getByTestId("nav-wizard").click();
-  await expect(page.getByTestId("surface-wizard")).toContainText("Prepare Borg");
+  await page.getByTestId("settings-run-setup").click();
+  await expect(page.getByTestId("setup-welcome")).toBeVisible();
+  await page.getByTestId("setup-continue").click();
   await expect(page.getByTestId("dev-secrets-step")).toBeVisible();
 });
 
 test("runs the scripted loop through tool approval accept and deny", async () => {
-  await enterFlightDeck();
   await enterLoopDebugger();
 
   await page.getByTestId("run-approval-scenario").click();
@@ -410,7 +399,6 @@ test("runs the scripted loop through tool approval accept and deny", async () =>
 });
 
 test("keeps safety approvals working when feedback is disabled", async () => {
-  await enterFlightDeck();
   await enterLoopDebugger();
   const rendererReloaded = page.waitForEvent("load");
   await application.evaluate(async () => {
@@ -438,9 +426,9 @@ test("keeps safety approvals working when feedback is disabled", async () => {
 });
 
 test("keeps an ask-user interaction pending while the window is hidden", async () => {
-  await enterFlightDeck();
-  await enterLoopDebugger();
-  await page.getByTestId("run-feedback-scenario").click();
+  await ensureSetup();
+  await page.getByTestId("chat-composer-input").fill("scenario:feedback");
+  await page.getByTestId("chat-send").click();
   await expect(page.getByTestId("interaction-overlay")).toContainText(
     "Mock model question",
   );
@@ -518,8 +506,9 @@ test("keeps an ask-user interaction pending while the window is hidden", async (
   await page.getByTestId("human-input-text").fill("continue safely");
   await page.getByTestId("human-input-submit").click();
   await expect(page.getByTestId("interaction-overlay")).toBeHidden();
-  await expect(page.getByTestId("loop-run-status")).toHaveText("completed");
-  await expect(page.getByTestId("loop-output")).toContainText(
+  await expect(
+    page.locator('[data-testid="chat-message"][data-role="assistant"]'),
+  ).toContainText(
     "User answered: continue safely",
   );
   await expect

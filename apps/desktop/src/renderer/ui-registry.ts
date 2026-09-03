@@ -128,6 +128,11 @@ export class UiContributionRegistry implements PluginUiHost<Component> {
         contribution.required === true &&
         (!("isComplete" in contribution) ||
           typeof contribution.isComplete !== "function")) ||
+      ("placement" in contribution &&
+        contribution.placement !== undefined &&
+        !["primary", "developer"].includes(
+          contribution.placement as string,
+        )) ||
       typeof contribution.component !== "function"
     ) {
       throw new Error(`Invalid ${kind} contribution ${contribution.id}`);

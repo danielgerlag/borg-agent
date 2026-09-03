@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@source "../../../../packages/ui-kit";
+@source "../../../../plugins";
 
 :root {
   color-scheme: dark;
@@ -7,13 +9,17 @@
     sans-serif;
   background: #090b10;
   --background: #090b10;
+  --sidebar: #0d1016;
   --panel: #11141b;
   --panel-muted: #171b24;
   --border: #262c38;
+  --border-strong: #364052;
   --text: #f1f4f8;
   --text-muted: #a4adbd;
   --text-subtle: #697386;
   --accent: #73e6c2;
+  --accent-contrast: #07110e;
+  --accent-glow: rgb(115 230 194 / 16%);
   --success: #59d89c;
   --danger: #ff657a;
 }
@@ -32,7 +38,7 @@ body,
 body {
   min-width: 320px;
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow: hidden;
   background:
     radial-gradient(circle at 82% 8%, rgb(115 230 194 / 8%), transparent 28rem),
     var(--background);
@@ -51,4 +57,20 @@ button:focus-visible {
 ::selection {
   color: var(--background);
   background: var(--accent);
+}
+
+* {
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+input,
+textarea,
+select {
+  color: var(--text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-subtle);
 }
