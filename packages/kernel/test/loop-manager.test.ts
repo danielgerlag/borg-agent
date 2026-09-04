@@ -677,6 +677,142 @@ describe("LoopManager", () => {
     ).rejects.toThrow(/cancelled/);
     expect(complete).not.toHaveBeenCalled();
   });
+
+  it("prepares scoped providers before the first completion and advertises their tools", async () => {
+    const interactions = new InteractionService();
+    const costs = new CostLedger();
+    const tools = new ToolService(interactions);
+    const models = new ModelRouter(costs);
+    const loops = new LoopManager(models, tools, costs);
+    let advertised: string[] = [];
+    tools.registerProvider("borg.mcp", {
+      id: "borg.mcp",
+      async prepare() {
+        return {
+          definitions: [
+            {
+              id: "mcp.demo.echo",
+              description: "Scoped echo",
+              inputSchema: { type: "object", properties: {} },
+              approval: "auto",
+              sideEffect: false,
+            },
+          ],
+          execute: async () => ({ ok: true }),
+        };
+      },
+    });
+    models.registerProvider("borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      async complete(request) {
+        advertised = request.tools.map(({ id }) => id);
+        return {
+          content: "done",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+
+    const run = loops.start({ prompt: "list tools" });
+    await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("completed"));
+    expect(advertised).toEqual(["mcp.demo.echo"]);
+  });
+
+  it("cancels the run when catalog preparation is aborted", async () => {
+    const interactions = new InteractionService();
+    const costs = new CostLedger();
+    const tools = new ToolService(interactions);
+    const models = new ModelRouter(costs);
+    const loops = new LoopManager(models, tools, costs);
+    const complete = vi.fn(async () => ({
+      content: "should not run",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    }));
+    let preparing = false;
+    tools.registerProvider("borg.mcp", {
+      id: "borg.mcp",
+      async prepare(scope) {
+        preparing = true;
+        await new Promise<void>((_resolve, reject) => {
+          if (scope.signal.aborted) {
+            reject(scope.signal.reason);
+            return;
+          }
+          scope.signal.addEventListener(
+            "abort",
+            () => reject(scope.signal.reason),
+            { once: true },
+          );
+        });
+        return {
+          definitions: [],
+          execute: async () => ({}),
+        };
+      },
+    });
+    models.registerProvider("borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      complete,
+    });
+
+    const run = loops.start({ prompt: "cancel during prepare" });
+    await vi.waitFor(() => expect(preparing).toBe(true));
+    expect(loops.cancel(run.id)).toBe(true);
+    await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("cancelled"));
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("degrades the catalog when a provider fails to prepare", async () => {
+    const interactions = new InteractionService();
+    const costs = new CostLedger();
+    const tools = new ToolService(interactions);
+    const models = new ModelRouter(costs);
+    const loops = new LoopManager(models, tools, costs);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    let advertised: string[] = [];
+    tools.registerProvider("borg.broken", {
+      id: "borg.broken",
+      prepare: async () => {
+        throw new Error("prepare failed");
+      },
+    });
+    tools.registerProvider("borg.mcp", {
+      id: "borg.mcp",
+      async prepare() {
+        return {
+          definitions: [
+            {
+              id: "mcp.demo.echo",
+              description: "Healthy",
+              inputSchema: { type: "object" },
+              approval: "auto",
+              sideEffect: false,
+            },
+          ],
+          execute: async () => ({ ok: true }),
+        };
+      },
+    });
+    models.registerProvider("borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      async complete(request) {
+        advertised = request.tools.map(({ id }) => id);
+        return {
+          content: "done",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+
+    const run = loops.start({ prompt: "survive a provider failure" });
+    await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("completed"));
+    expect(advertised).toEqual(["mcp.demo.echo"]);
+    expect(loops.get(run.id)?.error).toBeUndefined();
+    consoleError.mockRestore();
+  });
 });
 
 describe("CostLedger", () => {

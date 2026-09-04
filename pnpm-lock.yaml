@@ -157,6 +157,12 @@ importers:
       '@borg/plugin-hello':
         specifier: workspace:*
         version: link:../../plugins/hello
+      '@borg/plugin-mcp':
+        specifier: workspace:*
+        version: link:../../plugins/mcp
+      '@borg/plugin-mcp-apps':
+        specifier: workspace:*
+        version: link:../../plugins/mcp-apps
       '@borg/plugin-mock-llm':
         specifier: workspace:*
         version: link:../../plugins/mock-llm
@@ -359,6 +365,36 @@ importers:
       lucide-solid:
         specifier: ^1.34.0
         version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
+  plugins/mcp:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
+  plugins/mcp-apps:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15

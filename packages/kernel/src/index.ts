@@ -38,8 +38,19 @@ export {
 export {
   ToolInvocationError,
   ToolService,
+  type RegisterRunPolicyContext,
   type ToolInvocationOptions,
 } from "./tool-service";
+export {
+  JsonSchemaValidationError,
+  assertBoundedJsonSchema,
+  validateAgainstJsonSchema,
+} from "./json-schema";
+export {
+  NetworkService,
+  type NetworkAuditRecord,
+  type NetworkServiceOptions,
+} from "./network-service";
 export {
   PluginManager,
   type ActivePluginMetadata,
@@ -48,6 +59,10 @@ export {
   type PluginSource,
   type PluginStatus,
 } from "./plugin-manager";
+export {
+  ProcessSupervisor,
+  type ProcessSupervisorOptions,
+} from "./process-supervisor";
 export { nextCronOccurrence, parseCron } from "./cron";
 export {
   SchedulerCore,

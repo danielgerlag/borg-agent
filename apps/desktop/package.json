@@ -13,6 +13,8 @@
     "@borg/plugin-feedback": "workspace:*",
     "@borg/plugin-graphs": "workspace:*",
     "@borg/plugin-hello": "workspace:*",
+    "@borg/plugin-mcp": "workspace:*",
+    "@borg/plugin-mcp-apps": "workspace:*",
     "@borg/plugin-mock-llm": "workspace:*",
     "@borg/plugin-sdk": "workspace:*",
     "@borg/plugin-secrets-dev": "workspace:*",

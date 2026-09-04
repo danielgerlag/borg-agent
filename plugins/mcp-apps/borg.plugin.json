@@ -1,0 +1,27 @@
+{
+  "id": "borg.mcp-apps",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-mcp-apps/main",
+  "ui": "@borg/plugin-mcp-apps/ui",
+  "permissions": [
+    "personas.read",
+    "tools.invoke",
+    "ui.embeddedContent.render"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.mcpApps.cancelTool",
+      "borg.mcpApps.invokeTool"
+    ],
+    "events": [
+      "borg.embeddedContent.registered",
+      "borg.mcpApps.toolResponded"
+    ],
+    "kinds": [
+      "embeddedContentRenderer"
+    ]
+  }
+}

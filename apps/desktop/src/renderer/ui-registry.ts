@@ -1,5 +1,7 @@
 import type {
   Disposable,
+  EmbeddedContentRendererContribution,
+  EmbeddedContentRendererProps,
   FlightDeckWidgetContribution,
   InteractionRendererContribution,
   InteractionRendererProps,
@@ -17,6 +19,9 @@ export class UiContributionRegistry implements PluginUiHost<Component> {
   readonly #flightDeckWidgets: FlightDeckWidgetContribution<Component>[] = [];
   readonly #interactionRenderers: InteractionRendererContribution<
     (props: InteractionRendererProps) => unknown
+  >[] = [];
+  readonly #embeddedContentRenderers: EmbeddedContentRendererContribution<
+    (props: EmbeddedContentRendererProps) => unknown
   >[] = [];
 
   registerWorkspaceView(
@@ -69,6 +74,43 @@ export class UiContributionRegistry implements PluginUiHost<Component> {
         }
       },
     };
+  }
+
+  registerEmbeddedContentRenderer(
+    contribution: EmbeddedContentRendererContribution<
+      (props: EmbeddedContentRendererProps) => unknown
+    >,
+  ): Disposable {
+    if (
+      !/^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/.test(contribution.id) ||
+      typeof contribution.component !== "function" ||
+      this.#embeddedContentRenderers.some(
+        (candidate) => candidate.id === contribution.id,
+      )
+    ) {
+      throw new Error(`Invalid embedded content renderer ${contribution.id}`);
+    }
+    this.#embeddedContentRenderers.push(contribution);
+    return {
+      dispose: () => {
+        const index = this.#embeddedContentRenderers.indexOf(contribution);
+        if (index >= 0) {
+          this.#embeddedContentRenderers.splice(index, 1);
+        }
+      },
+    };
+  }
+
+  getEmbeddedContentRenderer(
+    id: string,
+  ):
+    | EmbeddedContentRendererContribution<
+        (props: EmbeddedContentRendererProps) => unknown
+      >
+    | undefined {
+    return this.#embeddedContentRenderers.find(
+      (contribution) => contribution.id === id,
+    );
   }
 
   getWorkspaceViews(): readonly WorkspaceViewContribution<Component>[] {

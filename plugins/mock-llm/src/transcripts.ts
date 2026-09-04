@@ -10,6 +10,7 @@ export interface MockTranscriptFixture {
   readonly resultPath?: readonly string[];
   readonly content?: string;
   readonly delayMs?: number;
+  readonly requiresAdvertisedTool?: boolean;
 }
 
 export const mockTranscriptFixtures: readonly MockTranscriptFixture[] =
@@ -85,5 +86,31 @@ export const mockTranscriptFixtures: readonly MockTranscriptFixture[] =
       },
       finalPrefix: "Graph started: ",
       resultPath: ["instanceId"],
+    },
+    {
+      id: "mcp-echo",
+      prompt: "scenario:mcp",
+      toolCall: {
+        id: "mock-mcp-call",
+        name: "mcp.mock.echo",
+        input: {
+          text: "hello from mcp",
+        },
+      },
+      finalPrefix: "MCP echo: ",
+      resultPath: ["structuredContent", "echoed"],
+      requiresAdvertisedTool: true,
+    },
+    {
+      id: "mcp-app",
+      prompt: "scenario:mcp-app",
+      toolCall: {
+        id: "mock-mcp-app-call",
+        name: "mcp.mock.show-form",
+        input: {},
+      },
+      finalPrefix: "MCP App: ",
+      resultPath: ["structuredContent", "form"],
+      requiresAdvertisedTool: true,
     },
   ]);

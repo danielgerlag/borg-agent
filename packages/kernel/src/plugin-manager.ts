@@ -28,6 +28,8 @@ import type {
   SecretFacade,
   StoreFacade,
 } from "./persistence";
+import type { NetworkService } from "./network-service";
+import type { ProcessSupervisor } from "./process-supervisor";
 import type { ToolService } from "./tool-service";
 import type { WorkspaceService } from "./workspace-service";
 
@@ -77,6 +79,8 @@ export interface PluginManagerOptions {
   readonly workspaces?: WorkspaceService;
   readonly graphContributions?: GraphContributionRegistry;
   readonly scheduler?: SchedulerCore;
+  readonly processes?: ProcessSupervisor;
+  readonly http?: NetworkService;
   readonly showWindow?: () => void;
   getPluginDataDirectory?(pluginId: string): string;
 }
@@ -466,6 +470,22 @@ export class PluginManager {
         }
         return this.#options.graphContributions;
       };
+      const requireProcesses = (): ProcessSupervisor => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.processes) {
+          throw new Error("Process supervisor is unavailable");
+        }
+        return this.#options.processes;
+      };
+      const requireHttp = (): NetworkService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.http) {
+          throw new Error("Network service is unavailable");
+        }
+        return this.#options.http;
+      };
 
       if (
         definition.configSchema &&
@@ -577,30 +597,117 @@ export class PluginManager {
               ),
             );
           },
-          registerExecutionScope: (
-            runId,
-            sessionId,
-            allowedTools = ["*"],
-          ) => {
-            assertPermission("tools.invoke");
-            assertPermission("workspace.manage");
-            const workspace = requireWorkspaces().get(manifest.id, sessionId);
-            if (!workspace) {
+          registerProvider: (provider) => {
+            assertPermission("tools.provide");
+            assertContribution("toolProvider");
+            const open = provider.prepare ?? provider.open;
+            if (typeof open !== "function") {
               throw new Error(
-                `Workspace ${sessionId} is unavailable to ${manifest.id}`,
+                `Invalid tool provider contribution ${provider.id}`,
               );
             }
             return stage(() =>
+              requireTools().registerProvider(
+                manifest.id,
+                {
+                  ...provider,
+                  prepare: (scope) =>
+                    trackOperation(
+                      Promise.resolve().then(async () => {
+                        const catalog = await open({
+                          ...scope,
+                          signal: AbortSignal.any([
+                            scope.signal,
+                            controller.signal,
+                          ]),
+                        });
+                        const closer = catalog.close ?? catalog.dispose;
+                        let closed = false;
+                        return {
+                          definitions: catalog.definitions,
+                          execute: (toolId, input, execution) =>
+                            trackOperation(
+                              Promise.resolve().then(() =>
+                                catalog.execute(toolId, input, {
+                                  ...execution,
+                                  signal: AbortSignal.any([
+                                    execution.signal,
+                                    controller.signal,
+                                  ]),
+                                }),
+                              ),
+                            ),
+                          ...(typeof closer === "function"
+                            ? {
+                                close: () => {
+                                  if (closed) {
+                                    return;
+                                  }
+                                  closed = true;
+                                  return trackOperation(
+                                    Promise.resolve().then(() =>
+                                      closer.call(catalog),
+                                    ),
+                                  );
+                                },
+                              }
+                            : {}),
+                        };
+                      }),
+                    ),
+                },
+                {
+                  workspaceAccess: permissions.has("fs:sessionWorkspace"),
+                },
+              ),
+            );
+          },
+          registerExecutionScope: ({
+            runId,
+            sessionId,
+            personaId,
+            allowedTools = ["*"],
+          }) => {
+            assertPermission("tools.invoke");
+            const persona = personaId
+              ? (() => {
+                  assertPermission("personas.read");
+                  const match = requirePersonas().get(personaId);
+                  if (!match || match.archived) {
+                    throw new Error(`Persona ${personaId} is unavailable`);
+                  }
+                  return match;
+                })()
+              : undefined;
+            let workspaceRoot: string | undefined;
+            if (permissions.has("workspace.manage")) {
+              const workspace = requireWorkspaces().get(manifest.id, sessionId);
+              if (!workspace) {
+                throw new Error(
+                  `Workspace ${sessionId} is unavailable to ${manifest.id}`,
+                );
+              }
+              workspaceRoot = workspace.rootPath;
+            }
+            const registration = stage(() =>
               requireTools().registerRunPolicy(
                 runId,
                 manifest.id,
                 allowedTools,
                 {
                   sessionId,
-                  workspaceRoot: workspace.rootPath,
+                  ...(workspaceRoot ? { workspaceRoot } : {}),
+                  ...(persona ? { persona, personaId: persona.id } : {}),
+                  ...(persona
+                    ? { additionalAllowedTools: persona.allowedTools }
+                    : {}),
                 },
               ),
             );
+            return {
+              dispose: () => registration.dispose(),
+              prepare: () => trackOperation(requireTools().prepareScope(runId)),
+            };
           },
           invoke: (toolId, input, invocationOptions) => {
             assertPermission("tools.invoke");
@@ -951,6 +1058,67 @@ export class PluginManager {
             return requireScheduler().cancel(manifest.id, id);
           },
         },
+        process: {
+          spawn: (command, args, spawnOptions) => {
+            assertOrdinaryContext();
+            assertPermission("subprocess:mcp");
+            const processes = requireProcesses();
+            const operation = this.#operationContext.getStore();
+            if (operation && !operation.active) {
+              throw new Error(
+                `Command ${operation.commandId} context is no longer active`,
+              );
+            }
+            return trackOperation(
+              Promise.resolve().then(() =>
+                processes.spawn(manifest.id, command, args, {
+                  ...(spawnOptions?.cwd !== undefined
+                    ? { cwd: spawnOptions.cwd }
+                    : {}),
+                  ...(spawnOptions?.env !== undefined
+                    ? { env: spawnOptions.env }
+                    : {}),
+                  ...(spawnOptions?.graceTimeoutMs !== undefined
+                    ? { graceTimeoutMs: spawnOptions.graceTimeoutMs }
+                    : {}),
+                  signal: AbortSignal.any([
+                    ...(spawnOptions?.signal ? [spawnOptions.signal] : []),
+                    ...(operation ? [operation.signal] : []),
+                    controller.signal,
+                  ]),
+                }),
+              ),
+            );
+          },
+        },
+        http: {
+          fetch: (input, init) => {
+            assertOrdinaryContext();
+            assertPermission("network:dynamic");
+            const network = requireHttp();
+            const operation = this.#operationContext.getStore();
+            if (operation && !operation.active) {
+              throw new Error(
+                `Command ${operation.commandId} context is no longer active`,
+              );
+            }
+            return trackOperation(
+              Promise.resolve().then(() =>
+                network.fetch(manifest.id, input, {
+                  ...(init ?? {}),
+                  signal: AbortSignal.any([
+                    ...(init?.signal ? [init.signal] : []),
+                    ...(input instanceof Request && input.signal
+                      ? [input.signal]
+                      : []),
+                    ...(operation ? [operation.signal] : []),
+                    controller.signal,
+                  ]),
+                }),
+              ),
+            );
+          },
+        },
         runtime: {
           spawn: (task) => {
             assertOrdinaryContext();
@@ -1120,6 +1288,8 @@ export class PluginManager {
       this.#options.tools?.removePlugin(manifest.id);
       this.#options.models?.removePlugin(manifest.id);
       this.#options.prompts?.removePlugin(manifest.id);
+      this.#options.http?.abortOwned(manifest.id);
+      await this.#options.processes?.abortOwned(manifest.id);
       await this.#disposeAll(disposables);
       this.bus.removePlugin(manifest.id);
 
@@ -1179,6 +1349,19 @@ export class PluginManager {
     this.#options.prompts?.removePlugin(pluginId);
     this.#options.graphContributions?.removePlugin(pluginId);
     this.#options.scheduler?.cancelOwned(pluginId);
+    this.#options.http?.abortOwned(pluginId);
+    if (this.#options.processes) {
+      try {
+        await withTimeout(
+          async () => this.#options.processes?.abortOwned(pluginId),
+          Math.max(1, shutdownDeadline - Date.now()),
+          `Plugin ${pluginId} process cancellation`,
+        );
+      } catch (error) {
+        deactivationError = error;
+        console.error(`[kernel] plugin ${pluginId} processes did not stop`, error);
+      }
+    }
     try {
       await withTimeout(
         async () => this.#options.loops?.cancelOwned(pluginId),

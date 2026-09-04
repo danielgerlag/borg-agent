@@ -96,6 +96,18 @@ export function createUiTransaction(
         stage("ui.interactions", "interactionRenderer", () =>
           registry.registerInteractionRenderer(contribution),
         ),
+      registerEmbeddedContentRenderer: (contribution) =>
+        stage("ui.embeddedContent.render", "embeddedContentRenderer", () =>
+          registry.registerEmbeddedContentRenderer(contribution),
+        ),
+      getEmbeddedContentRenderer: (id) => {
+        if (!permissions.has("ui.embeddedContent.consume")) {
+          throw new Error(
+            `Plugin ${plugin.id} did not declare ui.embeddedContent.consume`,
+          );
+        }
+        return registry.getEmbeddedContentRenderer(id);
+      },
     },
     commit: async () => {
       try {

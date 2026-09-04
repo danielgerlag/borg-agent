@@ -119,6 +119,17 @@ export default definePlugin({
         if (!fixture.toolCall) {
           throw new Error(`Mock fixture ${fixture.id} has no response`);
         }
+        if (
+          fixture.requiresAdvertisedTool &&
+          !request.tools.some((tool) => tool.id === fixture.toolCall?.name)
+        ) {
+          const content = `Mock reply: ${userPrompt}`;
+          await streamContent(content, signal, onToken);
+          return {
+            content,
+            usage,
+          };
+        }
         return {
           toolCalls: [fixture.toolCall],
           usage,

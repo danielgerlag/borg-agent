@@ -222,11 +222,12 @@ export function createGraphHarness(
   } as unknown as PluginBus;
 
   const registerExecutionScope = vi.fn(
-    (
-      runId: string,
-      sessionId: string,
-      allowedTools?: readonly string[],
-    ): Disposable => {
+    (options: {
+      readonly runId: string;
+      readonly sessionId: string;
+      readonly allowedTools?: readonly string[];
+    }): Disposable & { prepare(): Promise<void> } => {
+      const { runId, sessionId, allowedTools } = options;
       const record: ToolScopeRecord = {
         runId,
         sessionId,
@@ -236,6 +237,7 @@ export function createGraphHarness(
       toolScopes.push(record);
       activeToolScopes.set(runId, record);
       return {
+        prepare: async () => undefined,
         dispose: () => {
           record.disposed = true;
           if (activeToolScopes.get(runId) === record) {

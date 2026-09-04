@@ -6,6 +6,7 @@ import type {
   CostSummary,
   EventDefinition,
   EventPayload,
+  EmbeddedContentSnapshot,
   FeedbackAnswer,
   LoopEvent,
   LoopRunSnapshot,
@@ -15,10 +16,13 @@ import type {
   Persona,
   UsageRecord,
   WorkspaceFile,
+  DynamicToolDefinition,
+  ToolApproval,
 } from "@borg/contracts";
 import { z } from "zod";
 
 export { z } from "zod";
+export type { DynamicToolDefinition, ToolApproval } from "@borg/contracts";
 
 export interface Disposable {
   dispose(): void | Promise<void>;
@@ -118,7 +122,7 @@ export interface ToolContribution<
   readonly description: string;
   readonly input: TInput;
   readonly output: TOutput;
-  readonly approval: "auto" | "ask" | "deny";
+  readonly approval: ToolApproval;
   readonly sideEffect: boolean;
   execute(
     input: z.output<TInput>,
@@ -135,13 +139,53 @@ export function defineTool<
   return Object.freeze(tool);
 }
 
+export interface ToolProviderScope {
+  readonly runId: string;
+  readonly ownerPluginId: string;
+  readonly persona?: Persona | undefined;
+  readonly personaId?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly workspaceRoot?: string | undefined;
+  readonly signal: AbortSignal;
+}
+
+export interface PreparedToolCatalog {
+  readonly definitions: readonly DynamicToolDefinition[];
+  execute(
+    toolId: string,
+    input: JsonValue,
+    context: ToolExecutionContext,
+  ): JsonValue | Promise<JsonValue>;
+  dispose?(): void | Promise<void>;
+  close?(): void | Promise<void>;
+}
+
+export interface ToolProviderContribution {
+  readonly id: string;
+  readonly namespace?: string | undefined;
+  prepare?(
+    scope: ToolProviderScope,
+  ): PreparedToolCatalog | Promise<PreparedToolCatalog>;
+  open?(
+    scope: ToolProviderScope,
+  ): PreparedToolCatalog | Promise<PreparedToolCatalog>;
+}
+
+export function defineToolProvider(
+  provider: ToolProviderContribution,
+): ToolProviderContribution {
+  return Object.freeze(provider);
+}
+
 export interface PluginTools {
   register(tool: ToolContribution): Disposable;
-  registerExecutionScope(
-    runId: string,
-    sessionId: string,
-    allowedTools?: readonly string[],
-  ): Disposable;
+  registerProvider(provider: ToolProviderContribution): Disposable;
+  registerExecutionScope(options: {
+    readonly runId: string;
+    readonly sessionId: string;
+    readonly personaId?: string | undefined;
+    readonly allowedTools?: readonly string[] | undefined;
+  }): Disposable & { prepare(): Promise<void> };
   invoke(
     toolId: string,
     input: unknown,
@@ -387,6 +431,40 @@ export interface PluginRuntime {
   spawn(task: (signal: AbortSignal) => void | Promise<void>): Disposable;
 }
 
+export interface PluginProcessSpawnOptions {
+  readonly cwd?: string | undefined;
+  readonly env?: Readonly<Record<string, string>> | undefined;
+  readonly graceTimeoutMs?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface PluginProcessExit {
+  readonly code: number | null;
+  readonly signal: string | null;
+}
+
+export interface PluginProcess extends Disposable {
+  readonly pid: number;
+  readonly stdin: WritableStream<Uint8Array>;
+  readonly stdout: ReadableStream<Uint8Array>;
+  readonly stderr: ReadableStream<Uint8Array>;
+  readonly exit: Promise<PluginProcessExit>;
+  close(): Promise<void>;
+  kill(): Promise<void>;
+}
+
+export interface PluginProcesses {
+  spawn(
+    command: string,
+    args: readonly string[],
+    options?: PluginProcessSpawnOptions,
+  ): Promise<PluginProcess>;
+}
+
+export interface PluginHttp {
+  fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
+}
+
 export interface PluginLogger {
   debug(message: string, metadata?: Readonly<Record<string, unknown>>): void;
   info(message: string, metadata?: Readonly<Record<string, unknown>>): void;
@@ -441,6 +519,8 @@ export interface PluginContext {
   readonly graphs: PluginGraphs;
   readonly scheduler: PluginScheduler;
   readonly runtime: PluginRuntime;
+  readonly process: PluginProcesses;
+  readonly http: PluginHttp;
   readonly window: {
     show(): void;
   };
@@ -587,6 +667,15 @@ export interface InteractionRendererContribution<TComponent = unknown> {
   readonly component: TComponent;
 }
 
+export interface EmbeddedContentRendererProps {
+  readonly content: EmbeddedContentSnapshot;
+}
+
+export interface EmbeddedContentRendererContribution<TComponent = unknown> {
+  readonly id: string;
+  readonly component: TComponent;
+}
+
 export interface PluginUiHost<TComponent = unknown> {
   registerWorkspaceView(contribution: WorkspaceViewContribution<TComponent>): Disposable;
   registerSettingsPage(contribution: SettingsPageContribution<TComponent>): Disposable;
@@ -599,6 +688,18 @@ export interface PluginUiHost<TComponent = unknown> {
       (props: InteractionRendererProps) => unknown
     >,
   ): Disposable;
+  registerEmbeddedContentRenderer(
+    contribution: EmbeddedContentRendererContribution<
+      (props: EmbeddedContentRendererProps) => unknown
+    >,
+  ): Disposable;
+  getEmbeddedContentRenderer(
+    id: string,
+  ):
+    | EmbeddedContentRendererContribution<
+        (props: EmbeddedContentRendererProps) => unknown
+      >
+    | undefined;
 }
 
 export interface PluginUiBus {

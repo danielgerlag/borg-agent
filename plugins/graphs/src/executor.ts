@@ -706,7 +706,10 @@ export class HiveMindGraphEngine {
   readonly #announcementTasks = new Map<string, Disposable>();
   readonly #delaySchedules = new Map<string, Disposable>();
   readonly #triggerSchedules = new Map<string, Disposable>();
-  readonly #toolScopes = new Map<string, Disposable>();
+  readonly #toolScopes = new Map<
+    string,
+    Disposable & { prepare(): Promise<void> }
+  >();
   readonly #definitionOperations = new Map<string, Promise<void>>();
   readonly #inboundMessages = new Set<string>();
   #disposed = false;
@@ -948,7 +951,7 @@ export class HiveMindGraphEngine {
 
     this.context.workspace.allocate(instanceId);
     try {
-      this.#registerToolScope(record);
+      await this.#registerToolScope(record);
       if (persistence) {
         const persisted = this.#serializedInstance(record);
         await this.context.store.transaction([
@@ -1236,7 +1239,7 @@ export class HiveMindGraphEngine {
       this.#spawnTerminalAnnouncement(record);
       return;
     }
-    this.#registerToolScope(record);
+    await this.#registerToolScope(record);
     let delayed = false;
     for (const state of record.instance.nodeStates) {
       if (
@@ -2420,16 +2423,25 @@ export class HiveMindGraphEngine {
     });
   }
 
-  #registerToolScope(record: InstanceRecord): void {
+  async #registerToolScope(record: InstanceRecord): Promise<void> {
     if (this.#toolScopes.has(record.instance.id)) {
       return;
     }
-    const scope = this.context.tools.registerExecutionScope(
-      record.instance.id,
-      record.instance.id,
-      record.definition.permissions ?? ["*"],
-    );
+    const scope = this.context.tools.registerExecutionScope({
+      runId: record.instance.id,
+      sessionId: record.instance.id,
+      allowedTools: record.definition.permissions ?? ["*"],
+    });
     this.#toolScopes.set(record.instance.id, scope);
+    try {
+      await scope.prepare();
+    } catch (error) {
+      if (this.#toolScopes.get(record.instance.id) === scope) {
+        this.#toolScopes.delete(record.instance.id);
+      }
+      await scope.dispose();
+      throw error;
+    }
   }
 
   async #disposeToolScope(instanceId: string): Promise<void> {

@@ -11,8 +11,10 @@ import {
   chatSessionUpdated,
   chatSpawnSubAgent,
   chatTurnCompleted,
+  embeddedContentSnapshotSchema,
   emptyChatUsage,
   type ChatEntry,
+  type EmbeddedContentSnapshot,
   type ChatSession,
   type ChatUsage,
   type ModelDescriptor,
@@ -22,6 +24,7 @@ import {
 import {
   defineUiPlugin,
   type Disposable,
+  type EmbeddedContentRendererProps,
   z,
 } from "@borg/plugin-sdk";
 import { Button, Panel } from "@borg/ui-kit";
@@ -44,7 +47,7 @@ import {
   onMount,
   type Component,
 } from "solid-js";
-import { Portal } from "solid-js/web";
+import { Dynamic, Portal } from "solid-js/web";
 import { matchesModelPreference } from "./model-preference";
 
 type ChatDocument = z.infer<typeof chatDocumentSchema>;
@@ -146,10 +149,55 @@ function activityLabel(entry: ChatEntry): string {
   return "Conversation update";
 }
 
+function embeddedContent(
+  entry: ChatEntry,
+): EmbeddedContentSnapshot | undefined {
+  const parsed = embeddedContentSnapshotSchema.safeParse(
+    entry.metadata?.embeddedContent,
+  );
+  return parsed.success ? parsed.data : undefined;
+}
+
 export default defineUiPlugin<Component>({
   id: "borg.chat",
   activate(context) {
     const [personaReady, setPersonaReady] = createSignal(false);
+
+    const EmbeddedContent: Component<{
+      readonly content: EmbeddedContentSnapshot;
+    }> = (props) => {
+      const renderer = context.ui.getEmbeddedContentRenderer(
+        props.content.rendererId,
+      );
+      return (
+        <Show
+          when={renderer}
+          fallback={
+            <div
+              class="mx-auto w-full max-w-[92%] rounded-xl border border-[var(--border)] bg-[var(--panel-muted)]/45 p-3 text-sm text-[var(--text-muted)]"
+              data-testid="chat-embedded-content-unavailable"
+            >
+              Interactive content is unavailable.
+            </div>
+          }
+        >
+          {(match) => (
+            <div
+              class="mx-auto w-full max-w-[92%]"
+              data-testid="chat-embedded-content"
+              data-content-instance-id={props.content.instanceId}
+            >
+              <Dynamic
+                component={
+                  match().component as Component<EmbeddedContentRendererProps>
+                }
+                content={props.content}
+              />
+            </div>
+          )}
+        </Show>
+      );
+    };
 
     const ChatWorkspace: Component = () => {
       const [sessions, setSessions] = createSignal<readonly ChatSession[]>([]);
@@ -900,45 +948,60 @@ export default defineUiPlugin<Component>({
                     </Show>
 
                     <For each={document()?.entries ?? []}>
-                      {(entry) => (
-                        <Show
-                          when={
-                            entry.role === "tool" || entry.role === "event"
-                          }
-                          fallback={
-                            <div
-                              class="max-w-[85%] rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
-                              classList={{
-                                "ml-auto bg-[var(--accent)]/10":
-                                  entry.role === "user",
-                                "bg-[var(--panel-muted)]":
-                                  entry.role === "assistant",
-                                "mx-auto border-transparent bg-transparent text-xs text-[var(--text-muted)]":
-                                  entry.role === "system",
-                              }}
-                              data-testid="chat-message"
-                              data-message-id={entry.id}
-                              data-role={entry.role}
-                            >
-                              <p class="whitespace-pre-wrap">{entry.content}</p>
-                            </div>
-                          }
-                        >
-                          <details
-                            class="group mx-auto w-full max-w-[92%] rounded-lg px-2 py-1 text-xs text-[var(--text-subtle)] open:bg-[var(--panel-muted)]/45"
-                            data-testid="chat-message"
-                            data-message-id={entry.id}
-                            data-role={entry.role}
+                      {(entry) => {
+                        const content = embeddedContent(entry);
+                        return (
+                          <Show
+                            when={content}
+                            fallback={
+                              <Show
+                                when={
+                                  entry.role === "tool" ||
+                                  entry.role === "event"
+                                }
+                                fallback={
+                                  <div
+                                    class="max-w-[85%] rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                                    classList={{
+                                      "ml-auto bg-[var(--accent)]/10":
+                                        entry.role === "user",
+                                      "bg-[var(--panel-muted)]":
+                                        entry.role === "assistant",
+                                      "mx-auto border-transparent bg-transparent text-xs text-[var(--text-muted)]":
+                                        entry.role === "system",
+                                    }}
+                                    data-testid="chat-message"
+                                    data-message-id={entry.id}
+                                    data-role={entry.role}
+                                  >
+                                    <p class="whitespace-pre-wrap">
+                                      {entry.content}
+                                    </p>
+                                  </div>
+                                }
+                              >
+                                <details
+                                  class="group mx-auto w-full max-w-[92%] rounded-lg px-2 py-1 text-xs text-[var(--text-subtle)] open:bg-[var(--panel-muted)]/45"
+                                  data-testid="chat-message"
+                                  data-message-id={entry.id}
+                                  data-role={entry.role}
+                                >
+                                  <summary class="cursor-pointer py-1.5 transition hover:text-[var(--text-muted)]">
+                                    {activityLabel(entry)}
+                                  </summary>
+                                  <p class="border-l border-[var(--border)] py-2 pl-3 pr-2 whitespace-pre-wrap text-[var(--text-muted)]">
+                                    {entry.content}
+                                  </p>
+                                </details>
+                              </Show>
+                            }
                           >
-                            <summary class="cursor-pointer py-1.5 transition hover:text-[var(--text-muted)]">
-                              {activityLabel(entry)}
-                            </summary>
-                            <p class="border-l border-[var(--border)] py-2 pl-3 pr-2 whitespace-pre-wrap text-[var(--text-muted)]">
-                              {entry.content}
-                            </p>
-                          </details>
-                        </Show>
-                      )}
+                            {(snapshot) => (
+                              <EmbeddedContent content={snapshot()} />
+                            )}
+                          </Show>
+                        );
+                      }}
                     </For>
                     <Show when={streaming()}>
                       {(content) => (

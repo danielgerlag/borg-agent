@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This is the Slice 0 architecture for Borg. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
+This is the implementation architecture through Slice 8. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
 
 The architecture is deliberately a microkernel:
 
@@ -370,10 +370,11 @@ Commands/events are for cross-plugin product collaboration. Contributions descri
 | `borg.feedback.ask` | command | `borg.feedback` | ask and wait through kernel interactions |
 | `borg.feedback.requested` | event | `borg.feedback` | human-input request was queued |
 | `borg.feedback.resolved` | event | `borg.feedback` | human-input request was resolved/cancelled |
-| `borg.mcpApps.register` | command | `borg.chat` | associate an app instance/tool descriptors with a session |
-| `borg.mcpApps.invoke` | command | `borg.mcp-apps` | invoke a registered iframe tool and await its result |
-| `borg.mcpApps.respond` | command | `borg.mcp-apps` | resolve an iframe invocation from UI |
-| `borg.mcpApps.invocation.requested` | event | `borg.mcp-apps` | route a main-side app-tool request to its UI iframe |
+| `borg.mcp.appDiscovered` | event | `borg.mcp` | publish a validated app resource and its app-visible server tools |
+| `borg.embeddedContent.registered` | event | `borg.mcp-apps` | project durable generic embedded content into chat |
+| `borg.mcpApps.invokeTool` | command | `borg.mcp-apps` | invoke one app-visible tool through a fresh run scope |
+| `borg.mcpApps.cancelTool` | command | `borg.mcp-apps` | cancel an active app-originated tool invocation |
+| `borg.mcpApps.toolResponded` | event | `borg.mcp-apps` | record the succeeded, failed, or cancelled terminal response |
 
 The initial schema shapes are:
 
@@ -468,35 +469,48 @@ output: {
 
 `requested` carries the input plus `interactionId`. `resolved` carries `interactionId`, source, and status `answered | cancelled | timed_out`; answers are included only where the subscriber is permitted to see them.
 
-MCP Apps schemas are:
+The MCP Apps flow is:
 
 ```ts
-// handled by borg.chat
-borg.mcpApps.register({
+borg.mcp.appDiscovered({
   sessionId,
+  personaId,
   appInstanceId,
   serverId,
   resourceUri,
-  tools: [{ name, description, inputSchema }]
-}) -> { registeredToolIds: string[] }
+  html,
+  csp,
+  permissions,
+  tools: [{ name, toolId, description, inputSchema }],
+  sourceToolId,
+  sourceToolName,
+  toolInput,
+  callResult,
+  startedAt,
+  completedAt,
+  discoveredAt
+})
 
-// handled by borg.mcp-apps
-borg.mcpApps.invoke({
+borg.embeddedContent.registered({
   sessionId,
+  content: { instanceId, rendererId, title, payload, createdAt }
+})
+
+borg.mcpApps.invokeTool({
   appInstanceId,
+  invocationId,
+  requestId,
   toolName,
   arguments
-}) -> { content: unknown, isError?: boolean }
+}) -> { requestId, result }
 
-// invoked by borg.mcp-apps UI, handled in main
-borg.mcpApps.respond({
+borg.mcpApps.cancelTool({
+  appInstanceId,
   invocationId,
-  content,
-  isError?: boolean
-}) -> { accepted: boolean }
+}) -> { cancelled }
 ```
 
-`borg.mcpApps.invoke` emits `borg.mcpApps.invocation.requested`; the UI bridge sends the iframe request and invokes `respond`. The command bus must remain concurrent so a waiting invocation handler does not block its response command.
+`borg.mcp` reads and validates the `ui://` resource after its source tool completes. `borg.mcp-apps` stores the immutable snapshot and publishes only the generic embedded-content contract that `borg.chat` persists. The UI bridge accepts bounded JSON-RPC requests only from the expected nested frame, instance, channel, and nonce. Every app tool call creates a ToolService run scope constrained to the selected snapshot tool and persona; cancellation disposes that scope.
 
 ## IPC and preload
 
@@ -556,7 +570,7 @@ interface Persona {
 }
 ```
 
-`McpServerConfig` records ID, enabled flag, transport (`stdio | sse | streamable-http`), command/arguments or URL, environment/header secret references, channel class, reconnect/reactive flags, and optional sandbox request. The kernel stores this persona-owned data; `borg.mcp` interprets and executes it.
+`McpServerConfig` records ID, enabled flag, transport (`stdio | sse | streamable-http`), command/arguments or URL, environment/header secret references, channel class, reconnect/reactive flags, and optional sandbox request. The kernel stores this persona-owned data. Slice 8 enforces transport, secret-reference, reconnect, and tool-approval behavior; `channelClass`, `reactive`, and `sandbox` remain forward-compatible metadata and are not security boundaries. Stdio servers therefore execute as host-user child processes until the planned sandbox service is connected to this path.
 
 Persona IDs have at least two slash-delimited segments containing letters, digits, `_`, or `-`. `system/general` is bundled and always resolvable. Bundled personas may be edited/reset and archived but not deleted.
 
@@ -865,9 +879,11 @@ One plugin per provider owns auth/setup, HTTP protocol, tool-call conversion, ca
 
 ### `borg.mcp` and `borg.mcp-apps`
 
-`borg.mcp` owns stdio/SSE/streamable-HTTP clients, catalogs, persona-config consumption, and session tool providers. `borg.mcp-apps` owns app resources, sandboxed iframes, app-tool proxies, and invocation correlation. Chat cooperation uses the cataloged commands/events.
+`borg.mcp` owns stdio/SSE/streamable-HTTP clients, catalogs, persona-config consumption, session tool providers, and validated `ui://` resource discovery. `borg.mcp-apps` owns durable app snapshots, sandboxed frames, app-tool proxies, and invocation correlation. Chat consumes a generic embedded-content renderer contract and does not import either MCP plugin.
 
-MCP App iframes have a unique opaque origin, no Node/preload access, a restrictive CSP, and a narrow `postMessage` bridge that validates app instance, message schema, and source window.
+The kernel accepts a closed JSON Schema keyword set. It enforces each supported assertion, accepts `format` and the standard descriptive fields as annotations, and rejects every other keyword. The `format` annotation does not reject a tool input.
+
+MCP App content runs in an inner `sandbox="allow-scripts"` `srcdoc` inside an opaque-origin `borg-embedded:` outer sandbox. The outer document is a static Electron protocol response; validated app HTML reaches it only through the nonce-bound bridge. The inner document inherits the outer deny-by-default CSP, while an Electron session request filter denies nonlocal requests from the embedded frame tree even after an in-frame navigation. Both documents deny network, nested frames, forms, objects, workers, media, base URLs, referrers, and host capabilities. The narrow `postMessage` bridge validates source windows, origins, channel, app instance, per-frame nonce, JSON-RPC shape, depth, and byte limits. Requested app permissions and server-provided CSP domains are untrusted metadata and grant no capability in Slice 8. App calls require the configured server to remain available; there is no offline replay of MCP results or app writes.
 
 ### Tools, search, memory, context, scanners, stores, and channels
 

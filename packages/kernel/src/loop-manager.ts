@@ -244,6 +244,7 @@ export class LoopManager {
         sessionId: input.sessionId,
         workspaceRoot: workspace?.rootPath,
         additionalAllowedTools: input.additionalAllowedTools,
+        ...(persona ? { persona } : {}),
       },
     );
     this.#runs.set(run.snapshot.id, run);
@@ -416,6 +417,7 @@ export class LoopManager {
     let providerId = input.providerId;
     let modelId = input.modelId;
     try {
+      await this.tools.prepareRun(run.snapshot.id);
       for (let turn = 0; turn < 8; turn += 1) {
         if (run.controller.signal.aborted) {
           return;
@@ -440,6 +442,7 @@ export class LoopManager {
               ? this.tools.listDefinitions(
                   input.allowedTools,
                   input.additionalAllowedTools,
+                  run.snapshot.id,
                 )
               : [],
           },
@@ -493,7 +496,10 @@ export class LoopManager {
               input: toolCall.input,
             });
             run.activeToolCallId = toolCall.id;
-            run.activeToolPluginId = this.tools.getProviderPluginId(toolCall.name);
+            run.activeToolPluginId = this.tools.getProviderPluginId(
+              toolCall.name,
+              run.snapshot.id,
+            );
             let output: JsonValue;
             try {
               output = await this.tools.invoke(toolCall.name, toolCall.input, {

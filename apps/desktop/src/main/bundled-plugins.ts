@@ -96,6 +96,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
         "personas.read",
         "personas.write",
         "tools.invoke",
+        "ui.embeddedContent.consume",
         "ui.flightDeck",
         "ui.settings",
         "ui.wizard",
@@ -276,6 +277,73 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-hello/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.mcp",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-mcp/main",
+      "ui": "@borg/plugin-mcp/ui",
+      "permissions": [
+        "network:dynamic",
+        "personas.read",
+        "personas.write",
+        "secrets:read",
+        "subprocess:mcp",
+        "tools.provide",
+        "ui.settings"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.mcp.getStatus",
+          "borg.mcp.listServers",
+          "borg.mcp.refresh"
+        ],
+        "events": [
+          "borg.mcp.appDiscovered"
+        ],
+        "kinds": [
+          "settingsPage",
+          "toolProvider"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-mcp/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.mcp-apps",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-mcp-apps/main",
+      "ui": "@borg/plugin-mcp-apps/ui",
+      "permissions": [
+        "personas.read",
+        "tools.invoke",
+        "ui.embeddedContent.render"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.mcpApps.cancelTool",
+          "borg.mcpApps.invokeTool"
+        ],
+        "events": [
+          "borg.embeddedContent.registered",
+          "borg.mcpApps.toolResponded"
+        ],
+        "kinds": [
+          "embeddedContentRenderer"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-mcp-apps/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {

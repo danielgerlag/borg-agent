@@ -6,10 +6,12 @@ import {
   InteractionService,
   LoopManager,
   ModelRouter,
+  NetworkService,
   NotificationService,
   PersonaService,
   PersistenceRegistry,
   PluginManager,
+  ProcessSupervisor,
   PromptAssembler,
   SchedulerCore,
   SecretFacade,
@@ -35,6 +37,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { bundledMainPlugins } from "./bundled-plugins";
+import { installEmbeddedContentProtocol } from "./embedded-content-protocol";
 import { registerIpcBridge } from "./ipc";
 
 const KERNEL_VERSION = "0.1.0";
@@ -69,6 +72,9 @@ let notificationService: NotificationService | undefined;
 let interactionService: InteractionService | undefined;
 let loopManager: LoopManager | undefined;
 let scheduler: SchedulerCore | undefined;
+let processSupervisor: ProcessSupervisor | undefined;
+let networkService: NetworkService | undefined;
+let removeEmbeddedContentProtocol: (() => void) | undefined;
 let removeIpcBridge: (() => Promise<void>) | undefined;
 let notificationSubscription: Disposable | undefined;
 let interactionSubscription: Disposable | undefined;
@@ -383,9 +389,12 @@ async function requestQuit(): Promise<void> {
       scheduler?.shutdown();
       loopManager?.shutdown();
       interactionService?.cancelAll();
+      await processSupervisor?.shutdown();
+      networkService?.shutdown();
     }
     await setupSchemaRegistration?.dispose();
   } finally {
+    removeEmbeddedContentProtocol?.();
     shutdownComplete = true;
     tray?.destroy();
     setImmediate(() => {
@@ -442,6 +451,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(async () => {
+    removeEmbeddedContentProtocol = installEmbeddedContentProtocol();
     createTray();
 
     const bus = new CommandEventBus();
@@ -470,6 +480,8 @@ if (!app.requestSingleInstanceLock()) {
     );
     const graphContributions = new GraphContributionRegistry();
     scheduler = new SchedulerCore();
+    processSupervisor = new ProcessSupervisor();
+    networkService = new NetworkService();
     loopManager = new LoopManager(
       models,
       tools,
@@ -497,6 +509,8 @@ if (!app.requestSingleInstanceLock()) {
       workspaces: workspaceService,
       graphContributions,
       scheduler,
+      processes: processSupervisor,
+      http: networkService,
       showWindow: showMainWindow,
       getPluginDataDirectory: (pluginId) => {
         const directory = path.join(

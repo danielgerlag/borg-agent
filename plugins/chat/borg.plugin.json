@@ -12,6 +12,7 @@
     "personas.read",
     "personas.write",
     "tools.invoke",
+    "ui.embeddedContent.consume",
     "ui.flightDeck",
     "ui.settings",
     "ui.wizard",

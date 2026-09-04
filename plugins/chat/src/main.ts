@@ -15,6 +15,8 @@ import {
   chatSpawnSubAgent,
   chatTurnCompleted,
   chatTurnStarted,
+  embeddedContentRegistered,
+  embeddedContentSnapshotSchema,
   feedbackRequested,
   feedbackResolved,
   emptyChatUsage,
@@ -84,6 +86,7 @@ export default definePlugin({
     "personas.read",
     "personas.write",
     "tools.invoke",
+    "ui.embeddedContent.consume",
     "ui.flightDeck",
     "ui.settings",
     "ui.wizard",
@@ -716,8 +719,42 @@ export default definePlugin({
       );
     });
 
+    const embeddedContent = context.bus.on(
+      embeddedContentRegistered,
+      async ({ sessionId, content }) => {
+        if (!documents.has(sessionId)) {
+          return;
+        }
+        await enqueue(sessionId, async () => {
+          const document = documents.get(sessionId);
+          if (
+            !document ||
+            document.entries.some((entry) => {
+              const parsed = embeddedContentSnapshotSchema.safeParse(
+                entry.metadata?.embeddedContent,
+              );
+              return (
+                parsed.success &&
+                parsed.data.instanceId === content.instanceId
+              );
+            })
+          ) {
+            return;
+          }
+          await append(
+            sessionId,
+            createEntry("event", `Interactive content: ${content.title}`, {
+              kind: "embedded_content",
+              embeddedContent: content,
+            }),
+          );
+        });
+      },
+    );
+
     return {
       dispose: async () => {
+        embeddedContent.dispose();
         await Promise.allSettled(
           [...runSubscriptions.values()].map(async (subscription) =>
             subscription.dispose(),

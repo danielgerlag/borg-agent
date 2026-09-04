@@ -10,6 +10,7 @@ import {
   type BorgPluginManifest,
   type ConfigStoreProvider,
   type PluginContext,
+  type PluginProcess,
   z,
 } from "@borg/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
@@ -20,8 +21,10 @@ import {
   InteractionService,
   LoopManager,
   ModelRouter,
+  NetworkService,
   PluginManager,
   PersistenceRegistry,
+  ProcessSupervisor,
   satisfiesBorgEngine,
   ToolService,
   type PluginSource,
@@ -474,6 +477,138 @@ describe("PluginManager", () => {
     await deactivation;
   });
 
+  it("registers a tool provider only with tools.provide and toolProvider", async () => {
+    const bus = new CommandEventBus();
+    const tools = new ToolService(new InteractionService());
+    const manager = new PluginManager(bus, "0.1.0", { tools });
+    const denied = {
+      id: "test.denied-provider",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.denied-provider/main",
+      permissions: ["tools.register"],
+      contributes: { kinds: ["tool"] },
+    } as const satisfies BorgPluginManifest;
+    const allowed = {
+      id: "test.tool-provider",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.tool-provider/main",
+      permissions: ["tools.provide"],
+      contributes: { kinds: ["toolProvider"] },
+    } as const satisfies BorgPluginManifest;
+
+    await expect(
+      manager.activate({
+        manifest: denied,
+        loadMain: async () =>
+          definePlugin({
+            ...denied,
+            activate(context) {
+              context.tools.registerProvider({
+                id: "test.denied-provider",
+                prepare: async () => ({
+                  definitions: [],
+                  execute: async () => ({}),
+                }),
+              });
+            },
+          }),
+      }),
+    ).rejects.toThrow(/tools\.provide/);
+
+    await manager.activate({
+      manifest: allowed,
+      loadMain: async () =>
+        definePlugin({
+          ...allowed,
+          activate(context) {
+            context.tools.registerProvider({
+              id: "test.tool-provider",
+              namespace: "mcp.demo",
+              async prepare() {
+                return {
+                  definitions: [
+                    {
+                      id: "mcp.demo.echo",
+                      description: "Provided",
+                      inputSchema: { type: "object" },
+                      approval: "auto",
+                      sideEffect: false,
+                    },
+                  ],
+                  execute: async () => ({ ok: true }),
+                };
+              },
+            });
+          },
+        }),
+    });
+
+    tools.registerRunPolicy("run-provided", allowed.id, ["*"]);
+    await tools.prepareRun("run-provided");
+    expect(
+      tools.listDefinitions(["*"], undefined, "run-provided").map(({ id }) => id),
+    ).toEqual(["mcp.demo.echo"]);
+    await manager.deactivate(allowed.id);
+    expect(
+      tools.listDefinitions(["*"], undefined, "run-provided").map(({ id }) => id),
+    ).toEqual([]);
+  });
+
+  it("invokes one catalog cleanup function once through the host wrapper", async () => {
+    const bus = new CommandEventBus();
+    const tools = new ToolService(new InteractionService());
+    const manager = new PluginManager(bus, "0.1.0", { tools });
+    const closed: string[] = [];
+    const manifest = {
+      id: "test.cleanup-provider",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.cleanup-provider/main",
+      permissions: ["tools.provide"],
+      contributes: { kinds: ["toolProvider"] },
+    } as const satisfies BorgPluginManifest;
+    await manager.activate({
+      manifest,
+      loadMain: async () =>
+        definePlugin({
+          ...manifest,
+          activate(context) {
+            context.tools.registerProvider({
+              id: "test.cleanup-provider",
+              namespace: "mcp.demo",
+              async prepare() {
+                return {
+                  definitions: [
+                    {
+                      id: "mcp.demo.echo",
+                      description: "Provided",
+                      inputSchema: { type: "object" },
+                      approval: "auto" as const,
+                      sideEffect: false,
+                    },
+                  ],
+                  execute: async () => ({ ok: true }),
+                  close: () => {
+                    closed.push("close");
+                  },
+                  dispose: () => {
+                    closed.push("dispose");
+                  },
+                };
+              },
+            });
+          },
+        }),
+    });
+    const policy = tools.registerRunPolicy("run-cleanup", manifest.id, ["*"]);
+    await tools.prepareRun("run-cleanup");
+    await manager.deactivate(manifest.id);
+    policy.dispose();
+    expect(closed).toEqual(["close"]);
+  });
+
   it("expires human-input authority when the feedback command returns", async () => {
     const bus = new CommandEventBus();
     const manager = new PluginManager(bus, "0.1.0");
@@ -922,6 +1057,197 @@ describe("cost host API", () => {
         message: expect.stringMatching(/cost\.read/),
       }),
     });
+  });
+});
+
+describe("process and http host APIs", () => {
+  it("requires subprocess:mcp and network:dynamic on the exact host surfaces", async () => {
+    const bus = new CommandEventBus();
+    const processes = new ProcessSupervisor();
+    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+    const http = new NetworkService({ fetch });
+    const denied = {
+      id: "test.host-denied",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.host-denied/main",
+      permissions: [],
+      contributes: {},
+    } as const satisfies BorgPluginManifest;
+    const allowed = {
+      id: "test.host-allowed",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.host-allowed/main",
+      permissions: ["subprocess:mcp", "network:dynamic"],
+      contributes: {},
+    } as const satisfies BorgPluginManifest;
+    const manager = new PluginManager(bus, "0.1.0", { processes, http });
+
+    await expect(
+      manager.activate({
+        manifest: denied,
+        loadMain: async () =>
+          definePlugin({
+            ...denied,
+            activate(context) {
+              void context.process.spawn(process.execPath, ["-e", "process.exit(0)"]);
+            },
+          }),
+      }),
+    ).rejects.toThrow(/subprocess:mcp/);
+
+    await expect(
+      manager.activate({
+        manifest: {
+          ...denied,
+          id: "test.http-denied",
+          main: "test.http-denied/main",
+        },
+        loadMain: async () =>
+          definePlugin({
+            ...denied,
+            id: "test.http-denied",
+            activate(context) {
+              void context.http.fetch("https://example.com");
+            },
+          }),
+      }),
+    ).rejects.toThrow(/network:dynamic/);
+
+    await manager.activate({
+      manifest: allowed,
+      loadMain: async () =>
+        definePlugin({
+          ...allowed,
+            activate(context) {
+              void context.process
+                .spawn(process.execPath, ["-e", "process.exit(0)"])
+                .catch(() => undefined);
+              void context.http
+                .fetch("https://example.com/ok")
+                .catch(() => undefined);
+            },
+        }),
+    });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    await manager.deactivate(allowed.id);
+    await processes.shutdown();
+    http.shutdown();
+  });
+
+  it("rejects process and http from the bootstrap config-store context", async () => {
+    const persistence = new PersistenceRegistry();
+    const processes = new ProcessSupervisor();
+    const http = new NetworkService({
+      fetch: async () => new Response("ok"),
+    });
+    const manager = new PluginManager(new CommandEventBus(), "0.1.0", {
+      persistence,
+      processes,
+      http,
+    });
+    const manifest = {
+      id: "test.bootstrap-host",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.bootstrap-host/main",
+      permissions: ["subprocess:mcp", "network:dynamic"],
+      contributes: { kinds: ["configStore"] },
+    } as const satisfies BorgPluginManifest;
+
+    await expect(
+      manager.activateConfigStore({
+        manifest,
+        loadMain: async () =>
+          definePlugin({
+            ...manifest,
+            activate(context) {
+              void context.process.spawn(process.execPath, ["-e", "process.exit(0)"]);
+            },
+          }),
+      }),
+    ).rejects.toThrow(/ordinary host services/);
+    await processes.shutdown();
+    http.shutdown();
+  });
+
+  it("aborts one plugin's process and http resources without touching another", async () => {
+    const bus = new CommandEventBus();
+    const processes = new ProcessSupervisor();
+    const signals = new Map<string, AbortSignal>();
+    const http = new NetworkService({
+      fetch: async (input, init) => {
+        const url = String(input);
+        const pluginId = url.includes("first") ? "test.proc-first" : "test.proc-second";
+        signals.set(pluginId, init?.signal ?? new AbortController().signal);
+        await new Promise<void>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(init.signal?.reason ?? new Error("aborted")),
+            { once: true },
+          );
+        });
+        return new Response("ok");
+      },
+    });
+    const manager = new PluginManager(bus, "0.1.0", { processes, http });
+    const children = new Map<string, PluginProcess>();
+    const createHostSource = (id: string) => {
+      const manifest = {
+        id,
+        version: "0.1.0",
+        engines: { borg: "^0.1.0" },
+        main: `${id}/main`,
+        permissions: ["subprocess:mcp", "network:dynamic"],
+        contributes: {},
+      } as const satisfies BorgPluginManifest;
+      return {
+        manifest,
+        loadMain: async () =>
+          definePlugin({
+            ...manifest,
+            activate(context) {
+              void context.process
+                .spawn(
+                  process.execPath,
+                  ["-e", "setInterval(() => {}, 1000)"],
+                  { graceTimeoutMs: 50 },
+                )
+                .then((child) => {
+                  children.set(id, child);
+                  return child;
+                })
+                .catch(() => undefined);
+              void context.http
+                .fetch(`https://example.com/${id.split(".").at(-1)}`)
+                .catch(() => undefined);
+            },
+          }),
+      };
+    };
+
+    await manager.activate(createHostSource("test.proc-first"));
+    await manager.activate(createHostSource("test.proc-second"));
+    await vi.waitFor(() => expect(signals.size).toBe(2));
+    await vi.waitFor(() => expect(children.size).toBe(2));
+
+    await manager.deactivate("test.proc-first");
+    expect(signals.get("test.proc-first")?.aborted).toBe(true);
+    expect(signals.get("test.proc-second")?.aborted).toBe(false);
+    expect(manager.isActive("test.proc-second")).toBe(true);
+    const firstPid = children.get("test.proc-first")?.pid;
+    const secondPid = children.get("test.proc-second")?.pid;
+    expect(firstPid).toEqual(expect.any(Number));
+    expect(secondPid).toEqual(expect.any(Number));
+    expect(() => process.kill(firstPid!, 0)).toThrow();
+    expect(() => process.kill(secondPid!, 0)).not.toThrow();
+
+    await manager.deactivate("test.proc-second");
+    expect(signals.get("test.proc-second")?.aborted).toBe(true);
+    expect(() => process.kill(secondPid!, 0)).toThrow();
+    await processes.shutdown();
+    http.shutdown();
   });
 });
 

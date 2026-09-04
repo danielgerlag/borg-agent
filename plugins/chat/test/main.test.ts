@@ -5,7 +5,9 @@ import {
   chatListSessions,
   chatSendMessage,
   chatSpawnSubAgent,
+  embeddedContentRegistered,
   personaSchema,
+  type ChatEntry,
   type ChatSession,
   type LoopEvent,
   type LoopRunSnapshot,
@@ -260,6 +262,7 @@ function createChatHarnessContext(
       failLoopStart = true;
     },
     emittedEvents,
+    emit: bus.emit,
   };
 }
 
@@ -565,6 +568,63 @@ describe("borg.chat harness", () => {
       cacheWriteTokens: 1,
       costsByCurrency: { USD: 0.012 },
     });
+    await restoredHarness.deactivate();
+  });
+
+  it("persists embedded content snapshots without duplicates", async () => {
+    const fixture = createChatHarnessContext();
+    const harness = await createTestHarness(chatPlugin, fixture.context);
+    const created = await fixture.invoke<{ sessionId: string }>(
+      chatCreateSession,
+      {},
+    );
+    const registered = {
+      sessionId: created.sessionId,
+      content: {
+        instanceId: "d0cc0266-2235-5fea-965b-dbabe70c3a66",
+        rendererId: "borg.mcp-apps",
+        title: "Fixture app",
+        payload: { version: 1, fixture: true },
+        createdAt: "2026-09-03T12:00:00.000Z",
+      },
+    };
+    await fixture.emit(embeddedContentRegistered, registered);
+    await fixture.emit(embeddedContentRegistered, registered);
+
+    const document = await fixture.invoke<{ entries: readonly ChatEntry[] }>(
+      chatGetSession,
+      { sessionId: created.sessionId },
+    );
+    expect(
+      document.entries.filter(
+        (entry) => entry.metadata?.kind === "embedded_content",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        role: "event",
+        metadata: expect.objectContaining({
+          embeddedContent: expect.objectContaining({
+            instanceId: registered.content.instanceId,
+            rendererId: "borg.mcp-apps",
+          }),
+        }),
+      }),
+    ]);
+
+    await harness.deactivate();
+    const restored = createChatHarnessContext(fixture.store);
+    const restoredHarness = await createTestHarness(
+      chatPlugin,
+      restored.context,
+    );
+    const restoredDocument = await restored.invoke<{
+      entries: readonly ChatEntry[];
+    }>(chatGetSession, { sessionId: created.sessionId });
+    expect(
+      restoredDocument.entries.some(
+        (entry) => entry.metadata?.kind === "embedded_content",
+      ),
+    ).toBe(true);
     await restoredHarness.deactivate();
   });
 });

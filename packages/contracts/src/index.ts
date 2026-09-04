@@ -407,12 +407,29 @@ export const loopEventSchema = z.discriminatedUnion("type", [
 
 export type LoopEvent = z.infer<typeof loopEventSchema>;
 
+export const MCP_APP_RENDERER_ID = "borg.mcp-apps";
+export const MCP_APP_BRIDGE_CHANNEL = "borg.mcp-apps.bridge.v1";
+export const MCP_APP_MAX_MESSAGE_BYTES = 256 * 1024;
+
 export const personaIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/);
 
+const mcpServerIdSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .refine(
+    (value) =>
+      value.trim() === value &&
+      !/[\u0000-\u001f\u007f]/.test(value),
+    "MCP server ID contains invalid characters",
+  );
+
+const mcpSecretRefSchema = z.string().min(1).max(256);
+
 const mcpServerCommonSchema = z.object({
-  id: z.string().min(1),
+  id: mcpServerIdSchema,
   enabled: z.boolean().default(true),
   channelClass: z
     .enum(["public", "internal", "private", "local-only"])
@@ -426,21 +443,60 @@ export const mcpServerConfigSchema = z.discriminatedUnion("transport", [
   mcpServerCommonSchema
     .extend({
       transport: z.literal("stdio"),
-      command: z.string().min(1),
-      arguments: z.array(z.string()).default([]),
+      command: z.string().min(1).max(4_096).refine(
+        (value) => !value.includes("\0"),
+        "MCP command contains a NUL byte",
+      ),
+      arguments: z
+        .array(
+          z
+            .string()
+            .max(32_768)
+            .refine(
+              (value) => !value.includes("\0"),
+              "MCP argument contains a NUL byte",
+            ),
+        )
+        .max(256)
+        .default([]),
       environmentSecretRefs: z
-        .record(z.string(), z.string())
+        .record(
+          z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(256),
+          mcpSecretRefSchema,
+        )
         .default({}),
     })
     .strict(),
   mcpServerCommonSchema
     .extend({
       transport: z.enum(["sse", "streamable-http"]),
-      url: z.string().url(),
-      headerSecretRefs: z.record(z.string(), z.string()).default({}),
+      url: z
+        .string()
+        .max(4_096)
+        .url()
+        .refine((value) => {
+          const url = new URL(value);
+          return (
+            (url.protocol === "http:" || url.protocol === "https:") &&
+            url.username === "" &&
+            url.password === ""
+          );
+        }, "MCP URL must be an HTTP(S) URL without credentials"),
+      headerSecretRefs: z
+        .record(
+          z
+            .string()
+            .min(1)
+            .max(256)
+            .regex(/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/),
+          mcpSecretRefSchema,
+        )
+        .default({}),
     })
     .strict(),
 ]);
+
+export type McpServerConfig = z.infer<typeof mcpServerConfigSchema>;
 
 export const personaSchema = z
   .object({
@@ -451,7 +507,7 @@ export const personaSchema = z
     preferredModels: z.array(z.string().min(1)).min(1),
     secondaryModels: z.array(z.string().min(1)).default([]),
     allowedTools: z.array(z.string().min(1)).default(["*"]),
-    mcpServers: z.array(mcpServerConfigSchema).default([]),
+    mcpServers: z.array(mcpServerConfigSchema).max(64).default([]),
     loopStrategy: z.enum(["react", "code-act"]).default("react"),
     toolExecutionMode: z
       .enum(["sequential-partial", "sequential-full", "parallel"])
@@ -1139,3 +1195,318 @@ export const anthropicDisconnect = defineCommand({
   input: z.object({}).strict(),
   output: anthropicStatusSchema,
 });
+
+export const mcpServerStatusSchema = z.enum([
+  "idle",
+  "connecting",
+  "ready",
+  "degraded",
+  "failed",
+  "closed",
+]);
+
+export type McpServerStatus = z.infer<typeof mcpServerStatusSchema>;
+
+export const mcpServerSnapshotSchema = z
+  .object({
+    id: mcpServerIdSchema,
+    status: mcpServerStatusSchema,
+    toolCount: z.number().int().nonnegative(),
+    toolIds: z
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(512)
+          .regex(/^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/),
+      )
+      .max(10_000)
+      .default([]),
+    error: z.string().min(1).max(1_000).optional(),
+  })
+  .strict();
+
+export type McpServerSnapshot = z.infer<typeof mcpServerSnapshotSchema>;
+
+export const mcpListServers = defineCommand({
+  id: "borg.mcp.listServers",
+  input: z
+    .object({
+      personaId: personaIdSchema.optional(),
+    })
+    .strict(),
+  output: z
+    .object({ servers: z.array(mcpServerSnapshotSchema).max(64) })
+    .strict(),
+});
+
+export const mcpGetStatus = defineCommand({
+  id: "borg.mcp.getStatus",
+  input: z
+    .object({
+      serverId: mcpServerIdSchema,
+      personaId: personaIdSchema.optional(),
+    })
+    .strict(),
+  output: mcpServerSnapshotSchema,
+});
+
+export const mcpRefresh = defineCommand({
+  id: "borg.mcp.refresh",
+  input: z
+    .object({
+      serverId: mcpServerIdSchema.optional(),
+      personaId: personaIdSchema.optional(),
+    })
+    .strict(),
+  output: z
+    .object({ servers: z.array(mcpServerSnapshotSchema).max(64) })
+    .strict(),
+});
+
+export const mcpAppCspSchema = z
+  .object({
+    resourceDomains: z.array(z.string().min(1).max(2_048)).max(256).default([]),
+    connectDomains: z.array(z.string().min(1).max(2_048)).max(256).default([]),
+    frameDomains: z.array(z.string().min(1).max(2_048)).max(256).default([]),
+    baseUriDomains: z.array(z.string().min(1).max(2_048)).max(256).default([]),
+  })
+  .strict();
+
+export type McpAppCsp = z.infer<typeof mcpAppCspSchema>;
+
+export const mcpAppPermissionsSchema = z
+  .object({
+    camera: z.boolean().default(false),
+    microphone: z.boolean().default(false),
+    geolocation: z.boolean().default(false),
+    clipboardWrite: z.boolean().default(false),
+  })
+  .strict();
+
+export type McpAppPermissions = z.infer<typeof mcpAppPermissionsSchema>;
+
+export const mcpAppToolSchema = z
+  .object({
+    name: z.string().min(1).max(256),
+    toolId: z
+      .string()
+      .max(512)
+      .regex(/^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/),
+    description: z.string().max(10_000),
+    inputSchema: z.json(),
+  })
+  .strict();
+
+export type McpAppTool = z.infer<typeof mcpAppToolSchema>;
+
+export const mcpAppDiscovered = defineEvent({
+  id: "borg.mcp.appDiscovered",
+  payload: z
+    .object({
+      sessionId: z.string().uuid(),
+      personaId: personaIdSchema,
+      appInstanceId: z.string().uuid(),
+      serverId: mcpServerIdSchema,
+      resourceUri: z.string().min(6).max(2_048).startsWith("ui://"),
+      html: z.string().max(2 * 1024 * 1024),
+      csp: mcpAppCspSchema,
+      permissions: mcpAppPermissionsSchema,
+      tools: z.array(mcpAppToolSchema).max(256),
+      sourceToolId: z.string().min(1).max(512),
+      sourceToolName: z.string().min(1).max(256),
+      toolInput: z.json(),
+      callResult: z.json(),
+      startedAt: z.string().datetime(),
+      completedAt: z.string().datetime(),
+      discoveredAt: z.string().datetime(),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (
+        new TextEncoder().encode(value.html).byteLength >
+        2 * 1024 * 1024
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["html"],
+          message: "MCP App HTML exceeds the size cap",
+        });
+      }
+      const payloads = [
+        {
+          jsonrpc: "2.0",
+          method: "ui/notifications/tool-input",
+          params: { arguments: value.toolInput },
+        },
+        {
+          jsonrpc: "2.0",
+          method: "ui/notifications/tool-result",
+          params: value.callResult,
+        },
+        {
+          jsonrpc: "2.0",
+          id: "x".repeat(256),
+          result: {
+            tools: value.tools.map(({ name, description, inputSchema }) => ({
+              name,
+              description,
+              inputSchema,
+            })),
+          },
+        },
+      ];
+      if (
+        payloads.some(
+          (payload) =>
+            new TextEncoder().encode(JSON.stringify(payload)).byteLength >
+            MCP_APP_MAX_MESSAGE_BYTES,
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "MCP App bridge payload exceeds the size cap",
+        });
+      }
+    }),
+});
+
+export type McpAppDiscovered = z.infer<typeof mcpAppDiscovered.payload>;
+
+export const mcpAppSnapshotSchema = mcpAppDiscovered.payload
+  .extend({
+    version: z.literal(1),
+  })
+  .strict();
+
+export type McpAppSnapshot = z.infer<typeof mcpAppSnapshotSchema>;
+
+export const embeddedContentSnapshotSchema = z
+  .object({
+    instanceId: z.string().uuid(),
+    rendererId: z.string().regex(/^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/),
+    title: z.string().trim().min(1).max(200),
+    payload: z.json(),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export type EmbeddedContentSnapshot = z.infer<
+  typeof embeddedContentSnapshotSchema
+>;
+
+export const embeddedContentRegistered = defineEvent({
+  id: "borg.embeddedContent.registered",
+  payload: z
+    .object({
+      sessionId: z.string().uuid(),
+      content: embeddedContentSnapshotSchema,
+    })
+    .strict(),
+});
+
+export const mcpAppRequestIdSchema = z.union([
+  z.string().min(1).max(256),
+  z.number().int().safe(),
+]);
+
+export type McpAppRequestId = z.infer<typeof mcpAppRequestIdSchema>;
+
+const mcpAppBridgeJsonSchema = z.json().refine(
+  (value) =>
+    new TextEncoder().encode(JSON.stringify(value)).byteLength <=
+    MCP_APP_MAX_MESSAGE_BYTES - 1_024,
+  "MCP App bridge value exceeds the size cap",
+);
+
+export const mcpAppToolArgumentsSchema = z
+  .record(z.string().min(1).max(256), z.json())
+  .superRefine((value, context) => {
+    if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 256 * 1024) {
+      context.addIssue({
+        code: "custom",
+        message: "MCP App tool arguments exceed the size cap",
+      });
+    }
+  });
+export type McpAppToolArguments = z.infer<
+  typeof mcpAppToolArgumentsSchema
+>;
+
+export const mcpAppsInvokeTool = defineCommand({
+  id: "borg.mcpApps.invokeTool",
+  input: z
+    .object({
+      appInstanceId: z.string().uuid(),
+      invocationId: z.string().uuid(),
+      requestId: mcpAppRequestIdSchema,
+      toolName: z.string().min(1).max(256),
+      arguments: mcpAppToolArgumentsSchema.default({}),
+    })
+    .strict(),
+  output: z
+    .object({
+      requestId: mcpAppRequestIdSchema,
+      result: mcpAppBridgeJsonSchema,
+    })
+    .strict(),
+  timeoutMs: 300_000,
+});
+
+export const mcpAppsCancelTool = defineCommand({
+  id: "borg.mcpApps.cancelTool",
+  input: z
+    .object({
+      appInstanceId: z.string().uuid(),
+      invocationId: z.string().uuid(),
+    })
+    .strict(),
+  output: z.object({ cancelled: z.boolean() }).strict(),
+});
+
+export const mcpAppToolResponseSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("succeeded"),
+      result: mcpAppBridgeJsonSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      error: commandErrorSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("cancelled"),
+    })
+    .strict(),
+]);
+
+export const mcpAppToolResponded = defineEvent({
+  id: "borg.mcpApps.toolResponded",
+  payload: z
+    .object({
+      appInstanceId: z.string().uuid(),
+      invocationId: z.string().uuid(),
+      requestId: mcpAppRequestIdSchema,
+      response: mcpAppToolResponseSchema,
+      respondedAt: z.string().datetime(),
+    })
+    .strict(),
+});
+
+export const toolApprovalSchema = z.enum(["auto", "ask", "deny"]);
+
+export type ToolApproval = z.infer<typeof toolApprovalSchema>;
+
+export interface DynamicToolDefinition {
+  readonly id: string;
+  readonly description: string;
+  readonly inputSchema: unknown;
+  readonly outputSchema?: unknown | undefined;
+  readonly approval: ToolApproval;
+  readonly sideEffect: boolean;
+  readonly modelVisible?: boolean | undefined;
+}

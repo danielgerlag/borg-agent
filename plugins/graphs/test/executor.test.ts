@@ -250,11 +250,11 @@ describe("HiveMindGraphEngine", () => {
     });
     await fixture.flush();
 
-    expect(fixture.registerExecutionScope).toHaveBeenCalledWith(
-      instanceId,
-      instanceId,
-      ["fixture.echo"],
-    );
+    expect(fixture.registerExecutionScope).toHaveBeenCalledWith({
+      runId: instanceId,
+      sessionId: instanceId,
+      allowedTools: ["fixture.echo"],
+    });
     expect(fixture.invokeTool).toHaveBeenCalledWith(
       "fixture.echo",
       { value: 7 },

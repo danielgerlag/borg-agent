@@ -1,0 +1,32 @@
+{
+  "id": "borg.mcp",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-mcp/main",
+  "ui": "@borg/plugin-mcp/ui",
+  "permissions": [
+    "network:dynamic",
+    "personas.read",
+    "personas.write",
+    "secrets:read",
+    "subprocess:mcp",
+    "tools.provide",
+    "ui.settings"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.mcp.getStatus",
+      "borg.mcp.listServers",
+      "borg.mcp.refresh"
+    ],
+    "events": [
+      "borg.mcp.appDiscovered"
+    ],
+    "kinds": [
+      "settingsPage",
+      "toolProvider"
+    ]
+  }
+}
