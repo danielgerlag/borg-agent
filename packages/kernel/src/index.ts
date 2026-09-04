@@ -1,5 +1,6 @@
 export { CommandEventBus } from "./command-event-bus";
 export { CostLedger, type CostRecord } from "./cost-ledger";
+export type { CostSummary } from "@borg/contracts";
 export { GraphContributionRegistry } from "./graph-contribution-registry";
 export { satisfiesBorgEngine } from "./engine-range";
 export { CommandInvocationError, PluginLoadError } from "./errors";
@@ -11,7 +12,11 @@ export {
   type SafetyInteractionRequest,
 } from "./interaction-service";
 export { LoopManager } from "./loop-manager";
-export { ModelRouter, type RoutedCompletion } from "./model-router";
+export {
+  ModelRouter,
+  type ModelRouterOptions,
+  type RoutedCompletion,
+} from "./model-router";
 export { PersonaService, DEFAULT_PERSONA_ID } from "./persona-service";
 export {
   PromptAssembler,
@@ -43,7 +48,11 @@ export {
   type PluginSource,
   type PluginStatus,
 } from "./plugin-manager";
-export { SchedulerCore } from "./scheduler-core";
+export { nextCronOccurrence, parseCron } from "./cron";
+export {
+  SchedulerCore,
+  type SchedulerRunLog,
+} from "./scheduler-core";
 export {
   WorkspaceService,
   type WorkspaceFile,

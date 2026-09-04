@@ -7,6 +7,10 @@ import type {
 } from "@borg/plugin-sdk";
 import { CostLedger } from "./cost-ledger";
 
+export interface ModelRouterOptions {
+  readonly fallbackPreferences?: readonly string[] | undefined;
+}
+
 interface RegisteredProvider {
   readonly pluginId: string;
   readonly provider: LlmProviderContribution;
@@ -128,7 +132,7 @@ function normalizeResult(
         : (() => {
             throw new Error(`${providerId} usage currency is invalid`);
           })();
-  return {
+  const result = {
     content,
     toolCalls,
     usage: {
@@ -152,6 +156,14 @@ function normalizeResult(
       currency,
     },
   };
+  const cached = result.usage.cachedInputTokens ?? 0;
+  const written = result.usage.cacheWriteTokens ?? 0;
+  if (cached + written > result.usage.inputTokens) {
+    throw new Error(
+      `${providerId} cachedInputTokens and cacheWriteTokens must not exceed inputTokens`,
+    );
+  }
+  return result;
 }
 
 export interface RoutedCompletion {
@@ -162,8 +174,16 @@ export interface RoutedCompletion {
 
 export class ModelRouter {
   readonly #providers = new Map<string, RegisteredProvider>();
+  readonly #fallbackPreferences: readonly string[];
 
-  constructor(readonly costs: CostLedger) {}
+  constructor(
+    readonly costs: CostLedger,
+    options: ModelRouterOptions = {},
+  ) {
+    this.#fallbackPreferences = Object.freeze([
+      ...(options.fallbackPreferences ?? []),
+    ]);
+  }
 
   registerProvider(
     pluginId: string,
@@ -274,13 +294,10 @@ export class ModelRouter {
     onToken?: (token: string) => void | Promise<void>,
   ): Promise<RoutedCompletion> {
     signal.throwIfAborted();
-    const registration = request.providerId
-      ? this.#providers.get(request.providerId)
-      : request.modelId
-        ? [...this.#providers.values()].find(({ provider }) =>
-            provider.models.includes(request.modelId!),
-          )
-        : this.#providers.values().next().value;
+    const registration = this.#resolveRegistration(
+      request.providerId,
+      request.modelId,
+    );
     if (!registration) {
       throw new Error(
         request.providerId
@@ -294,43 +311,69 @@ export class ModelRouter {
         `Model ${request.modelId ?? "(default)"} is unavailable from ${registration.provider.id}`,
       );
     }
-    const candidateResult = await registration.provider.complete(
-      {
-        modelId,
-        messages: Object.freeze(
-          request.messages.map((message) =>
-            Object.freeze({
-              ...message,
-              toolCalls: message.toolCalls
-                ? Object.freeze(
-                    message.toolCalls.map((toolCall) =>
-                      Object.freeze({
-                        ...toolCall,
-                        input: structuredClone(toolCall.input),
-                      }),
-                    ),
-                  )
-                : undefined,
-            }),
+    let latestPartial: ModelCompletionResult["usage"] | undefined;
+    let candidateResult: unknown;
+    try {
+      candidateResult = await registration.provider.complete(
+        {
+          modelId,
+          messages: Object.freeze(
+            request.messages.map((message) =>
+              Object.freeze({
+                ...message,
+                toolCalls: message.toolCalls
+                  ? Object.freeze(
+                      message.toolCalls.map((toolCall) =>
+                        Object.freeze({
+                          ...toolCall,
+                          input: structuredClone(toolCall.input),
+                        }),
+                      ),
+                    )
+                  : undefined,
+              }),
+            ),
           ),
-        ),
-        tools: Object.freeze(
-          request.tools.map((tool) => Object.freeze({ ...tool })),
-        ),
-      },
-      signal,
-      onToken
-        ? async (token) => {
-            signal.throwIfAborted();
-            if (typeof token !== "string" || token.length === 0) {
-              throw new Error(
-                `Provider ${registration.provider.id} emitted an invalid token`,
-              );
+          tools: Object.freeze(
+            request.tools.map((tool) => Object.freeze({ ...tool })),
+          ),
+        },
+        signal,
+        onToken
+          ? async (token) => {
+              signal.throwIfAborted();
+              if (typeof token !== "string" || token.length === 0) {
+                throw new Error(
+                  `Provider ${registration.provider.id} emitted an invalid token`,
+                );
+              }
+              await onToken(token);
             }
-            await onToken(token);
-          }
-        : undefined,
-    );
+          : undefined,
+        (usage) => {
+          latestPartial = normalizeResult(registration.provider.id, {
+            content: "",
+            usage,
+          }).usage;
+        },
+      );
+    } catch (error) {
+      if (latestPartial) {
+        this.costs.record({
+          providerId: registration.provider.id,
+          modelId,
+          inputTokens: latestPartial.inputTokens,
+          outputTokens: latestPartial.outputTokens,
+          cachedInputTokens: latestPartial.cachedInputTokens,
+          cacheWriteTokens: latestPartial.cacheWriteTokens,
+          amount: latestPartial.amount,
+          currency: latestPartial.currency,
+          correlationId: request.correlationId,
+          runId: request.runId,
+        });
+      }
+      throw error;
+    }
     const result = normalizeResult(
       registration.provider.id,
       candidateResult,
@@ -359,5 +402,24 @@ export class ModelRouter {
       modelId,
       result,
     };
+  }
+
+  #resolveRegistration(
+    providerId: string | undefined,
+    modelId: string | undefined,
+  ): RegisteredProvider | undefined {
+    if (providerId) {
+      return this.#providers.get(providerId);
+    }
+    if (modelId) {
+      return [...this.#providers.values()].find(({ provider }) =>
+        provider.models.includes(modelId),
+      );
+    }
+    const fallback = this.resolvePreferences(this.#fallbackPreferences);
+    if (fallback) {
+      return this.#providers.get(fallback.providerId);
+    }
+    return this.#providers.values().next().value;
   }
 }

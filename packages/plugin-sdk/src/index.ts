@@ -3,6 +3,7 @@ import type {
   CommandDefinition,
   CommandInput,
   CommandOutput,
+  CostSummary,
   EventDefinition,
   EventPayload,
   FeedbackAnswer,
@@ -194,6 +195,9 @@ export interface LlmProviderContribution {
     request: ModelCompletionRequest,
     signal: AbortSignal,
     onToken?: ((token: string) => void | Promise<void>) | undefined,
+    onUsage?:
+      | ((usage: ModelCompletionResult["usage"]) => void | Promise<void>)
+      | undefined,
   ): Promise<ModelCompletionResult>;
 }
 
@@ -272,6 +276,15 @@ export interface PluginInteractions {
 
 export interface PluginCost {
   record(record: UsageRecord): void;
+  summary(): CostSummary;
+  subscribe(handler: (summary: CostSummary) => void | Promise<void>): Disposable;
+}
+
+export interface PluginUiCost {
+  summary(): Promise<CostSummary>;
+  subscribe(
+    handler: (summary: CostSummary) => void | Promise<void>,
+  ): Promise<Disposable>;
 }
 
 export interface PluginPersonas {
@@ -360,6 +373,11 @@ export interface PluginScheduler {
   schedule(
     id: string,
     runAt: string,
+    callback: (signal: AbortSignal) => void | Promise<void>,
+  ): Disposable;
+  scheduleCron(
+    id: string,
+    expression: string,
     callback: (signal: AbortSignal) => void | Promise<void>,
   ): Disposable;
   cancel(id: string): boolean;
@@ -624,6 +642,7 @@ export interface PluginUiContext<TComponent = unknown> {
   readonly interactions: PluginUiInteractions;
   readonly personas: PluginUiPersonas;
   readonly models: PluginUiModels;
+  readonly cost: PluginUiCost;
   notify(request: NotificationRequest): Promise<void>;
 }
 

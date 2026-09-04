@@ -5,6 +5,84 @@ import type { PluginDefinition } from "@borg/plugin-sdk";
 export const bundledMainPlugins: readonly PluginSource[] = [
   {
     manifest: {
+      "id": "borg.anthropic",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-anthropic/main",
+      "ui": "@borg/plugin-anthropic/ui",
+      "permissions": [
+        "models.register",
+        "network:api.anthropic.com",
+        "secrets:read",
+        "secrets:write",
+        "ui.settings",
+        "ui.wizard"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.anthropic.connect",
+          "borg.anthropic.disconnect",
+          "borg.anthropic.getStatus"
+        ],
+        "kinds": [
+          "llmProvider",
+          "settingsPage",
+          "wizardStep"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-anthropic/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.bots",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-bots/main",
+      "ui": "@borg/plugin-bots/ui",
+      "permissions": [
+        "loops.start",
+        "personas.read",
+        "tools.invoke",
+        "tools.register",
+        "ui.flightDeck",
+        "ui.workspace",
+        "workspace.manage"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.bots.create",
+          "borg.bots.delete",
+          "borg.bots.get",
+          "borg.bots.list",
+          "borg.bots.listLogs",
+          "borg.bots.start",
+          "borg.bots.stop"
+        ],
+        "events": [
+          "borg.bots.completed",
+          "borg.bots.failed",
+          "borg.bots.started",
+          "borg.bots.stopped",
+          "borg.bots.updated"
+        ],
+        "kinds": [
+          "flightDeckWidget",
+          "tool",
+          "workspaceView"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-bots/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.chat",
       "version": "0.1.0",
       "engines": {
@@ -320,5 +398,27 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-tools-echo/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.usage",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-usage/main",
+      "ui": "@borg/plugin-usage/ui",
+      "permissions": [
+        "cost.read",
+        "ui.flightDeck"
+      ],
+      "contributes": {
+        "kinds": [
+          "flightDeckWidget"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-usage/main") as { default: PluginDefinition }).default,
   },
 ];

@@ -849,6 +849,82 @@ describe("PluginManager", () => {
   });
 });
 
+describe("cost host API", () => {
+  it("exposes process-session summaries only with cost.read", async () => {
+    const bus = new CommandEventBus();
+    const costs = new CostLedger();
+    costs.record({
+      providerId: "borg.provider",
+      modelId: "provider:model",
+      inputTokens: 4,
+      outputTokens: 2,
+      amount: 0.01,
+      currency: "USD",
+      correlationId: "one",
+    });
+    const read = defineCommand({
+      id: "test.cost.read",
+      input: z.object({}).strict(),
+      output: z.object({ inputTokens: z.number() }).strict(),
+    });
+    const denied = defineCommand({
+      id: "test.cost.denied",
+      input: z.object({}).strict(),
+      output: z.object({ ok: z.boolean() }).strict(),
+    });
+    const readerManifest = {
+      id: "test.cost-reader",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.cost-reader/main",
+      permissions: ["cost.read"],
+      contributes: { commands: [read.id] },
+    } as const satisfies BorgPluginManifest;
+    const deniedManifest = {
+      id: "test.cost-denied",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.cost-denied/main",
+      permissions: [],
+      contributes: { commands: [denied.id] },
+    } as const satisfies BorgPluginManifest;
+    const manager = new PluginManager(bus, "0.1.0", { costs });
+    await manager.activate({
+      manifest: readerManifest,
+      loadMain: async () =>
+        definePlugin({
+          ...readerManifest,
+          activate(context) {
+            context.bus.handle(read, () => ({
+              inputTokens: context.cost.summary().inputTokens,
+            }));
+          },
+        }),
+    });
+    await manager.activate({
+      manifest: deniedManifest,
+      loadMain: async () =>
+        definePlugin({
+          ...deniedManifest,
+          activate(context) {
+            context.bus.handle(denied, () => {
+              context.cost.summary();
+              return { ok: true };
+            });
+          },
+        }),
+    });
+
+    await expect(bus.invoke(read, {})).resolves.toEqual({ inputTokens: 4 });
+    await expect(bus.invoke(denied, {})).rejects.toMatchObject({
+      code: "failed",
+      cause: expect.objectContaining({
+        message: expect.stringMatching(/cost\.read/),
+      }),
+    });
+  });
+});
+
 describe("satisfiesBorgEngine", () => {
   it("rejects leading zeroes and orders prerelease identifiers numerically", () => {
     expect(satisfiesBorgEngine("^0.1.0", "00.1.0")).toBe(false);

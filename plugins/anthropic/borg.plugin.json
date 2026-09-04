@@ -1,0 +1,29 @@
+{
+  "id": "borg.anthropic",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-anthropic/main",
+  "ui": "@borg/plugin-anthropic/ui",
+  "permissions": [
+    "models.register",
+    "network:api.anthropic.com",
+    "secrets:read",
+    "secrets:write",
+    "ui.settings",
+    "ui.wizard"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.anthropic.connect",
+      "borg.anthropic.disconnect",
+      "borg.anthropic.getStatus"
+    ],
+    "kinds": [
+      "llmProvider",
+      "settingsPage",
+      "wizardStep"
+    ]
+  }
+}

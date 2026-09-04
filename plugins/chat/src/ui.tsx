@@ -11,8 +11,10 @@ import {
   chatSessionUpdated,
   chatSpawnSubAgent,
   chatTurnCompleted,
+  emptyChatUsage,
   type ChatEntry,
   type ChatSession,
+  type ChatUsage,
   type ModelDescriptor,
   type Persona,
   type WorkspaceFile,
@@ -77,9 +79,43 @@ function displayStatus(status: ChatSession["status"]): string {
   }
 }
 
+function formatChatUsage(usage: ChatUsage): string {
+  const costs = Object.entries(usage.costsByCurrency)
+    .map(([currency, amount]) => `${currency} ${amount.toFixed(4)}`)
+    .join(" + ");
+  const cache =
+    usage.cachedInputTokens + usage.cacheWriteTokens > 0
+      ? ` · cache ${usage.cachedInputTokens}/${usage.cacheWriteTokens}`
+      : "";
+  return `${usage.inputTokens} in · ${usage.outputTokens} out${cache} · ${costs || "no cost"}`;
+}
+
+function addChatUsage(base: ChatUsage, extra: ChatUsage): ChatUsage {
+  const costsByCurrency: Record<string, number> = { ...base.costsByCurrency };
+  for (const [currency, amount] of Object.entries(extra.costsByCurrency)) {
+    costsByCurrency[currency] = (costsByCurrency[currency] ?? 0) + amount;
+  }
+  return {
+    inputTokens: base.inputTokens + extra.inputTokens,
+    outputTokens: base.outputTokens + extra.outputTokens,
+    cachedInputTokens: base.cachedInputTokens + extra.cachedInputTokens,
+    cacheWriteTokens: base.cacheWriteTokens + extra.cacheWriteTokens,
+    costsByCurrency,
+  };
+}
+
 function displayModelName(model: ModelDescriptor): string {
   if (model.modelId === "mock:scripted") {
     return "Built-in demo model";
+  }
+  if (model.modelId === "claude-sonnet-5") {
+    return "Claude Sonnet 5";
+  }
+  if (model.modelId === "claude-haiku-4-5") {
+    return "Claude Haiku 4.5";
+  }
+  if (model.modelId === "claude-opus-5") {
+    return "Claude Opus 5";
   }
   return model.modelId
     .replace(/^[^:]+:/, "")
@@ -124,6 +160,7 @@ export default defineUiPlugin<Component>({
       const [draft, setDraft] = createSignal("");
       const [subAgentTask, setSubAgentTask] = createSignal("");
       const [streaming, setStreaming] = createSignal("");
+      const [liveUsage, setLiveUsage] = createSignal<ChatUsage>();
       const [sending, setSending] = createSignal(false);
       const [spawningSubAgent, setSpawningSubAgent] = createSignal(false);
       const [composingNew, setComposingNew] = createSignal(false);
@@ -220,6 +257,7 @@ export default defineUiPlugin<Component>({
         loopSubscription = undefined;
         subscribedRunId = undefined;
         setStreaming("");
+        setLiveUsage(undefined);
         if (subscription) {
           void subscription.dispose();
         }
@@ -283,6 +321,7 @@ export default defineUiPlugin<Component>({
         subscribedRunId = undefined;
         await previousSubscription?.dispose();
         setStreaming("");
+        setLiveUsage(undefined);
         const subscription = await context.loops.subscribe(runId, (event) => {
           if (
             !active ||
@@ -296,6 +335,15 @@ export default defineUiPlugin<Component>({
           }
           if (event.type === "model_token") {
             setStreaming((current) => `${current}${event.token}`);
+          }
+          if (event.type === "usage") {
+            setLiveUsage({
+              inputTokens: event.inputTokens,
+              outputTokens: event.outputTokens,
+              cachedInputTokens: event.cachedInputTokens,
+              cacheWriteTokens: event.cacheWriteTokens,
+              costsByCurrency: event.costsByCurrency,
+            });
           }
           if (event.type === "final" || event.type === "failed") {
             setStreaming("");
@@ -751,6 +799,23 @@ export default defineUiPlugin<Component>({
                   >
                     Talking with {personaName()}
                   </p>
+                  <Show when={document()}>
+                    {(current) => (
+                      <p
+                        class="text-xs text-[var(--text-subtle)]"
+                        data-testid="chat-session-usage"
+                      >
+                        {formatChatUsage(
+                          current().session.activeRunId && liveUsage()
+                            ? addChatUsage(
+                                current().session.usage ?? emptyChatUsage,
+                                liveUsage()!,
+                              )
+                            : (current().session.usage ?? emptyChatUsage),
+                        )}
+                      </p>
+                    )}
+                  </Show>
                 </div>
                 <Show when={document()}>
                   <div class="ml-3 flex items-center gap-1">
@@ -1286,6 +1351,7 @@ export default defineUiPlugin<Component>({
             Model
             <select
               value={selectedModel()}
+              onFocus={() => void load()}
               onChange={(event) =>
                 void chooseModel(event.currentTarget.value)
               }

@@ -330,6 +330,31 @@ export async function activatePluginUi(
             return window.borg.models.list(plugin.uiCapability);
           },
         },
+        cost: {
+          summary: () => {
+            if (!plugin.permissions.includes("cost.read")) {
+              throw new Error(`Plugin ${plugin.id} cannot inspect costs`);
+            }
+            return window.borg.cost.summary(plugin.uiCapability);
+          },
+          subscribe: async (handler) => {
+            if (!plugin.permissions.includes("cost.read")) {
+              throw new Error(`Plugin ${plugin.id} cannot subscribe to costs`);
+            }
+            const unsubscribe = await window.borg.cost.subscribe(
+              plugin.uiCapability,
+              (summary) => {
+                void Promise.resolve(handler(summary)).catch((error: unknown) =>
+                  console.error(
+                    `[renderer] cost subscriber from ${plugin.id} failed`,
+                    error,
+                  ),
+                );
+              },
+            );
+            return trackScoped({ dispose: unsubscribe });
+          },
+        },
         notify: async (request) => {
           if (!plugin.permissions.includes("notifications:send")) {
             throw new Error(`Plugin ${plugin.id} cannot send notifications`);

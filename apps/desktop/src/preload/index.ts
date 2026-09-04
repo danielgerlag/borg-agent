@@ -347,6 +347,62 @@ const bridge = Object.freeze({
         args: { capability },
       }),
   }),
+  cost: Object.freeze({
+    summary: (capability: string): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "cost.summary",
+        args: { capability },
+      }),
+    subscribe: async (
+      capability: string,
+      listener: (summary: unknown) => void,
+    ): Promise<(() => void)> => {
+      let subscriptionId: string | undefined;
+      const pending: unknown[] = [];
+      const wrapped = (
+        _event: IpcRendererEvent,
+        payload: {
+          readonly subscriptionId?: unknown;
+          readonly summary?: unknown;
+        },
+      ): void => {
+        if (subscriptionId === undefined) {
+          pending.push(payload);
+        } else if (payload?.subscriptionId === subscriptionId) {
+          listener(payload.summary);
+        }
+      };
+      ipcRenderer.on("borg:cost:summary", wrapped);
+      try {
+        subscriptionId = await invokeKernel<string>("borg:kernel:call", {
+          method: "cost.subscribe",
+          args: { capability },
+        });
+        for (const payload of pending) {
+          if (
+            payload &&
+            typeof payload === "object" &&
+            (payload as { readonly subscriptionId?: unknown }).subscriptionId ===
+              subscriptionId
+          ) {
+            listener((payload as { readonly summary?: unknown }).summary);
+          }
+        }
+      } catch (error) {
+        ipcRenderer.removeListener("borg:cost:summary", wrapped);
+        throw error;
+      }
+      return () => {
+        ipcRenderer.removeListener("borg:cost:summary", wrapped);
+        if (subscriptionId) {
+          void invokeKernel("borg:kernel:call", {
+            method: "cost.unsubscribe",
+            args: { capability, subscriptionId },
+          }).catch(() => undefined);
+        }
+      };
+    },
+  }),
   window: Object.freeze({
     hide: (capability: string): Promise<boolean> => {
       assertShellCapability(capability);

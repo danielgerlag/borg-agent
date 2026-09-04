@@ -1,0 +1,18 @@
+{
+  "id": "borg.usage",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-usage/main",
+  "ui": "@borg/plugin-usage/ui",
+  "permissions": [
+    "cost.read",
+    "ui.flightDeck"
+  ],
+  "contributes": {
+    "kinds": [
+      "flightDeckWidget"
+    ]
+  }
+}

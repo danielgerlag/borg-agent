@@ -1,0 +1,41 @@
+{
+  "id": "borg.bots",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-bots/main",
+  "ui": "@borg/plugin-bots/ui",
+  "permissions": [
+    "loops.start",
+    "personas.read",
+    "tools.invoke",
+    "tools.register",
+    "ui.flightDeck",
+    "ui.workspace",
+    "workspace.manage"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.bots.create",
+      "borg.bots.delete",
+      "borg.bots.get",
+      "borg.bots.list",
+      "borg.bots.listLogs",
+      "borg.bots.start",
+      "borg.bots.stop"
+    ],
+    "events": [
+      "borg.bots.completed",
+      "borg.bots.failed",
+      "borg.bots.started",
+      "borg.bots.stopped",
+      "borg.bots.updated"
+    ],
+    "kinds": [
+      "flightDeckWidget",
+      "tool",
+      "workspaceView"
+    ]
+  }
+}

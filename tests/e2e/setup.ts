@@ -13,6 +13,15 @@ export async function completeSetup(page: Page): Promise<void> {
   }
   await page.getByTestId("setup-continue").click();
 
+  await expect(
+    page
+      .getByTestId("anthropic-setup-step")
+      .or(page.getByTestId("wizard-persona-step")),
+  ).toBeVisible();
+  if (await page.getByTestId("anthropic-setup-step").isVisible()) {
+    await page.getByTestId("setup-continue").click();
+  }
+
   await expect(page.getByTestId("wizard-persona-step")).toBeVisible();
   await expect(page.getByTestId("wizard-model-select")).not.toHaveValue("");
   await page.getByTestId("setup-continue").click();

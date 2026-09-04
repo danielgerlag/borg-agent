@@ -246,9 +246,51 @@ export const usageRecordSchema = z
         message: "Usage amount and currency must be provided together",
       });
     }
+    const cached = value.cachedInputTokens ?? 0;
+    const written = value.cacheWriteTokens ?? 0;
+    if (cached + written > value.inputTokens) {
+      context.addIssue({
+        code: "custom",
+        path: ["inputTokens"],
+        message:
+          "cachedInputTokens and cacheWriteTokens must not exceed inputTokens",
+      });
+    }
   });
 
 export type UsageRecord = z.infer<typeof usageRecordSchema>;
+
+export const costSummarySchema = z
+  .object({
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    cachedInputTokens: z.number().int().nonnegative(),
+    cacheWriteTokens: z.number().int().nonnegative(),
+    amountsByCurrency: z.record(z.string().min(1), z.number().nonnegative()),
+  })
+  .strict();
+
+export type CostSummary = z.infer<typeof costSummarySchema>;
+
+export const chatUsageSchema = z
+  .object({
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    cachedInputTokens: z.number().int().nonnegative(),
+    cacheWriteTokens: z.number().int().nonnegative(),
+    costsByCurrency: z.record(z.string().min(1), z.number().nonnegative()),
+  })
+  .strict();
+
+export type ChatUsage = z.infer<typeof chatUsageSchema>;
+
+export const emptyChatUsage: ChatUsage = Object.freeze({
+  inputTokens: 0,
+  outputTokens: 0,
+  cachedInputTokens: 0,
+  cacheWriteTokens: 0,
+  costsByCurrency: Object.freeze({}),
+});
 
 export const loopRunStatusSchema = z.enum([
   "running",
@@ -293,6 +335,8 @@ export const loopRunSnapshotSchema = z
     error: z.string().optional(),
     inputTokens: z.number().int().nonnegative(),
     outputTokens: z.number().int().nonnegative(),
+    cachedInputTokens: z.number().int().nonnegative().default(0),
+    cacheWriteTokens: z.number().int().nonnegative().default(0),
     costsByCurrency: z.record(z.string().min(1), z.number().nonnegative()),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -347,6 +391,8 @@ export const loopEventSchema = z.discriminatedUnion("type", [
     type: z.literal("usage"),
     inputTokens: z.number().int().nonnegative(),
     outputTokens: z.number().int().nonnegative(),
+    cachedInputTokens: z.number().int().nonnegative().default(0),
+    cacheWriteTokens: z.number().int().nonnegative().default(0),
     costsByCurrency: z.record(z.string().min(1), z.number().nonnegative()),
   }),
   loopEventBaseSchema.extend({
@@ -475,6 +521,7 @@ export const chatSessionSchema = z
     activeRunId: z.string().uuid().optional(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
+    usage: chatUsageSchema.default(emptyChatUsage),
   })
   .strict();
 
@@ -951,4 +998,144 @@ export const channelInboundMessage = defineEvent({
       receivedAt: z.string().datetime(),
     })
     .strict(),
+});
+
+export const botStatusSchema = z.enum([
+  "stopped",
+  "running",
+  "waiting",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const botLogLevelSchema = z.enum(["debug", "info", "warn", "error"]);
+
+export const botLogSchema = z
+  .object({
+    at: z.string().datetime(),
+    level: botLogLevelSchema,
+    message: z.string().min(1),
+    eventType: z.string().min(1).optional(),
+  })
+  .strict();
+
+export const botSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string().min(1),
+    personaId: z.string().min(1),
+    launchPrompt: z.string().min(1),
+    status: botStatusSchema,
+    runId: z.string().uuid().optional(),
+    error: z.string().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    startedAt: z.string().datetime().optional(),
+    completedAt: z.string().datetime().optional(),
+  })
+  .strict();
+
+export type Bot = z.infer<typeof botSchema>;
+export type BotLog = z.infer<typeof botLogSchema>;
+export type BotStatus = z.infer<typeof botStatusSchema>;
+
+export const botsCreate = defineCommand({
+  id: "borg.bots.create",
+  input: z
+    .object({
+      name: z.string().min(1).optional(),
+      personaId: z.string().min(1).optional(),
+      launchPrompt: z.string().min(1),
+    })
+    .strict(),
+  output: z.object({ bot: botSchema }).strict(),
+});
+
+export const botsList = defineCommand({
+  id: "borg.bots.list",
+  input: z.object({}).strict(),
+  output: z.object({ bots: z.array(botSchema) }).strict(),
+});
+
+export const botsGet = defineCommand({
+  id: "borg.bots.get",
+  input: z.object({ botId: z.string().uuid() }).strict(),
+  output: z.object({ bot: botSchema.nullable() }).strict(),
+});
+
+export const botsStart = defineCommand({
+  id: "borg.bots.start",
+  input: z.object({ botId: z.string().uuid() }).strict(),
+  output: z.object({ bot: botSchema }).strict(),
+});
+
+export const botsStop = defineCommand({
+  id: "borg.bots.stop",
+  input: z.object({ botId: z.string().uuid() }).strict(),
+  output: z.object({ bot: botSchema }).strict(),
+});
+
+export const botsDelete = defineCommand({
+  id: "borg.bots.delete",
+  input: z.object({ botId: z.string().uuid() }).strict(),
+  output: z.object({ deleted: z.boolean() }).strict(),
+});
+
+export const botsListLogs = defineCommand({
+  id: "borg.bots.listLogs",
+  input: z.object({ botId: z.string().uuid() }).strict(),
+  output: z.object({ logs: z.array(botLogSchema) }).strict(),
+});
+
+export const botUpdated = defineEvent({
+  id: "borg.bots.updated",
+  payload: z.object({ bot: botSchema }).strict(),
+});
+
+export const botStarted = defineEvent({
+  id: "borg.bots.started",
+  payload: z.object({ bot: botSchema }).strict(),
+});
+
+export const botStopped = defineEvent({
+  id: "borg.bots.stopped",
+  payload: z.object({ bot: botSchema }).strict(),
+});
+
+export const botCompleted = defineEvent({
+  id: "borg.bots.completed",
+  payload: z.object({ bot: botSchema }).strict(),
+});
+
+export const botFailed = defineEvent({
+  id: "borg.bots.failed",
+  payload: z.object({ bot: botSchema }).strict(),
+});
+
+export const anthropicStatusSchema = z
+  .object({
+    hasKey: z.boolean(),
+    connected: z.boolean(),
+  })
+  .strict();
+
+export type AnthropicStatus = z.infer<typeof anthropicStatusSchema>;
+
+export const anthropicGetStatus = defineCommand({
+  id: "borg.anthropic.getStatus",
+  input: z.object({}).strict(),
+  output: anthropicStatusSchema,
+});
+
+export const anthropicConnect = defineCommand({
+  id: "borg.anthropic.connect",
+  input: z.object({}).strict(),
+  output: anthropicStatusSchema,
+});
+
+export const anthropicDisconnect = defineCommand({
+  id: "borg.anthropic.disconnect",
+  input: z.object({}).strict(),
+  output: anthropicStatusSchema,
 });

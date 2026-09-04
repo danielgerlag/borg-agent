@@ -6,6 +6,8 @@
   "dependencies": {
     "@borg/contracts": "workspace:*",
     "@borg/kernel": "workspace:*",
+    "@borg/plugin-anthropic": "workspace:*",
+    "@borg/plugin-bots": "workspace:*",
     "@borg/plugin-chat": "workspace:*",
     "@borg/plugin-config-sqlite": "workspace:*",
     "@borg/plugin-feedback": "workspace:*",
@@ -17,6 +19,7 @@
     "@borg/plugin-secrets-os": "workspace:*",
     "@borg/plugin-tools-echo": "workspace:*",
     "@borg/plugin-tools-core": "workspace:*",
+    "@borg/plugin-usage": "workspace:*",
     "@borg/ui-kit": "workspace:*",
     "lucide-solid": "^1.34.0",
     "solid-js": "^1.9.15",

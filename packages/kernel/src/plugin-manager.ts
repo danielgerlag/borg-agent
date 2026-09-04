@@ -630,13 +630,14 @@ export class PluginManager {
             return stage(() =>
               requireModels().registerProvider(manifest.id, {
                 ...provider,
-                complete: (request, signal, onToken) =>
+                complete: (request, signal, onToken, onUsage) =>
                   trackOperation(
                     Promise.resolve().then(async () =>
                       provider.complete(
                         request,
                         AbortSignal.any([signal, controller.signal]),
                         onToken,
+                        onUsage,
                       ),
                     ),
                   ),
@@ -756,6 +757,26 @@ export class PluginManager {
               throw new Error("Cost ledger is unavailable");
             }
             this.#options.costs.record(record);
+          },
+          summary: () => {
+            assertContextActive();
+            assertPermission("cost.read");
+            if (!this.#options.costs) {
+              throw new Error("Cost ledger is unavailable");
+            }
+            return this.#options.costs.summary();
+          },
+          subscribe: (handler) => {
+            assertContextActive();
+            assertPermission("cost.read");
+            if (!this.#options.costs) {
+              throw new Error("Cost ledger is unavailable");
+            }
+            return track(
+              this.#options.costs.subscribe((summary) =>
+                trackOperation(Promise.resolve(handler(summary))),
+              ),
+            );
           },
         },
         personas: {
@@ -902,6 +923,26 @@ export class PluginManager {
                     ),
                   ),
                 ),
+              ),
+            );
+          },
+          scheduleCron: (id, expression, callback) => {
+            assertPermission("scheduler.manage");
+            return stage(() =>
+              requireScheduler().scheduleCron(
+                manifest.id,
+                id,
+                expression,
+                (signal) =>
+                  this.#operationContext.exit(() =>
+                    trackOperation(
+                      Promise.resolve(
+                        callback(
+                          AbortSignal.any([signal, controller.signal]),
+                        ),
+                      ),
+                    ),
+                  ),
               ),
             );
           },

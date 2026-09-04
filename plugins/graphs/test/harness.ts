@@ -157,6 +157,8 @@ export function createGraphHarness(
         modelId: input.modelId ?? "mock:scripted",
         inputTokens: 0,
         outputTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
         costsByCurrency: {},
         createdAt: now,
         updatedAt: now,
@@ -321,6 +323,9 @@ export function createGraphHarness(
       },
     },
     scheduler: {
+      scheduleCron: () => ({
+        dispose: () => undefined,
+      }),
       schedule: (
         id: string,
         runAt: string,

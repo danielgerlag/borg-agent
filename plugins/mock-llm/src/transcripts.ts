@@ -65,6 +65,12 @@ export const mockTranscriptFixtures: readonly MockTranscriptFixture[] =
       delayMs: 1_000,
     },
     {
+      id: "bot-turn",
+      prompt: "scenario:bot",
+      content: "Bot turn completed while Borg was hidden.",
+      delayMs: 1_000,
+    },
+    {
       id: "graph-launch",
       prompt: "scenario:graph",
       toolCall: {

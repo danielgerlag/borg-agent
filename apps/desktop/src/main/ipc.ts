@@ -2,6 +2,7 @@ import {
   CommandInvocationError,
   type CommandEventBus,
   type ConfigFacade,
+  type CostLedger,
   type InteractionService,
   type LoopManager,
   type ModelRouter,
@@ -207,6 +208,21 @@ const kernelCallSchema = z.discriminatedUnion("method", [
     method: z.literal("models.list"),
     args: z.object({ capability: z.string().uuid() }),
   }),
+  z.object({
+    method: z.literal("cost.summary"),
+    args: z.object({ capability: z.string().uuid() }),
+  }),
+  z.object({
+    method: z.literal("cost.subscribe"),
+    args: z.object({ capability: z.string().uuid() }),
+  }),
+  z.object({
+    method: z.literal("cost.unsubscribe"),
+    args: z.object({
+      capability: z.string().uuid(),
+      subscriptionId: z.string().uuid(),
+    }),
+  }),
 ]);
 
 interface IpcSuccess {
@@ -295,6 +311,7 @@ export interface IpcBridgeOptions {
   readonly loops: LoopManager;
   readonly personas: PersonaService;
   readonly models: ModelRouter;
+  readonly costs: CostLedger;
   readonly kernelVersion: string;
   readonly startedAt: string;
   readonly shellCapability: string;
@@ -327,6 +344,14 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
       readonly dispose: () => void;
     }
   >();
+  const costSubscriptions = new Map<
+    string,
+    {
+      readonly senderId: number;
+      readonly pluginId: string;
+      readonly dispose: () => void;
+    }
+  >();
   const observedSenderIds = new Set<number>();
   const disposeLoopSubscriptions = (senderId?: number): void => {
     for (const [subscriptionId, subscription] of loopSubscriptions) {
@@ -344,6 +369,14 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
       }
     }
   };
+  const disposeCostSubscriptions = (senderId?: number): void => {
+    for (const [subscriptionId, subscription] of costSubscriptions) {
+      if (senderId === undefined || subscription.senderId === senderId) {
+        subscription.dispose();
+        costSubscriptions.delete(subscriptionId);
+      }
+    }
+  };
   const observeSender = (sender: WebContents): void => {
     if (observedSenderIds.has(sender.id)) {
       return;
@@ -353,6 +386,7 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
       observedSenderIds.delete(sender.id);
       disposeLoopSubscriptions(sender.id);
       disposeEventSubscriptions(sender.id);
+      disposeCostSubscriptions(sender.id);
       if (bootstrapConsumedBy === sender.id) {
         bootstrapConsumedBy = undefined;
       }
@@ -784,6 +818,57 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
           );
           return success(options.models.listModels());
         }
+        case "cost.summary": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "cost.read",
+          );
+          return success(options.costs.summary());
+        }
+        case "cost.subscribe": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "cost.read",
+          );
+          const subscriptionId = randomUUID();
+          const sender = event.sender;
+          const subscription = options.costs.subscribe((summary) => {
+            if (!sender.isDestroyed()) {
+              sender.send("borg:cost:summary", {
+                subscriptionId,
+                summary,
+              });
+            }
+          });
+          costSubscriptions.set(subscriptionId, {
+            senderId: sender.id,
+            pluginId,
+            dispose: () => subscription.dispose(),
+          });
+          return success(subscriptionId);
+        }
+        case "cost.unsubscribe": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "cost.read",
+          );
+          const subscription = costSubscriptions.get(
+            request.args.subscriptionId,
+          );
+          if (
+            !subscription ||
+            subscription.senderId !== event.sender.id ||
+            subscription.pluginId !== pluginId
+          ) {
+            return success(false);
+          }
+          subscription.dispose();
+          costSubscriptions.delete(request.args.subscriptionId);
+          return success(true);
+        }
       }
       } catch (error) {
         return failure(error);
@@ -798,6 +883,7 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
     cancelRendererCommands("IPC bridge is shutting down");
     disposeLoopSubscriptions();
     disposeEventSubscriptions();
+    disposeCostSubscriptions();
     if (activeCalls > 0) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([

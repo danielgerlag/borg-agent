@@ -55,6 +55,8 @@ function createChatHarnessContext(
       modelId: "mock:scripted",
       inputTokens: 0,
       outputTokens: 0,
+      cachedInputTokens: 0,
+      cacheWriteTokens: 0,
       costsByCurrency: {},
       createdAt: now,
       updatedAt: now,
@@ -205,12 +207,27 @@ function createChatHarnessContext(
 
   const invoke = async <T>(command: { readonly id: string }, input: unknown) =>
     bus.invoke(command as never, input as never) as Promise<T>;
-  const finish = async (runId: string, output: string): Promise<void> => {
+  const finish = async (
+    runId: string,
+    output: string,
+    usage?: {
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+      readonly cachedInputTokens?: number;
+      readonly cacheWriteTokens?: number;
+      readonly costsByCurrency?: Readonly<Record<string, number>>;
+    },
+  ): Promise<void> => {
     const run = runs.get(runId)!;
     runs.set(runId, {
       ...run,
       status: "completed",
       output,
+      inputTokens: usage?.inputTokens ?? run.inputTokens,
+      outputTokens: usage?.outputTokens ?? run.outputTokens,
+      cachedInputTokens: usage?.cachedInputTokens ?? run.cachedInputTokens,
+      cacheWriteTokens: usage?.cacheWriteTokens ?? run.cacheWriteTokens,
+      costsByCurrency: usage?.costsByCurrency ?? run.costsByCurrency,
       updatedAt: new Date().toISOString(),
     });
     const event: LoopEvent = {
@@ -457,5 +474,97 @@ describe("borg.chat harness", () => {
     }>(chatListSessions, { includeChildren: true });
     expect(listed.sessions.map(({ id }) => id)).toEqual([parent.sessionId]);
     await harness.deactivate();
+  });
+
+  it("accumulates durable session usage exactly once from the terminal snapshot", async () => {
+    const fixture = createChatHarnessContext();
+    const harness = await createTestHarness(chatPlugin, fixture.context);
+    const created = await fixture.invoke<{ sessionId: string }>(
+      chatCreateSession,
+      {},
+    );
+    const first = await fixture.invoke<{ runId: string }>(chatSendMessage, {
+      sessionId: created.sessionId,
+      text: "first",
+    });
+    await fixture.finish(first.runId, "one", {
+      inputTokens: 10,
+      outputTokens: 4,
+      cachedInputTokens: 2,
+      cacheWriteTokens: 1,
+      costsByCurrency: { USD: 0.01 },
+    });
+    const afterFirst = await fixture.invoke<{
+      session: {
+        usage: {
+          inputTokens: number;
+          outputTokens: number;
+          cachedInputTokens: number;
+          cacheWriteTokens: number;
+          costsByCurrency: Record<string, number>;
+        };
+      };
+    }>(chatGetSession, { sessionId: created.sessionId });
+    expect(afterFirst.session.usage).toEqual({
+      inputTokens: 10,
+      outputTokens: 4,
+      cachedInputTokens: 2,
+      cacheWriteTokens: 1,
+      costsByCurrency: { USD: 0.01 },
+    });
+
+    const second = await fixture.invoke<{ runId: string }>(chatSendMessage, {
+      sessionId: created.sessionId,
+      text: "second",
+    });
+    await fixture.finish(second.runId, "two", {
+      inputTokens: 3,
+      outputTokens: 1,
+      costsByCurrency: { USD: 0.002 },
+    });
+    const afterSecond = await fixture.invoke<{
+      session: {
+        usage: {
+          inputTokens: number;
+          outputTokens: number;
+          cachedInputTokens: number;
+          cacheWriteTokens: number;
+          costsByCurrency: Record<string, number>;
+        };
+      };
+    }>(chatGetSession, { sessionId: created.sessionId });
+    expect(afterSecond.session.usage).toEqual({
+      inputTokens: 13,
+      outputTokens: 5,
+      cachedInputTokens: 2,
+      cacheWriteTokens: 1,
+      costsByCurrency: { USD: 0.012 },
+    });
+
+    await harness.deactivate();
+    const restored = createChatHarnessContext(fixture.store);
+    const restoredHarness = await createTestHarness(
+      chatPlugin,
+      restored.context,
+    );
+    const restoredDocument = await restored.invoke<{
+      session: {
+        usage: {
+          inputTokens: number;
+          outputTokens: number;
+          cachedInputTokens: number;
+          cacheWriteTokens: number;
+          costsByCurrency: Record<string, number>;
+        };
+      };
+    }>(chatGetSession, { sessionId: created.sessionId });
+    expect(restoredDocument.session.usage).toEqual({
+      inputTokens: 13,
+      outputTokens: 5,
+      cachedInputTokens: 2,
+      cacheWriteTokens: 1,
+      costsByCurrency: { USD: 0.012 },
+    });
+    await restoredHarness.deactivate();
   });
 });

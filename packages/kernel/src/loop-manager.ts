@@ -229,6 +229,8 @@ export class LoopManager {
         modelId: input.modelId,
         inputTokens: 0,
         outputTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
         costsByCurrency: {},
         createdAt: now,
         updatedAt: now,
@@ -284,6 +286,14 @@ export class LoopManager {
       )
       .map(({ snapshot }) => snapshot)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  countLive(ownerPluginId?: string): number {
+    return [...this.#runs.values()].filter(
+      (run) =>
+        (ownerPluginId === undefined || run.ownerPluginId === ownerPluginId) &&
+        ["running", "waiting", "paused"].includes(run.snapshot.status),
+    ).length;
   }
 
   cancel(runId: string, requesterPluginId?: string): boolean {
@@ -570,6 +580,8 @@ export class LoopManager {
     if (
       run.snapshot.inputTokens === totals.inputTokens &&
       run.snapshot.outputTokens === totals.outputTokens &&
+      run.snapshot.cachedInputTokens === totals.cachedInputTokens &&
+      run.snapshot.cacheWriteTokens === totals.cacheWriteTokens &&
       JSON.stringify(run.snapshot.costsByCurrency) ===
         JSON.stringify(totals.amountsByCurrency) &&
       run.snapshot.providerId === resolvedProviderId &&
@@ -582,6 +594,8 @@ export class LoopManager {
       modelId: resolvedModelId,
       inputTokens: totals.inputTokens,
       outputTokens: totals.outputTokens,
+      cachedInputTokens: totals.cachedInputTokens,
+      cacheWriteTokens: totals.cacheWriteTokens,
       costsByCurrency: totals.amountsByCurrency,
     };
     if (["completed", "failed", "cancelled"].includes(run.snapshot.status)) {
@@ -601,6 +615,8 @@ export class LoopManager {
       runId: run.snapshot.id,
       inputTokens: totals.inputTokens,
       outputTokens: totals.outputTokens,
+      cachedInputTokens: totals.cachedInputTokens,
+      cacheWriteTokens: totals.cacheWriteTokens,
       costsByCurrency: totals.amountsByCurrency,
     });
   }

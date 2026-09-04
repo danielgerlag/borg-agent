@@ -136,6 +136,12 @@ importers:
       '@borg/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@borg/plugin-anthropic':
+        specifier: workspace:*
+        version: link:../../plugins/anthropic
+      '@borg/plugin-bots':
+        specifier: workspace:*
+        version: link:../../plugins/bots
       '@borg/plugin-chat':
         specifier: workspace:*
         version: link:../../plugins/chat
@@ -169,6 +175,9 @@ importers:
       '@borg/plugin-tools-echo':
         specifier: workspace:*
         version: link:../../plugins/tools-echo
+      '@borg/plugin-usage':
+        specifier: workspace:*
+        version: link:../../plugins/usage
       '@borg/ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui-kit
@@ -236,6 +245,42 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+
+  plugins/anthropic:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
+  plugins/bots:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
 
   plugins/chat:
     dependencies:
@@ -381,6 +426,24 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  plugins/usage:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
 packages:
 
   '@babel/code-frame@7.29.7':
@@ -392,7 +455,7 @@ packages:
     engines: {node: '>=6.9.0'}
 
   '@babel/core@7.29.7':
-    resolution: {integrity: sha1-gMELFySAgpaLV6hXuRZAlx8gcPc=, tarball: https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@babel/core/-/core-7.29.7.tgz}
+    resolution: {integrity: sha1-gMELFySAgpaLV6hXuRZAlx8gcPc=, tarball: https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@babel/core/-/core-7.29.7.tgz}
     engines: {node: '>=6.9.0'}
 
   '@babel/generator@7.29.8':
@@ -400,7 +463,7 @@ packages:
     engines: {node: '>=6.9.0'}
 
   '@babel/helper-compilation-targets@7.29.7':
-    resolution: {integrity: sha1-eh3vcEMCQBxH9k+oVYnpdK4hcEI=, tarball: https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@babel/helper-compilation-targets/-/helper-compilation-targets-7.29.7.tgz}
+    resolution: {integrity: sha1-eh3vcEMCQBxH9k+oVYnpdK4hcEI=, tarball: https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@babel/helper-compilation-targets/-/helper-compilation-targets-7.29.7.tgz}
     engines: {node: '>=6.9.0'}
 
   '@babel/helper-globals@7.29.7':
@@ -416,7 +479,7 @@ packages:
     engines: {node: '>=6.9.0'}
 
   '@babel/helper-module-transforms@7.29.7':
-    resolution: {integrity: sha1-sGJ0elmXuhOGNyATKLv/d5YFdK4=, tarball: https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@babel/helper-module-transforms/-/helper-module-transforms-7.29.7.tgz}
+    resolution: {integrity: sha1-sGJ0elmXuhOGNyATKLv/d5YFdK4=, tarball: https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@babel/helper-module-transforms/-/helper-module-transforms-7.29.7.tgz}
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0
@@ -447,7 +510,7 @@ packages:
     hasBin: true
 
   '@babel/plugin-syntax-jsx@7.29.7':
-    resolution: {integrity: sha1-YiwW+a1jeC/m6D2tx+QDMHRLfx4=, tarball: https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@babel/plugin-syntax-jsx/-/plugin-syntax-jsx-7.29.7.tgz}
+    resolution: {integrity: sha1-YiwW+a1jeC/m6D2tx+QDMHRLfx4=, tarball: https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@babel/plugin-syntax-jsx/-/plugin-syntax-jsx-7.29.7.tgz}
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
@@ -1464,13 +1527,13 @@ packages:
     engines: {node: '>=20.18.1'}
 
   update-browserslist-db@1.3.1:
-    resolution: {integrity: sha1-pxwo3SL1BUgdvEaJCHsY2TPpCv0=, tarball: https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/update-browserslist-db/-/update-browserslist-db-1.3.1.tgz}
+    resolution: {integrity: sha1-pxwo3SL1BUgdvEaJCHsY2TPpCv0=, tarball: https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/update-browserslist-db/-/update-browserslist-db-1.3.1.tgz}
     hasBin: true
     peerDependencies:
       browserslist: '>= 4.21.0'
 
   vite-plugin-solid@2.11.14:
-    resolution: {integrity: sha1-rPfmHDsFLefBeK1aMQl1DLUGNpE=, tarball: https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/vite-plugin-solid/-/vite-plugin-solid-2.11.14.tgz}
+    resolution: {integrity: sha1-rPfmHDsFLefBeK1aMQl1DLUGNpE=, tarball: https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/vite-plugin-solid/-/vite-plugin-solid-2.11.14.tgz}
     peerDependencies:
       '@testing-library/jest-dom': ^5.16.6 || ^5.17.0 || ^6.0.0 || ^7.0.0
       solid-js: ^1.7.2
@@ -1531,7 +1594,7 @@ packages:
         optional: true
 
   vitest@4.1.11:
-    resolution: {integrity: sha1-FlPBUhrpF/lg2bIYd3l8R9/YvyE=, tarball: https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/vitest/-/vitest-4.1.11.tgz}
+    resolution: {integrity: sha1-FlPBUhrpF/lg2bIYd3l8R9/YvyE=, tarball: https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/vitest/-/vitest-4.1.11.tgz}
     engines: {node: ^20.0.0 || ^22.0.0 || >=24.0.0}
     hasBin: true
     peerDependencies:

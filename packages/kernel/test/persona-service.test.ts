@@ -156,6 +156,7 @@ describe("PersonaService", () => {
       }),
       expect.any(AbortSignal),
       expect.any(Function),
+      expect.any(Function),
     );
     const reviewer = await personas.create({
       id: "user/reviewer",
@@ -182,6 +183,7 @@ describe("PersonaService", () => {
         ]),
       }),
       expect.any(AbortSignal),
+      expect.any(Function),
       expect.any(Function),
     );
 

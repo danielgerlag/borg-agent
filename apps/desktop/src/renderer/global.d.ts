@@ -1,5 +1,6 @@
 import type {
   BusEnvelope,
+  CostSummary,
   InteractionResponse,
   LoopEvent,
   LoopRunSnapshot,
@@ -143,6 +144,13 @@ declare global {
     };
     readonly models: {
       list(capability: string): Promise<readonly ModelDescriptor[]>;
+    };
+    readonly cost: {
+      summary(capability: string): Promise<CostSummary>;
+      subscribe(
+        capability: string,
+        listener: (summary: CostSummary) => void,
+      ): Promise<() => void>;
     };
     readonly window: {
       hide(shellCapability: string): Promise<boolean>;

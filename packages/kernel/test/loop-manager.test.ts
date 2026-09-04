@@ -357,6 +357,41 @@ describe("LoopManager", () => {
     expect(costs.list(run.id)).toHaveLength(1);
   });
 
+  it("counts live runs by owner without exposing ownership on snapshots", async () => {
+    const interactions = new InteractionService();
+    const costs = new CostLedger();
+    const tools = new ToolService(interactions);
+    const models = new ModelRouter(costs);
+    const loops = new LoopManager(models, tools, costs);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    models.registerProvider("borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      async complete() {
+        await held;
+        return {
+          content: "done",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+
+    const chat = loops.start({ prompt: "chat turn" }, "borg.chat");
+    const bot = loops.start({ prompt: "bot turn" }, "borg.bots");
+    expect(chat).not.toHaveProperty("ownerPluginId");
+    expect(loops.countLive()).toBe(2);
+    expect(loops.countLive("borg.bots")).toBe(1);
+    expect(loops.countLive("borg.chat")).toBe(1);
+    loops.cancel(chat.id, "borg.chat");
+    expect(loops.countLive()).toBe(1);
+    expect(loops.countLive("borg.bots")).toBe(1);
+    release();
+    loops.cancel(bot.id, "borg.bots");
+  });
+
   it("does not advertise or invoke tools for a loop owner without permission", async () => {
     const interactions = new InteractionService();
     const costs = new CostLedger();
@@ -666,6 +701,8 @@ describe("CostLedger", () => {
     expect(costs.totalForRun("run")).toEqual({
       inputTokens: 2,
       outputTokens: 4,
+      cachedInputTokens: 0,
+      cacheWriteTokens: 0,
       amountsByCurrency: { USD: 0.01, EUR: 0.02 },
     });
   });
@@ -682,5 +719,215 @@ describe("CostLedger", () => {
         correlationId: "correlation",
       }),
     ).toThrow(/amount and currency/i);
+  });
+
+  it("rejects cache tokens that exceed total input", () => {
+    const costs = new CostLedger();
+    expect(() =>
+      costs.record({
+        providerId: "borg.provider",
+        modelId: "provider:model",
+        inputTokens: 2,
+        outputTokens: 1,
+        cachedInputTokens: 2,
+        cacheWriteTokens: 1,
+        correlationId: "correlation",
+      }),
+    ).toThrow(/must not exceed inputTokens/);
+  });
+
+  it("summarizes process-session usage across currencies and notifies subscribers", () => {
+    const costs = new CostLedger();
+    const seen: number[] = [];
+    const subscription = costs.subscribe((summary) => {
+      seen.push(summary.inputTokens);
+    });
+    costs.record({
+      providerId: "borg.first",
+      modelId: "first",
+      inputTokens: 10,
+      outputTokens: 2,
+      cachedInputTokens: 4,
+      cacheWriteTokens: 1,
+      amount: 0.01,
+      currency: "USD",
+      correlationId: "one",
+    });
+    costs.record({
+      providerId: "borg.second",
+      modelId: "second",
+      inputTokens: 5,
+      outputTokens: 3,
+      amount: 0.02,
+      currency: "EUR",
+      correlationId: "two",
+    });
+
+    expect(costs.summary()).toEqual({
+      inputTokens: 15,
+      outputTokens: 5,
+      cachedInputTokens: 4,
+      cacheWriteTokens: 1,
+      amountsByCurrency: { USD: 0.01, EUR: 0.02 },
+    });
+    expect(seen).toEqual([0, 10, 15]);
+    subscription.dispose();
+    costs.record({
+      providerId: "borg.third",
+      modelId: "third",
+      inputTokens: 1,
+      outputTokens: 1,
+      correlationId: "three",
+    });
+    expect(seen).toEqual([0, 10, 15]);
+  });
+
+  it("isolates subscriber failures and still delivers later summaries", () => {
+    const costs = new CostLedger();
+    const seen: number[] = [];
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    costs.subscribe(() => {
+      throw new Error("sync fail");
+    });
+    costs.subscribe(async () => {
+      throw new Error("async fail");
+    });
+    const healthy = costs.subscribe((summary) => {
+      seen.push(summary.inputTokens);
+    });
+    expect(seen).toEqual([0]);
+    costs.record({
+      providerId: "borg.first",
+      modelId: "first",
+      inputTokens: 4,
+      outputTokens: 1,
+      correlationId: "one",
+    });
+    expect(seen).toEqual([0, 4]);
+    expect(consoleError).toHaveBeenCalled();
+    healthy.dispose();
+    consoleError.mockRestore();
+  });
+});
+
+describe("ModelRouter fallback preferences", () => {
+  it("uses desktop-supplied fallback instead of insertion order", async () => {
+    const costs = new CostLedger();
+    const models = new ModelRouter(costs, {
+      fallbackPreferences: ["borg.mock-llm:mock:scripted"],
+    });
+    models.registerProvider("borg.anthropic", {
+      id: "borg.anthropic",
+      models: ["claude-sonnet-5"],
+      async complete() {
+        return {
+          content: "anthropic",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+    models.registerProvider("borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      async complete() {
+        return {
+          content: "mock",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+
+    const completion = await models.complete(
+      {
+        correlationId: "unqualified",
+        messages: [{ role: "user", content: "hello" }],
+        tools: [],
+      },
+      new AbortController().signal,
+    );
+    expect(completion).toMatchObject({
+      providerId: "borg.mock-llm",
+      modelId: "mock:scripted",
+      result: { content: "mock" },
+    });
+  });
+
+  it("records buffered partial usage only when completion throws", async () => {
+    const costs = new CostLedger();
+    const models = new ModelRouter(costs);
+    models.registerProvider("borg.partial", {
+      id: "borg.partial",
+      models: ["partial:model"],
+      async complete(_request, _signal, _onToken, onUsage) {
+        await onUsage?.({
+          inputTokens: 4,
+          outputTokens: 1,
+          cachedInputTokens: 1,
+          amount: 0.002,
+          currency: "USD",
+        });
+        throw new Error("stream failed");
+      },
+    });
+
+    await expect(
+      models.complete(
+        {
+          providerId: "borg.partial",
+          modelId: "partial:model",
+          correlationId: "partial",
+          runId: "run-partial",
+          messages: [{ role: "user", content: "hello" }],
+          tools: [],
+        },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow(/stream failed/);
+    expect(costs.list("run-partial")).toEqual([
+      expect.objectContaining({
+        inputTokens: 4,
+        outputTokens: 1,
+        cachedInputTokens: 1,
+        amount: 0.002,
+        currency: "USD",
+      }),
+    ]);
+  });
+
+  it("keeps the successful result authoritative over partial usage", async () => {
+    const costs = new CostLedger();
+    const models = new ModelRouter(costs);
+    models.registerProvider("borg.partial", {
+      id: "borg.partial",
+      models: ["partial:model"],
+      async complete(_request, _signal, _onToken, onUsage) {
+        await onUsage?.({
+          inputTokens: 99,
+          outputTokens: 99,
+        });
+        return {
+          content: "done",
+          usage: { inputTokens: 3, outputTokens: 2 },
+        };
+      },
+    });
+
+    await models.complete(
+      {
+        providerId: "borg.partial",
+        modelId: "partial:model",
+        correlationId: "success",
+        runId: "run-success",
+        messages: [{ role: "user", content: "hello" }],
+        tools: [],
+      },
+      new AbortController().signal,
+    );
+    expect(costs.list("run-success")).toEqual([
+      expect.objectContaining({
+        inputTokens: 3,
+        outputTokens: 2,
+      }),
+    ]);
   });
 });

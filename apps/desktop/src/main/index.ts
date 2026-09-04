@@ -81,8 +81,11 @@ let quitting = false;
 let shutdownComplete = false;
 let currentTrayMenuLabels: readonly string[] = [];
 let currentTrayIconIsEmpty = true;
+const BOTS_PLUGIN_ID = "borg.bots";
+
 let currentPendingInteractions = 0;
 let currentRunningLoops = 0;
+let currentRunningBots = 0;
 
 type SetupState = z.infer<typeof setupSchema>;
 
@@ -131,6 +134,11 @@ function hideMainWindow(): void {
   rebuildTrayMenu();
 }
 
+function refreshRunCounts(): void {
+  currentRunningLoops = loopManager?.countLive() ?? 0;
+  currentRunningBots = loopManager?.countLive(BOTS_PLUGIN_ID) ?? 0;
+}
+
 function rebuildTrayMenu(): void {
   if (!tray) {
     return;
@@ -155,6 +163,10 @@ function rebuildTrayMenu(): void {
     },
     {
       label: `Running tasks: ${currentRunningLoops}`,
+      enabled: false,
+    },
+    {
+      label: `Running bots: ${currentRunningBots}`,
       enabled: false,
     },
     { type: "separator" },
@@ -448,7 +460,9 @@ if (!app.requestSingleInstanceLock()) {
     interactionService = new InteractionService();
     const costs = new CostLedger();
     const tools = new ToolService(interactionService);
-    const models = new ModelRouter(costs);
+    const models = new ModelRouter(costs, {
+      fallbackPreferences: ["borg.mock-llm:mock:scripted"],
+    });
     const personaService = new PersonaService(storeFacade);
     const promptAssembler = new PromptAssembler(personaService);
     const workspaceService = new WorkspaceService(
@@ -566,9 +580,7 @@ if (!app.requestSingleInstanceLock()) {
 
     mainWindow = createMainWindow();
     currentPendingInteractions = interactionService.listPending().length;
-    currentRunningLoops = loopManager.list().filter(({ status }) =>
-      ["running", "waiting", "paused"].includes(status),
-    ).length;
+    refreshRunCounts();
     rebuildTrayMenu();
     notificationSubscription = notificationService.subscribe((notification) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -583,9 +595,7 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
     loopSubscription = loopManager.subscribe(() => {
-      currentRunningLoops = loopManager?.list().filter(({ status }) =>
-        ["running", "waiting", "paused"].includes(status),
-      ).length ?? 0;
+      refreshRunCounts();
       rebuildTrayMenu();
     });
     removeIpcBridge = registerIpcBridge({
@@ -598,6 +608,7 @@ if (!app.requestSingleInstanceLock()) {
       loops: loopManager,
       personas: personaService,
       models,
+      costs,
       kernelVersion: KERNEL_VERSION,
       startedAt,
       shellCapability,

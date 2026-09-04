@@ -17,9 +17,12 @@ import {
   chatTurnStarted,
   feedbackRequested,
   feedbackResolved,
+  emptyChatUsage,
   type ChatEntry,
   type ChatSession,
+  type ChatUsage,
   type LoopEvent,
+  type LoopRunSnapshot,
 } from "@borg/contracts";
 import {
   definePlugin,
@@ -39,6 +42,20 @@ const persistedChatDocumentSchema = z
 
 function asJsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function addUsage(base: ChatUsage, snapshot: LoopRunSnapshot): ChatUsage {
+  const costsByCurrency: Record<string, number> = { ...base.costsByCurrency };
+  for (const [currency, amount] of Object.entries(snapshot.costsByCurrency)) {
+    costsByCurrency[currency] = (costsByCurrency[currency] ?? 0) + amount;
+  }
+  return {
+    inputTokens: base.inputTokens + snapshot.inputTokens,
+    outputTokens: base.outputTokens + snapshot.outputTokens,
+    cachedInputTokens: base.cachedInputTokens + snapshot.cachedInputTokens,
+    cacheWriteTokens: base.cacheWriteTokens + snapshot.cacheWriteTokens,
+    costsByCurrency,
+  };
 }
 
 function createEntry(
@@ -233,6 +250,7 @@ export default definePlugin({
         ...document.session,
         status: snapshot.status === "failed" ? "error" : "idle",
         activeRunId: undefined,
+        usage: addUsage(document.session.usage ?? emptyChatUsage, snapshot),
         updatedAt: new Date().toISOString(),
       });
       const next = chatDocumentSchema.parse({
