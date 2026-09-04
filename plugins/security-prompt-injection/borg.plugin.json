@@ -1,0 +1,16 @@
+{
+  "id": "borg.security.prompt-injection",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-security-prompt-injection/main",
+  "permissions": [
+    "scanners.register"
+  ],
+  "contributes": {
+    "kinds": [
+      "promptScanner"
+    ]
+  }
+}

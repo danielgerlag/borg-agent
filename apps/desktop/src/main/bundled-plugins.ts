@@ -83,6 +83,64 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.channel.discord",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-channel-discord/main",
+      "ui": "@borg/plugin-channel-discord/ui",
+      "permissions": [
+        "channels.register",
+        "network:dynamic",
+        "network:websocket",
+        "runtime.background",
+        "secrets:read",
+        "secrets:write",
+        "ui.settings"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.channel.discord.disconnect",
+          "borg.channel.discord.getStatus",
+          "borg.channel.discord.verify"
+        ],
+        "kinds": [
+          "channel",
+          "settingsPage"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-channel-discord/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.channel.mock",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-channel-mock/main",
+      "permissions": [
+        "channels.register",
+        "channels.send"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.channel.mock.inject",
+          "borg.channel.mock.send"
+        ],
+        "kinds": [
+          "channel"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-channel-mock/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.chat",
       "version": "0.1.0",
       "engines": {
@@ -425,6 +483,26 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-secrets-os/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.security.prompt-injection",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-security-prompt-injection/main",
+      "permissions": [
+        "scanners.register"
+      ],
+      "contributes": {
+        "kinds": [
+          "promptScanner"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-security-prompt-injection/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {

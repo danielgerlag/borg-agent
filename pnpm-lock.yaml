@@ -142,6 +142,12 @@ importers:
       '@borg/plugin-bots':
         specifier: workspace:*
         version: link:../../plugins/bots
+      '@borg/plugin-channel-discord':
+        specifier: workspace:*
+        version: link:../../plugins/channel-discord
+      '@borg/plugin-channel-mock':
+        specifier: workspace:*
+        version: link:../../plugins/channel-mock
       '@borg/plugin-chat':
         specifier: workspace:*
         version: link:../../plugins/chat
@@ -175,6 +181,9 @@ importers:
       '@borg/plugin-secrets-os':
         specifier: workspace:*
         version: link:../../plugins/secrets-os
+      '@borg/plugin-security-prompt-injection':
+        specifier: workspace:*
+        version: link:../../plugins/security-prompt-injection
       '@borg/plugin-tools-core':
         specifier: workspace:*
         version: link:../../plugins/tools-core
@@ -287,6 +296,33 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+
+  plugins/channel-discord:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
+  plugins/channel-mock:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
 
   plugins/chat:
     dependencies:
@@ -449,6 +485,12 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+
+  plugins/security-prompt-injection:
+    dependencies:
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
 
   plugins/tools-core:
     dependencies:

@@ -1,4 +1,5 @@
 import {
+  channelInboundMessage,
   defineCommand,
   defineEvent,
   type BusEnvelope,
@@ -110,5 +111,55 @@ describe("CommandEventBus cancellation", () => {
       causationId: command.id,
       source: { kind: "plugin", id: "borg.test" },
     });
+  });
+
+  it("marks kernel emissions as kernel-sourced and keeps plugin claims plugin-sourced", async () => {
+    const event = defineEvent({
+      id: "borg.test.kernel-sourced",
+      payload: z.object({ value: z.string() }).strict(),
+    });
+    const bus = new CommandEventBus();
+    const envelopes: BusEnvelope[] = [];
+    bus.on("borg.listener", event, (_payload, envelope) => {
+      envelopes.push(envelope);
+    });
+
+    await bus.emitKernel(event, { value: "from kernel" });
+    await bus.emit("borg.impostor", new Set([event.id]), event, {
+      value: "from plugin",
+    });
+
+    expect(envelopes.map(({ source }) => source)).toEqual([
+      { kind: "kernel", id: "kernel" },
+      { kind: "plugin", id: "borg.impostor" },
+    ]);
+    await expect(
+      bus.emitKernel(event, { value: 7 } as unknown as { value: string }),
+    ).rejects.toThrow(/did not match its contract/);
+    expect(envelopes).toHaveLength(2);
+  });
+
+  it("rejects plugin emission of kernel-only inbound channel events", async () => {
+    const bus = new CommandEventBus();
+    const received: unknown[] = [];
+    bus.onById("borg.graphs", channelInboundMessage.id, (payload) => {
+      received.push(payload);
+    });
+
+    await expect(
+      bus.emit(
+        "borg.impostor",
+        new Set([channelInboundMessage.id]),
+        channelInboundMessage,
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          channelId: "borg.channel.mock:default",
+          text: "forged inbound",
+          metadata: {},
+          receivedAt: new Date().toISOString(),
+        },
+      ),
+    ).rejects.toThrow(/reserved for kernel emission/);
+    expect(received).toEqual([]);
   });
 });

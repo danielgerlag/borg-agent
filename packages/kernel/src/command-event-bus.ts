@@ -1,10 +1,11 @@
-import type {
-  BusEnvelope,
-  CommandDefinition,
-  CommandInput,
-  CommandOutput,
-  EventDefinition,
-  EventPayload,
+import {
+  isKernelOnlyEvent,
+  type BusEnvelope,
+  type CommandDefinition,
+  type CommandInput,
+  type CommandOutput,
+  type EventDefinition,
+  type EventPayload,
 } from "@borg/contracts";
 import type { Disposable } from "@borg/plugin-sdk";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -273,10 +274,28 @@ export class CommandEventBus {
     event: TEvent,
     payload: EventPayload<TEvent>,
   ): Promise<void> {
+    if (isKernelOnlyEvent(event.id)) {
+      throw new Error(`Event ${event.id} is reserved for kernel emission`);
+    }
     if (!declaredEventIds.has(event.id)) {
       throw new Error(`Plugin ${pluginId} did not declare event ${event.id}`);
     }
 
+    await this.#publish(event, payload, { kind: "plugin", id: pluginId });
+  }
+
+  async emitKernel<TEvent extends EventDefinition>(
+    event: TEvent,
+    payload: EventPayload<TEvent>,
+  ): Promise<void> {
+    await this.#publish(event, payload, { kind: "kernel", id: "kernel" });
+  }
+
+  async #publish<TEvent extends EventDefinition>(
+    event: TEvent,
+    payload: EventPayload<TEvent>,
+    source: BusEnvelope["source"],
+  ): Promise<void> {
     const parsedPayload = event.payload.safeParse(payload);
     if (!parsedPayload.success) {
       throw new Error(`Payload for event ${event.id} did not match its contract`, {
@@ -289,7 +308,7 @@ export class CommandEventBus {
     const envelope: BusEnvelope = Object.freeze({
       correlationId: parent?.correlationId ?? randomUUID(),
       causationId: parent?.operationId,
-      source: Object.freeze({ kind: "plugin" as const, id: pluginId }),
+      source: Object.freeze({ ...source }),
       timestamp: new Date().toISOString(),
     });
     await Promise.allSettled(

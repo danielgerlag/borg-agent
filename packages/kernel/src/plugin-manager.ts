@@ -1,4 +1,4 @@
-import type { CommandDefinition } from "@borg/contracts";
+import { isKernelOnlyEvent, type CommandDefinition } from "@borg/contracts";
 import {
   pluginManifestSchema,
   type BorgPluginManifest,
@@ -11,6 +11,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { CommandEventBus } from "./command-event-bus";
+import type { CommunicationService } from "./communication-service";
 import type { CostLedger } from "./cost-ledger";
 import { satisfiesBorgEngine } from "./engine-range";
 import { PluginLoadError } from "./errors";
@@ -22,6 +23,7 @@ import type { NotificationService } from "./notification-service";
 import type { PersonaService } from "./persona-service";
 import type { PromptAssembler } from "./prompt-assembler";
 import type { SchedulerCore } from "./scheduler-core";
+import type { ScannerRegistry } from "./scanner-registry";
 import type {
   ConfigFacade,
   PersistenceRegistry,
@@ -31,6 +33,7 @@ import type {
 import type { NetworkService } from "./network-service";
 import type { ProcessSupervisor } from "./process-supervisor";
 import type { ToolService } from "./tool-service";
+import type { WebSocketService } from "./websocket-service";
 import type { WorkspaceService } from "./workspace-service";
 
 export type PluginStatus =
@@ -81,6 +84,9 @@ export interface PluginManagerOptions {
   readonly scheduler?: SchedulerCore;
   readonly processes?: ProcessSupervisor;
   readonly http?: NetworkService;
+  readonly scanners?: ScannerRegistry;
+  readonly channels?: CommunicationService;
+  readonly webSockets?: WebSocketService;
   readonly showWindow?: () => void;
   getPluginDataDirectory?(pluginId: string): string;
 }
@@ -263,6 +269,15 @@ export class PluginManager {
     }
 
     const manifest: BorgPluginManifest = parsedManifest.data;
+    const reservedEvent = manifest.contributes.events?.find((eventId) =>
+      isKernelOnlyEvent(eventId),
+    );
+    if (reservedEvent !== undefined) {
+      throw new PluginLoadError(
+        manifest.id,
+        `Event ${reservedEvent} is reserved by the kernel`,
+      );
+    }
     const existingRecord = this.#records.get(manifest.id);
     if (existingRecord?.status === "disabled") {
       this.#records.delete(manifest.id);
@@ -485,6 +500,30 @@ export class PluginManager {
           throw new Error("Network service is unavailable");
         }
         return this.#options.http;
+      };
+      const requireScanners = (): ScannerRegistry => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.scanners) {
+          throw new Error("Prompt scanner registry is unavailable");
+        }
+        return this.#options.scanners;
+      };
+      const requireChannels = (): CommunicationService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.channels) {
+          throw new Error("Communication service is unavailable");
+        }
+        return this.#options.channels;
+      };
+      const requireWebSockets = (): WebSocketService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.webSockets) {
+          throw new Error("WebSocket service is unavailable");
+        }
+        return this.#options.webSockets;
       };
 
       if (
@@ -946,6 +985,29 @@ export class PluginManager {
             return stage(() => requirePrompts().registerSlot(slot));
           },
         },
+        scanners: {
+          register: (scanner) => {
+            assertPermission("scanners.register");
+            assertContribution("promptScanner");
+            return stage(() =>
+              requireScanners().register(manifest.id, {
+                ...scanner,
+                scan: (scanContext) =>
+                  trackOperation(
+                    Promise.resolve().then(() =>
+                      scanner.scan({
+                        ...scanContext,
+                        signal: AbortSignal.any([
+                          scanContext.signal,
+                          controller.signal,
+                        ]),
+                      }),
+                    ),
+                  ),
+              }),
+            );
+          },
+        },
         graphs: {
           registerStep: (contribution) => {
             assertPermission("graphs.contribute");
@@ -1119,6 +1181,75 @@ export class PluginManager {
             );
           },
         },
+        channels: {
+          register: (adapter) => {
+            assertPermission("channels.register");
+            assertContribution("channel");
+            return stage(() =>
+              requireChannels().register(manifest.id, {
+                ...adapter,
+                ...(adapter.start
+                  ? {
+                      start: (startContext) =>
+                        trackOperation(
+                          Promise.resolve().then(() =>
+                            adapter.start?.({
+                              ...startContext,
+                              signal: AbortSignal.any([
+                                startContext.signal,
+                                controller.signal,
+                              ]),
+                            }),
+                          ),
+                        ),
+                    }
+                  : {}),
+                send: (request) =>
+                  trackOperation(
+                    Promise.resolve().then(() =>
+                      adapter.send({
+                        ...request,
+                        signal: AbortSignal.any([
+                          ...(request.signal ? [request.signal] : []),
+                          controller.signal,
+                        ]),
+                      }),
+                    ),
+                  ),
+              }),
+            );
+          },
+          send: (request) => {
+            assertPermission("channels.send");
+            const operation = this.#operationContext.getStore();
+            return trackOperation(
+              requireChannels().send(manifest.id, {
+                ...request,
+                signal: AbortSignal.any([
+                  ...(request.signal ? [request.signal] : []),
+                  ...(operation ? [operation.signal] : []),
+                  controller.signal,
+                ]),
+              }),
+            );
+          },
+        },
+        webSockets: {
+          connect: (url, connectOptions) => {
+            assertPermission("network:websocket");
+            const operation = this.#operationContext.getStore();
+            return trackOperation(
+              requireWebSockets().connect(manifest.id, url, {
+                ...(connectOptions ?? {}),
+                signal: AbortSignal.any([
+                  ...(connectOptions?.signal ? [connectOptions.signal] : []),
+                  ...(operation ? [operation.signal] : []),
+                  controller.signal,
+                ]),
+              }),
+            );
+          },
+        },
         runtime: {
           spawn: (task) => {
             assertOrdinaryContext();
@@ -1289,6 +1420,9 @@ export class PluginManager {
       this.#options.models?.removePlugin(manifest.id);
       this.#options.prompts?.removePlugin(manifest.id);
       this.#options.http?.abortOwned(manifest.id);
+      this.#options.scanners?.removePlugin(manifest.id);
+      this.#options.channels?.removePlugin(manifest.id);
+      this.#options.webSockets?.abortOwned(manifest.id);
       await this.#options.processes?.abortOwned(manifest.id);
       await this.#disposeAll(disposables);
       this.bus.removePlugin(manifest.id);
@@ -1347,9 +1481,12 @@ export class PluginManager {
     this.#options.tools?.removePlugin(pluginId);
     this.#options.models?.removePlugin(pluginId);
     this.#options.prompts?.removePlugin(pluginId);
+    this.#options.scanners?.removePlugin(pluginId);
+    this.#options.channels?.removePlugin(pluginId);
     this.#options.graphContributions?.removePlugin(pluginId);
     this.#options.scheduler?.cancelOwned(pluginId);
     this.#options.http?.abortOwned(pluginId);
+    this.#options.webSockets?.abortOwned(pluginId);
     if (this.#options.processes) {
       try {
         await withTimeout(

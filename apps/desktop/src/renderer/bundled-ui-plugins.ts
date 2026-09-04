@@ -9,6 +9,7 @@ export type UiPluginLoader = () => Promise<{
 export const bundledUiPlugins: Readonly<Record<string, UiPluginLoader>> = {
   "borg.anthropic": async () => import("@borg/plugin-anthropic/ui"),
   "borg.bots": async () => import("@borg/plugin-bots/ui"),
+  "borg.channel.discord": async () => import("@borg/plugin-channel-discord/ui"),
   "borg.chat": async () => import("@borg/plugin-chat/ui"),
   "borg.feedback": async () => import("@borg/plugin-feedback/ui"),
   "borg.graphs": async () => import("@borg/plugin-graphs/ui"),

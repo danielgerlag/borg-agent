@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This is the implementation architecture through Slice 8. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
+This is the implementation architecture through Slice 9. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
 
 The architecture is deliberately a microkernel:
 
@@ -738,9 +738,9 @@ V0 supports an absent/unlabeled classification so early slices can run. Slice 9 
 public < internal < confidential < restricted
 ```
 
-Channel classes are `public | internal | private | local-only`. Policy decides whether a mismatch is blocked, may be explicitly overridden, or is redacted. Effective run classification is a high-water mark and cannot silently decrease.
+Channel classes are `public | internal | private | local-only`, with ceilings `public`, `internal`, `confidential`, and `restricted` respectively. A classification mismatch requires an explicit kernel approval. Effective run classification is a versioned high-water mark and cannot silently decrease. Approval commitments are invalidated if the high-water mark changes before the operation commits.
 
-`promptScanner` contributions inspect inbound user/channel content and external tool/model content. Scanner results are advisory findings with severity/evidence/recommendation. Kernel policy combines them and enforces allow/review/block. A missing, disabled, timed-out, or failed scanner follows configured fail-open/fail-closed policy; it never disables permission/classification enforcement.
+`promptScanner` contributions inspect inbound user/channel content and external tool/model content. Scanner results are advisory `allow | review | block` findings with bounded reason and evidence. The kernel executes matching scanners with content, timeout, and result bounds, isolates failures, and combines the findings. A block denies. A review asks once if the operation has not already prompted. Missing, disabled, timed-out, invalid, or failed coverage is fail-closed-to-review and never disables permission or classification enforcement.
 
 Plugin host permissions include examples such as:
 
@@ -762,7 +762,7 @@ channels.send
 
 Every host API checks the active plugin scope and manifest declaration. Dynamic destinations, file scopes, and persona/session tool rules are checked again at operation time.
 
-`CommunicationService` owns normalized messages, attachment handles, deduplication, classification, inbound routing, and outbound enforcement. `channel` contributions implement transport-specific list/read/send/poll/webhook behavior but cannot publish directly to external destinations without the communication service.
+`CommunicationService` owns normalized message IDs, attachment handles, inbound deduplication, persistence, classification, bounded redacted audit records, inbound routing, outbound idempotency, and the final outbound authorization commitment. `channel` contributions implement transport-specific receive and send behavior but cannot emit inbound events or publish externally except through the scoped service callbacks supplied at registration.
 
 Inbound flow:
 
@@ -784,6 +784,10 @@ feature/tool
  -> selected channel contribution
  -> audit/result classification
 ```
+
+`borg.channel.inboundMessage` is the sole normalized inbound event. Consumers opt in explicitly. Slice 9 graph definitions may bind `incoming_message` triggers to selected adapter IDs and destinations; no inbound message automatically starts a chat, persona, or bot.
+
+`WebSocketService` is the only plugin WebSocket path. It checks `network:websocket`, accepts only credential-free `ws:` or `wss:` URLs, binds every connection to plugin deactivation, limits concurrent connections, outbound queue depth, and frame size, and emits redacted lifecycle audit records. It normalizes host callbacks behind a generation-safe disposable connection so stale transport events cannot outlive plugin ownership.
 
 ## Graphs plugin
 
@@ -1185,3 +1189,13 @@ Authenticated Anthropic `fetch` calls use `redirect: "error"` so a malicious or 
 `ModelRouter` accepts a provider-neutral fallback preference list. Desktop main supplies `borg.mock-llm:mock:scripted`, so unqualified completions do not follow catalog insertion order after `borg.anthropic` is registered. Token records keep the invariant that `cachedInputTokens + cacheWriteTokens <= inputTokens`. Anthropic normalizes `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` into total `inputTokens` and prices the uncached, cache-hit, and cache-write slices separately.
 
 Per-chat usage is one typed aggregate on the `borg.chat` session document, updated once per terminal run from the loop snapshot. Live chat totals may overlay the current run's owner-scoped usage events. Process-session totals stay in the in-memory `CostLedger` and are exposed through `cost.read` summary/subscribe host APIs. `borg.usage` contributes one Activity widget labeled for the current Borg session so chat, bot, and graph spend share the same ledger. Currencies stay separate. The global ledger is not persisted in this slice.
+
+## Slice 9 implementation record
+
+Slice 9 installs one kernel trust path shared by tools, loop content, and channels. `ClassificationService` owns the monotonic per-run watermark. `ScannerRegistry` runs plugin scanners but cannot authorize an operation. `TrustAuthorizer` merges tool policy, channel capacity, and scanner findings into one allow, deny, or approval decision. `ToolService` applies trustworthy static and dynamic-tool security metadata, raises the watermark after parsed results, scans external results, and rechecks approval commitments. Existing tools default to an internal result classification; MCP results are explicitly external and internal.
+
+`CommunicationService` registers channel adapters, provides the only inbound ingestion callback, normalizes and persists records before emitting `borg.channel.inboundMessage`, and deduplicates provider message IDs. Outbound sends use an idempotency key, persist the pending commitment before transport, authorize once, recheck classification immediately before publish, and store the terminal receipt. Persistence failures fail closed. The bundled mock adapter gives tests a deterministic public channel. The graph plugin subscribes to the typed event and starts only definitions whose `incoming_message` trigger binding matches.
+
+`borg.security.prompt-injection` contributes deterministic bounded patterns for instruction replacement, prompt disclosure, encoded role markers, secret exfiltration, and tool takeover. It covers user input, inbound messages, external tool results, model output, and outbound messages. Review findings enter the default kernel classification UI; block findings never reach a plugin transport or model.
+
+`borg.channel.discord` pins REST calls to `https://discord.com/api/v10`, stores the bot token only through `SecretFacade`, requires explicit channel allowlists, validates snowflakes, ignores every bot-authored message, and declares both the pinned REST host and `network:websocket`. Its realtime Gateway driver discovers Discord's allowlisted gateway host, handles Hello, jittered heartbeats, ACK watchdogs, Identify, sequence tracking, resumable sessions, Reconnect, Invalid Session, fatal close codes, bounded exponential backoff, session-start limits, and Discord's 120-frame-per-60-second send window. Each connection cycle has an abort controller and generation; deactivation cancels timers, disposes callbacks, closes sockets, and prevents stale reconnects. There is no polling fallback.

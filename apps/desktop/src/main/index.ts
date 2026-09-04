@@ -1,5 +1,7 @@
 import {
   CommandEventBus,
+  ClassificationService,
+  CommunicationService,
   ConfigFacade,
   CostLedger,
   GraphContributionRegistry,
@@ -14,9 +16,12 @@ import {
   ProcessSupervisor,
   PromptAssembler,
   SchedulerCore,
+  ScannerRegistry,
   SecretFacade,
   StoreFacade,
   ToolService,
+  TrustAuthorizer,
+  WebSocketService,
   WorkspaceService,
   satisfiesBorgEngine,
   type PluginSource,
@@ -74,6 +79,8 @@ let loopManager: LoopManager | undefined;
 let scheduler: SchedulerCore | undefined;
 let processSupervisor: ProcessSupervisor | undefined;
 let networkService: NetworkService | undefined;
+let communicationService: CommunicationService | undefined;
+let webSocketService: WebSocketService | undefined;
 let removeEmbeddedContentProtocol: (() => void) | undefined;
 let removeIpcBridge: (() => Promise<void>) | undefined;
 let notificationSubscription: Disposable | undefined;
@@ -390,6 +397,8 @@ async function requestQuit(): Promise<void> {
       loopManager?.shutdown();
       interactionService?.cancelAll();
       await processSupervisor?.shutdown();
+      communicationService?.shutdown();
+      webSocketService?.shutdown();
       networkService?.shutdown();
     }
     await setupSchemaRegistration?.dispose();
@@ -468,8 +477,15 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
     interactionService = new InteractionService();
+    const classification = new ClassificationService();
+    const scanners = new ScannerRegistry();
+    const authorizer = new TrustAuthorizer(interactionService, { classification });
     const costs = new CostLedger();
-    const tools = new ToolService(interactionService);
+    const tools = new ToolService(interactionService, {
+      classification,
+      scanners,
+      authorizer,
+    });
     const models = new ModelRouter(costs, {
       fallbackPreferences: ["borg.mock-llm:mock:scripted"],
     });
@@ -482,6 +498,14 @@ if (!app.requestSingleInstanceLock()) {
     scheduler = new SchedulerCore();
     processSupervisor = new ProcessSupervisor();
     networkService = new NetworkService();
+    communicationService = new CommunicationService(
+      bus,
+      storeFacade,
+      classification,
+      scanners,
+      authorizer,
+    );
+    webSocketService = new WebSocketService();
     loopManager = new LoopManager(
       models,
       tools,
@@ -492,6 +516,8 @@ if (!app.requestSingleInstanceLock()) {
       personaService,
       promptAssembler,
       workspaceService,
+      scanners,
+      authorizer,
     );
     pluginManager = new PluginManager(bus, KERNEL_VERSION, {
       config: configFacade,
@@ -511,6 +537,9 @@ if (!app.requestSingleInstanceLock()) {
       scheduler,
       processes: processSupervisor,
       http: networkService,
+      scanners,
+      channels: communicationService,
+      webSockets: webSocketService,
       showWindow: showMainWindow,
       getPluginDataDirectory: (pluginId) => {
         const directory = path.join(

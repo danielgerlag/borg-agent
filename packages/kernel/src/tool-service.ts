@@ -9,13 +9,28 @@ import {
   type ToolProviderContribution,
   type ToolProviderScope,
 } from "@borg/plugin-sdk";
-import type { InteractionResponse, Persona } from "@borg/contracts";
+import {
+  channelCapacitySchema,
+  dataClassificationSchema,
+  type ChannelCapacity,
+  type DataClassification,
+  type OutputProvenance,
+  type Persona,
+  type ToolSecurityMetadata,
+} from "@borg/contracts";
 import { randomUUID } from "node:crypto";
+import type { ClassificationService } from "./classification-service";
 import { InteractionService } from "./interaction-service";
 import {
   assertBoundedJsonSchema,
   validateAgainstJsonSchema,
 } from "./json-schema";
+import type { ScannerRegistry } from "./scanner-registry";
+import {
+  TrustAuthorizer,
+  type AuthorizationRequest,
+  type AuthorizationResult,
+} from "./trust-authorizer";
 
 const STATIC_TOOL_ID = /^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/;
 const DYNAMIC_TOOL_ID = /^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/;
@@ -24,10 +39,31 @@ const PROVIDER_ID = /^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/;
 const MAX_JSON_DEPTH = 32;
 const MAX_JSON_NODES = 100_000;
 
+/** An unlabelled tool result is internal, never public. */
+const DEFAULT_OUTPUT_CLASSIFICATION: DataClassification = "internal";
+
+/**
+ * Resolved tool security metadata: declared fields plus the kernel defaults
+ * the pipeline enforces.
+ */
+export interface ResolvedToolSecurity {
+  readonly inputClassification?: DataClassification | undefined;
+  readonly outputClassification: DataClassification;
+  readonly outputProvenance: OutputProvenance;
+  readonly channelCapacity?: ChannelCapacity | undefined;
+}
+
+export interface ToolServiceSecurity {
+  readonly classification?: ClassificationService | undefined;
+  readonly scanners?: ScannerRegistry | undefined;
+  readonly authorizer?: TrustAuthorizer | undefined;
+}
+
 interface RegisteredTool {
   readonly pluginId: string;
   readonly tool: ToolContribution;
   readonly inputSchema: JsonValue;
+  readonly security: ResolvedToolSecurity;
   readonly controller: AbortController;
   readonly workspaceAccess: boolean;
 }
@@ -44,6 +80,7 @@ interface DynamicToolBinding {
   readonly catalog: PreparedToolCatalog;
   readonly pluginId: string;
   readonly providerId: string;
+  readonly security: ResolvedToolSecurity;
   readonly workspaceAccess: boolean;
   readonly controller: AbortController;
 }
@@ -65,6 +102,7 @@ interface RunToolPolicy {
   readonly personaId?: string | undefined;
   readonly dynamicTools: Map<string, DynamicToolBinding>;
   readonly catalogs: CatalogLease[];
+  readonly classificationRun?: Disposable | undefined;
   preparePromise?: Promise<void> | undefined;
   prepared: boolean;
 }
@@ -72,6 +110,7 @@ interface RunToolPolicy {
 interface ResolvedInvocation {
   readonly toolId: string;
   readonly approval: "auto" | "ask" | "deny";
+  readonly security: ResolvedToolSecurity;
   readonly workspaceAccess: boolean;
   readonly extraSignals: readonly AbortSignal[];
   parseInput(candidate: unknown): JsonValue;
@@ -84,13 +123,16 @@ interface ResolvedInvocation {
 }
 
 export class ToolInvocationError extends Error {
+  readonly reasons: readonly string[];
+
   constructor(
     readonly code: "unavailable" | "forbidden" | "denied" | "invalid" | "failed",
     message: string,
-    options?: ErrorOptions,
+    options?: (ErrorOptions & { readonly reasons?: readonly string[] }) | undefined,
   ) {
     super(message, options);
     this.name = "ToolInvocationError";
+    this.reasons = Object.freeze([...(options?.reasons ?? [])]);
   }
 }
 
@@ -227,6 +269,7 @@ function freezePersonaSnapshot(persona: Persona): Persona {
 
 function freezeDefinition(
   definition: DynamicToolDefinition,
+  security: ResolvedToolSecurity,
 ): DynamicToolDefinition {
   const inputSchema = asJsonValue(definition.inputSchema);
   const frozen: DynamicToolDefinition = {
@@ -235,6 +278,7 @@ function freezeDefinition(
     inputSchema,
     approval: definition.approval,
     sideEffect: definition.sideEffect,
+    security,
     ...(definition.modelVisible !== undefined
       ? { modelVisible: definition.modelVisible }
       : {}),
@@ -243,6 +287,76 @@ function freezeDefinition(
       : {}),
   };
   return deepFreeze(frozen);
+}
+
+function parseSecurityField<T>(
+  toolId: string,
+  field: string,
+  candidate: unknown,
+  parse: (value: unknown) => { readonly success: boolean; readonly data?: T },
+): T | undefined {
+  if (candidate === undefined) {
+    return undefined;
+  }
+  const parsed = parse(candidate);
+  if (!parsed.success) {
+    throw new Error(
+      `Tool ${toolId} security ${field} ${String(candidate)} is invalid`,
+    );
+  }
+  return parsed.data;
+}
+
+/**
+ * `sideEffect` says a tool changes something; it never implies the tool can
+ * reach a channel, so a capacity ceiling only comes from a declared capacity.
+ */
+function resolveToolSecurity(
+  toolId: string,
+  candidate: ToolSecurityMetadata | undefined,
+  defaultProvenance: OutputProvenance,
+): ResolvedToolSecurity {
+  if (
+    candidate !== undefined &&
+    (typeof candidate !== "object" || candidate === null)
+  ) {
+    throw new Error(`Tool ${toolId} security metadata is invalid`);
+  }
+  const inputClassification = parseSecurityField<DataClassification>(
+    toolId,
+    "inputClassification",
+    candidate?.inputClassification,
+    (value) => dataClassificationSchema.safeParse(value),
+  );
+  const outputClassification =
+    parseSecurityField<DataClassification>(
+      toolId,
+      "outputClassification",
+      candidate?.outputClassification,
+      (value) => dataClassificationSchema.safeParse(value),
+    ) ?? DEFAULT_OUTPUT_CLASSIFICATION;
+  const channelCapacity = parseSecurityField<ChannelCapacity>(
+    toolId,
+    "channelCapacity",
+    candidate?.channelCapacity,
+    (value) => channelCapacitySchema.safeParse(value),
+  );
+  const provenance = candidate?.outputProvenance;
+  if (
+    provenance !== undefined &&
+    provenance !== "trusted" &&
+    provenance !== "external"
+  ) {
+    throw new Error(
+      `Tool ${toolId} security outputProvenance ${String(provenance)} is invalid`,
+    );
+  }
+  return Object.freeze({
+    ...(inputClassification !== undefined ? { inputClassification } : {}),
+    outputClassification,
+    outputProvenance: provenance ?? defaultProvenance,
+    ...(channelCapacity !== undefined ? { channelCapacity } : {}),
+  });
 }
 
 function providerPrepare(
@@ -283,8 +397,23 @@ export class ToolService {
   readonly #providers = new Map<string, RegisteredProvider>();
   readonly #runPolicies = new Map<string, RunToolPolicy>();
   readonly #closedCatalogs = new WeakSet<PreparedToolCatalog>();
+  readonly #classification: ClassificationService | undefined;
+  readonly #scanners: ScannerRegistry | undefined;
+  readonly #authorizer: TrustAuthorizer;
 
-  constructor(readonly interactions: InteractionService) {}
+  constructor(
+    readonly interactions: InteractionService,
+    security: ToolServiceSecurity = {},
+  ) {
+    this.#classification = security.classification;
+    this.#scanners = security.scanners;
+    this.#authorizer =
+      security.authorizer ??
+      new TrustAuthorizer(
+        interactions,
+        security.classification ? { classification: security.classification } : {},
+      );
+  }
 
   register(
     pluginId: string,
@@ -311,6 +440,7 @@ export class ToolService {
     }
     const toolId = tool.id;
     const inputSchema = asJsonValue(z.toJSONSchema(tool.input));
+    const security = resolveToolSecurity(toolId, tool.security, "trusted");
     const registeredTool: ToolContribution = Object.freeze({
       id: tool.id,
       description: tool.description,
@@ -318,12 +448,14 @@ export class ToolService {
       output: tool.output,
       approval: tool.approval,
       sideEffect: tool.sideEffect,
+      security,
       execute: tool.execute.bind(tool),
     });
     const registration = {
       pluginId,
       tool: registeredTool,
       inputSchema,
+      security,
       controller: new AbortController(),
       workspaceAccess: options?.workspaceAccess === true,
     };
@@ -396,6 +528,7 @@ export class ToolService {
     const persona = context?.persona
       ? freezePersonaSnapshot(context.persona)
       : undefined;
+    const classificationRun = this.#classification?.openRun(runId);
     const policy: RunToolPolicy = {
       ownerPluginId,
       allowedToolGroups: Object.freeze(
@@ -415,6 +548,7 @@ export class ToolService {
         : {}),
       dynamicTools: new Map(),
       catalogs: [],
+      ...(classificationRun ? { classificationRun } : {}),
       prepared: false,
     };
     this.#runPolicies.set(runId, policy);
@@ -523,6 +657,20 @@ export class ToolService {
     return this.#tools.has(toolId);
   }
 
+  describeSecurity(
+    toolId: string,
+    runId?: string,
+  ): ResolvedToolSecurity | undefined {
+    const staticTool = this.#tools.get(toolId);
+    if (staticTool) {
+      return staticTool.security;
+    }
+    if (runId) {
+      return this.#runPolicies.get(runId)?.dynamicTools.get(toolId)?.security;
+    }
+    return undefined;
+  }
+
   async invoke(
     toolId: string,
     candidateInput: unknown,
@@ -552,9 +700,6 @@ export class ToolService {
         `Tool ${toolId} is not allowed for this run`,
       );
     }
-    if (resolved.approval === "deny") {
-      throw new ToolInvocationError("denied", `Tool ${toolId} is denied by policy`);
-    }
     const invocationSignal = AbortSignal.any([
       ...(options.signal ? [options.signal] : []),
       ...resolved.extraSignals,
@@ -575,45 +720,34 @@ export class ToolService {
     }
 
     const toolCallId = options.toolCallId ?? randomUUID();
-    if (resolved.approval === "ask") {
-      const wait = this.interactions.requestSafety(
-        {
-          kind: "tool_approval",
-          title: `Approve ${toolId}`,
-          prompt: `Allow ${toolId} to run for this request?`,
-          source: {
-            pluginId: options.callerPluginId,
-            feature: "tool",
-            runId: options.runId,
-            sessionId: runPolicy?.sessionId,
-            toolCallId,
-          },
-        },
-        invocationSignal,
+    const preflight = await this.#authorize(
+      {
+        pluginId: options.callerPluginId,
+        feature: "tool",
+        title: `Approve ${toolId}`,
+        approval: resolved.approval,
+        runId: options.runId,
+        sessionId: runPolicy?.sessionId,
+        toolCallId,
+        payloadClassification: resolved.security.inputClassification,
+        capacity: resolved.security.channelCapacity,
+        interactionUsed: false,
+        signal: invocationSignal,
+        ...(options.onInteraction
+          ? { onInteraction: options.onInteraction.bind(options) }
+          : {}),
+      },
+      toolId,
+      options,
+      resolved,
+      runPolicy,
+    );
+    if (!preflight.allowed) {
+      throw new ToolInvocationError(
+        "denied",
+        `Tool ${toolId} was denied`,
+        { reasons: preflight.reasons },
       );
-      options.onInteraction?.(wait.interaction.id);
-      let response: InteractionResponse;
-      try {
-        response = await wait.response;
-      } catch (error) {
-        if (!resolved.isCurrent()) {
-          throw new ToolInvocationError(
-            options.runId &&
-              this.#runPolicies.get(options.runId) !== runPolicy
-              ? "forbidden"
-              : "unavailable",
-            options.runId &&
-              this.#runPolicies.get(options.runId) !== runPolicy
-              ? `Tool policy for run ${options.runId} is no longer active`
-              : `Tool ${toolId} is no longer available`,
-            { cause: error },
-          );
-        }
-        throw error;
-      }
-      if (response.kind !== "approval" || response.decision !== "allow") {
-        throw new ToolInvocationError("denied", `Tool ${toolId} was denied`);
-      }
     }
     invocationSignal.throwIfAborted();
     if (!resolved.isCurrent()) {
@@ -621,6 +755,14 @@ export class ToolService {
         "unavailable",
         `Tool ${toolId} is no longer available`,
       );
+    }
+    // The watermark may have moved while the prompt was open.
+    if (preflight.commitment && !preflight.commitment.recheck()) {
+      throw new ToolInvocationError("denied", `Tool ${toolId} was denied`, {
+        reasons: [
+          `Run ${options.runId ?? "unknown"} classification changed after approval.`,
+        ],
+      });
     }
 
     try {
@@ -640,7 +782,25 @@ export class ToolService {
         );
       }
       invocationSignal.throwIfAborted();
-      return resolved.parseOutput(result);
+      const output = resolved.parseOutput(result);
+      if (options.runId !== undefined) {
+        this.#classification?.raise(
+          options.runId,
+          resolved.security.outputClassification,
+          `tool ${toolId} output`,
+        );
+      }
+      await this.#reviewOutput(
+        output,
+        toolId,
+        toolCallId,
+        options,
+        resolved,
+        runPolicy,
+        preflight,
+        invocationSignal,
+      );
+      return output;
     } catch (error) {
       if (error instanceof ToolInvocationError) {
         throw error;
@@ -648,6 +808,87 @@ export class ToolService {
       throw new ToolInvocationError("failed", `Tool ${toolId} failed`, {
         cause: error,
       });
+    }
+  }
+
+  async #authorize(
+    request: AuthorizationRequest,
+    toolId: string,
+    options: ToolInvocationOptions,
+    resolved: ResolvedInvocation,
+    runPolicy: RunToolPolicy | undefined,
+  ): Promise<AuthorizationResult> {
+    try {
+      return await this.#authorizer.authorize(request);
+    } catch (error) {
+      if (!resolved.isCurrent()) {
+        const replaced =
+          options.runId !== undefined &&
+          this.#runPolicies.get(options.runId) !== runPolicy;
+        throw new ToolInvocationError(
+          replaced ? "forbidden" : "unavailable",
+          replaced
+            ? `Tool policy for run ${options.runId} is no longer active`
+            : `Tool ${toolId} is no longer available`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * External tool output is untrusted text entering the model, so it is scanned
+   * after it parses. The result may only prompt when the preflight did not.
+   */
+  async #reviewOutput(
+    output: JsonValue,
+    toolId: string,
+    toolCallId: string,
+    options: ToolInvocationOptions,
+    resolved: ResolvedInvocation,
+    runPolicy: RunToolPolicy | undefined,
+    preflight: AuthorizationResult,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (resolved.security.outputProvenance !== "external" || !this.#scanners) {
+      return;
+    }
+    const report = await this.#scanners.scan({
+      stage: "tool_result",
+      text: JSON.stringify(output),
+      source: { kind: "tool", id: toolId },
+      runId: options.runId,
+      sessionId: runPolicy?.sessionId,
+      signal,
+    });
+    const verdict = await this.#authorize(
+      {
+        pluginId: options.callerPluginId,
+        feature: "tool",
+        title: `Review ${toolId} result`,
+        approval: "auto",
+        runId: options.runId,
+        sessionId: runPolicy?.sessionId,
+        toolCallId,
+        scanReport: report,
+        interactionUsed: preflight.interactionUsed,
+        signal,
+        ...(options.onInteraction
+          ? { onInteraction: options.onInteraction.bind(options) }
+          : {}),
+      },
+      toolId,
+      options,
+      resolved,
+      runPolicy,
+    );
+    if (!verdict.allowed) {
+      throw new ToolInvocationError(
+        "denied",
+        `Tool ${toolId} result was denied`,
+        { reasons: verdict.reasons },
+      );
     }
   }
 
@@ -661,6 +902,7 @@ export class ToolService {
       return {
         toolId,
         approval: registration.tool.approval,
+        security: registration.security,
         workspaceAccess: registration.workspaceAccess,
         extraSignals: [registration.controller.signal],
         parseInput: (candidate) => {
@@ -702,6 +944,7 @@ export class ToolService {
     return {
       toolId,
       approval: binding.definition.approval,
+      security: binding.security,
       workspaceAccess: binding.workspaceAccess,
       extraSignals: [binding.controller.signal],
       parseInput: (candidate) => {
@@ -868,12 +1111,20 @@ export class ToolService {
             `Dynamic tool ${candidate.id} is outside namespace ${namespace}`,
           );
         }
-        const definition = freezeDefinition(candidate);
+        // A provider catalog is remote content by default, so its output is
+        // external unless the provider says otherwise.
+        const security = resolveToolSecurity(
+          candidate.id,
+          candidate.security,
+          "external",
+        );
+        const definition = freezeDefinition(candidate, security);
         policy.dynamicTools.set(definition.id, {
           definition,
           catalog,
           pluginId: registration.pluginId,
           providerId: registration.provider.id,
+          security,
           workspaceAccess: registration.workspaceAccess,
           controller: registration.controller,
         });
@@ -922,6 +1173,7 @@ export class ToolService {
     }
     policy.catalogs.length = 0;
     policy.dynamicTools.clear();
+    void policy.classificationRun?.dispose();
   }
 
   #closeLease(catalog: PreparedToolCatalog): void {

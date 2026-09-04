@@ -5,7 +5,9 @@ import {
   InteractionService,
   LoopManager,
   ModelRouter,
+  ScannerRegistry,
   ToolService,
+  TrustAuthorizer,
 } from "../src";
 
 function createRuntime() {
@@ -136,6 +138,76 @@ describe("LoopManager", () => {
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("failed"));
     expect(loops.get(run.id)?.error).toMatch(/denied/);
     expect(executeEcho).not.toHaveBeenCalled();
+  });
+
+  it("drops denied model tokens from replayed run history", async () => {
+    const interactions = new InteractionService();
+    const costs = new CostLedger();
+    const tools = new ToolService(interactions);
+    const models = new ModelRouter(costs);
+    const scanners = new ScannerRegistry();
+    const authorizer = new TrustAuthorizer(interactions);
+    const loops = new LoopManager(
+      models,
+      tools,
+      costs,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      scanners,
+      authorizer,
+    );
+    scanners.register("borg.security", {
+      id: "borg.security.prompt-injection",
+      stages: ["user_input", "model_output"],
+      scan: async ({ stage }) =>
+        stage === "model_output"
+          ? [
+              {
+                code: "injection.override",
+                action: "block",
+                reason: "model output was blocked",
+              },
+            ]
+          : [],
+    });
+    models.registerProvider("borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      async complete(_request, _signal, onToken) {
+        await onToken?.("blocked text");
+        return {
+          content: "blocked text",
+          usage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            amount: 0,
+            currency: "USD",
+          },
+        };
+      },
+    });
+
+    const live: string[] = [];
+    const run = loops.start({ prompt: "hello" });
+    loops.subscribeRun(run.id, "kernel.loop", (event) => {
+      if (event.type === "model_token") {
+        live.push(event.token);
+      }
+    });
+
+    await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("failed"));
+    expect(live).toEqual(["blocked text"]);
+    expect(loops.get(run.id)?.error).toMatch(/denied/);
+
+    const replayed: string[] = [];
+    loops.subscribeRun(run.id, "kernel.loop", (event) => {
+      if (event.type === "model_token") {
+        replayed.push(event.token);
+      }
+    });
+    expect(replayed).toEqual([]);
   });
 
   it("cancels a pending approval when its run ends", async () => {

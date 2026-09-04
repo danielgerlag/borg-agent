@@ -1,0 +1,29 @@
+{
+  "id": "borg.channel.discord",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-channel-discord/main",
+  "ui": "@borg/plugin-channel-discord/ui",
+  "permissions": [
+    "channels.register",
+    "network:dynamic",
+    "network:websocket",
+    "runtime.background",
+    "secrets:read",
+    "secrets:write",
+    "ui.settings"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.channel.discord.disconnect",
+      "borg.channel.discord.getStatus",
+      "borg.channel.discord.verify"
+    ],
+    "kinds": [
+      "channel",
+      "settingsPage"
+    ]
+  }
+}

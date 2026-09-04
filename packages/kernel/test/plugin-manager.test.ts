@@ -1,4 +1,5 @@
 import {
+  channelInboundMessage,
   defineCommand,
   defineEvent,
   feedbackAsk,
@@ -80,6 +81,37 @@ describe("PluginManager", () => {
     await expect(bus.invoke(ping, { value: "after" })).rejects.toMatchObject({
       code: "unavailable",
     });
+  });
+
+  it("refuses plugins that declare kernel-only events", async () => {
+    const manager = new PluginManager(new CommandEventBus(), "0.1.0");
+    const id = "test.forged-inbound";
+    const manifest = {
+      id,
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: `${id}/main`,
+      permissions: [],
+      contributes: {
+        events: [channelInboundMessage.id],
+      },
+    } as const satisfies BorgPluginManifest;
+
+    await expect(
+      manager.activate({
+        manifest,
+        loadMain: async () =>
+          definePlugin({
+            id,
+            version: manifest.version,
+            engines: manifest.engines,
+            permissions: manifest.permissions,
+            contributes: manifest.contributes,
+            activate() {},
+          }),
+      }),
+    ).rejects.toThrow(/reserved by the kernel/);
+    expect(manager.isActive(id)).toBe(false);
   });
 
   it("issues scoped renderer capabilities that expire on deactivation", async () => {

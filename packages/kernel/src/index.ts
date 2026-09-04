@@ -1,4 +1,20 @@
 export { CommandEventBus } from "./command-event-bus";
+export {
+  CAPACITY_CEILINGS,
+  CLASSIFICATION_ORDER,
+  ClassificationService,
+  capacityCeiling,
+  compareClassification,
+  exceedsCapacity,
+  maxClassification,
+  type ClassificationSnapshot,
+} from "./classification-service";
+export {
+  CommunicationError,
+  CommunicationService,
+  type CommunicationAuditRecord,
+  type CommunicationServiceOptions,
+} from "./communication-service";
 export { CostLedger, type CostRecord } from "./cost-ledger";
 export type { CostSummary } from "@borg/contracts";
 export { GraphContributionRegistry } from "./graph-contribution-registry";
@@ -68,6 +84,26 @@ export {
   SchedulerCore,
   type SchedulerRunLog,
 } from "./scheduler-core";
+export {
+  ScannerRegistry,
+  scanReportAction,
+  type PromptScanReport,
+  type PromptScanRequest,
+  type ScannerRegistryOptions,
+} from "./scanner-registry";
+export {
+  TrustAuthorizer,
+  type AuthorizationRequest,
+  type AuthorizationResult,
+  type ClassificationCommitment,
+} from "./trust-authorizer";
+export {
+  WebSocketError,
+  WebSocketService,
+  type WebSocketAuditRecord,
+  type WebSocketFactory,
+  type WebSocketServiceOptions,
+} from "./websocket-service";
 export {
   WorkspaceService,
   type WorkspaceFile,

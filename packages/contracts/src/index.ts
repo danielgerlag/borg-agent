@@ -1042,6 +1042,66 @@ export const graphStepCompleted = defineEvent({
     .strict(),
 });
 
+export const dataClassificationSchema = z.enum([
+  "public",
+  "internal",
+  "confidential",
+  "restricted",
+]);
+
+export type DataClassification = z.infer<typeof dataClassificationSchema>;
+
+export const channelCapacitySchema = z.enum([
+  "public",
+  "internal",
+  "private",
+  "local-only",
+]);
+
+export type ChannelCapacity = z.infer<typeof channelCapacitySchema>;
+
+export const promptScanStageSchema = z.enum([
+  "user_input",
+  "inbound_message",
+  "tool_result",
+  "model_output",
+  "outbound_message",
+]);
+
+export type PromptScanStage = z.infer<typeof promptScanStageSchema>;
+
+export const promptScanActionSchema = z.enum(["allow", "review", "block"]);
+
+export type PromptScanAction = z.infer<typeof promptScanActionSchema>;
+
+export const promptScanFindingSchema = z
+  .object({
+    code: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z][a-z0-9._-]*$/),
+    action: promptScanActionSchema,
+    reason: z.string().min(1).max(1_000),
+    evidence: z.string().max(512).optional(),
+  })
+  .strict();
+
+export type PromptScanFinding = z.infer<typeof promptScanFindingSchema>;
+
+export const channelAttachmentHandleSchema = z
+  .object({
+    id: z.string().min(1).max(256),
+    name: z.string().min(1).max(512),
+    mimeType: z.string().min(1).max(255),
+    size: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+export type ChannelAttachmentHandle = z.infer<
+  typeof channelAttachmentHandleSchema
+>;
+
 export const channelInboundMessage = defineEvent({
   id: "borg.channel.inboundMessage",
   payload: z
@@ -1050,10 +1110,113 @@ export const channelInboundMessage = defineEvent({
       channelId: z.string().min(1),
       text: z.string(),
       sender: z.string().optional(),
+      externalId: z.string().min(1).max(256).optional(),
+      adapterId: z.string().min(1).max(256).optional(),
+      destinationId: z.string().min(1).max(256).optional(),
+      classification: dataClassificationSchema.optional(),
+      attachments: z.array(channelAttachmentHandleSchema).max(16).optional(),
       metadata: graphValueMapSchema.default({}),
       receivedAt: z.string().datetime(),
     })
     .strict(),
+});
+
+export type ChannelInboundMessage = EventPayload<typeof channelInboundMessage>;
+
+export const KERNEL_ONLY_EVENT_IDS: ReadonlySet<string> = new Set([
+  channelInboundMessage.id,
+]);
+
+export function isKernelOnlyEvent(eventId: string): boolean {
+  return KERNEL_ONLY_EVENT_IDS.has(eventId);
+}
+
+export const mockChannelInject = defineCommand({
+  id: "borg.channel.mock.inject",
+  input: z
+    .object({
+      destinationId: z.string().min(1).max(256).default("default"),
+      externalId: z.string().min(1).max(256).optional(),
+      text: z.string().max(65_536),
+      sender: z.string().min(1).max(256).optional(),
+      classification: dataClassificationSchema.optional(),
+    })
+    .strict(),
+  output: z.object({ accepted: z.literal(true), externalId: z.string() }).strict(),
+});
+
+export const mockChannelSend = defineCommand({
+  id: "borg.channel.mock.send",
+  input: z
+    .object({
+      destinationId: z.string().min(1).max(256).default("default"),
+      text: z.string().max(65_536),
+      classification: dataClassificationSchema.optional(),
+      idempotencyKey: z.string().min(1).max(200),
+    })
+    .strict(),
+  output: z.discriminatedUnion("status", [
+    z
+      .object({
+        status: z.literal("sent"),
+        messageId: z.string().uuid(),
+        externalId: z.string().min(1),
+        sentAt: z.string().datetime(),
+      })
+      .strict(),
+    z
+      .object({
+        status: z.literal("duplicate"),
+        messageId: z.string().uuid(),
+        externalId: z.string().min(1).optional(),
+      })
+      .strict(),
+    z
+      .object({
+        status: z.literal("denied"),
+        reasons: z.array(z.string().min(1).max(1_000)).max(20),
+      })
+      .strict(),
+  ]),
+});
+
+export const discordChannelStatusSchema = z
+  .object({
+    hasToken: z.boolean(),
+    connected: z.boolean(),
+    botUserId: z.string().optional(),
+    gatewayState: z.enum([
+      "idle",
+      "connecting",
+      "identifying",
+      "resuming",
+      "ready",
+      "backoff",
+      "fatal",
+    ]),
+    error: z.string().max(1_000).optional(),
+  })
+  .strict();
+
+export type DiscordChannelStatus = z.infer<typeof discordChannelStatusSchema>;
+
+export const discordChannelGetStatus = defineCommand({
+  id: "borg.channel.discord.getStatus",
+  input: z.object({}).strict(),
+  output: discordChannelStatusSchema,
+});
+
+export const discordChannelVerify = defineCommand({
+  id: "borg.channel.discord.verify",
+  input: z.object({}).strict(),
+  output: discordChannelStatusSchema,
+  timeoutMs: 30_000,
+});
+
+export const discordChannelDisconnect = defineCommand({
+  id: "borg.channel.discord.disconnect",
+  input: z.object({}).strict(),
+  output: discordChannelStatusSchema,
 });
 
 export const botStatusSchema = z.enum([
@@ -1501,6 +1664,15 @@ export const toolApprovalSchema = z.enum(["auto", "ask", "deny"]);
 
 export type ToolApproval = z.infer<typeof toolApprovalSchema>;
 
+export type OutputProvenance = "trusted" | "external";
+
+export interface ToolSecurityMetadata {
+  readonly inputClassification?: DataClassification | undefined;
+  readonly outputClassification?: DataClassification | undefined;
+  readonly outputProvenance?: OutputProvenance | undefined;
+  readonly channelCapacity?: ChannelCapacity | undefined;
+}
+
 export interface DynamicToolDefinition {
   readonly id: string;
   readonly description: string;
@@ -1509,4 +1681,5 @@ export interface DynamicToolDefinition {
   readonly approval: ToolApproval;
   readonly sideEffect: boolean;
   readonly modelVisible?: boolean | undefined;
+  readonly security?: ToolSecurityMetadata | undefined;
 }

@@ -1,9 +1,12 @@
 import type {
   BusEnvelope,
+  ChannelAttachmentHandle,
+  ChannelCapacity,
   CommandDefinition,
   CommandInput,
   CommandOutput,
   CostSummary,
+  DataClassification,
   EventDefinition,
   EventPayload,
   EmbeddedContentSnapshot,
@@ -14,6 +17,9 @@ import type {
   ModelDescriptor,
   PendingInteraction,
   Persona,
+  PromptScanFinding,
+  PromptScanStage,
+  ToolSecurityMetadata,
   UsageRecord,
   WorkspaceFile,
   DynamicToolDefinition,
@@ -22,7 +28,17 @@ import type {
 import { z } from "zod";
 
 export { z } from "zod";
-export type { DynamicToolDefinition, ToolApproval } from "@borg/contracts";
+export type {
+  ChannelAttachmentHandle,
+  ChannelCapacity,
+  DataClassification,
+  DynamicToolDefinition,
+  PromptScanAction,
+  PromptScanFinding,
+  PromptScanStage,
+  ToolApproval,
+  ToolSecurityMetadata,
+} from "@borg/contracts";
 
 export interface Disposable {
   dispose(): void | Promise<void>;
@@ -124,6 +140,7 @@ export interface ToolContribution<
   readonly output: TOutput;
   readonly approval: ToolApproval;
   readonly sideEffect: boolean;
+  readonly security?: ToolSecurityMetadata | undefined;
   execute(
     input: z.output<TInput>,
     context: ToolExecutionContext,
@@ -375,6 +392,117 @@ export interface PluginPrompts {
   registerSlot(slot: PromptSlotContribution): Disposable;
 }
 
+export interface PromptScanContext {
+  readonly stage: PromptScanStage;
+  readonly text: string;
+  readonly truncated: boolean;
+  readonly source: {
+    readonly kind: "user" | "channel" | "tool" | "model";
+    readonly id: string;
+  };
+  readonly runId?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly signal: AbortSignal;
+}
+
+export interface PromptScannerContribution {
+  readonly id: string;
+  readonly stages: readonly PromptScanStage[];
+  scan(context: PromptScanContext): Promise<readonly PromptScanFinding[]>;
+}
+
+export interface PluginScanners {
+  register(scanner: PromptScannerContribution): Disposable;
+}
+
+export interface ChannelInboundDraft {
+  readonly text: string;
+  readonly destinationId: string;
+  readonly externalId: string;
+  readonly sender?: string | undefined;
+  readonly classification?: DataClassification | undefined;
+  readonly attachments?: readonly ChannelAttachmentHandle[] | undefined;
+  readonly metadata?: Readonly<Record<string, JsonValue>> | undefined;
+  readonly receivedAt?: string | undefined;
+}
+
+export interface ChannelSendRequest {
+  readonly adapterId: string;
+  readonly destinationId: string;
+  readonly text: string;
+  readonly idempotencyKey: string;
+  readonly classification?: DataClassification | undefined;
+  readonly runId?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly attachments?: readonly ChannelAttachmentHandle[] | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export type ChannelSendReceipt =
+  | {
+      readonly status: "sent";
+      readonly messageId: string;
+      readonly externalId: string;
+      readonly sentAt: string;
+    }
+  | {
+      readonly status: "duplicate";
+      readonly messageId: string;
+      readonly externalId?: string | undefined;
+    }
+  | {
+      readonly status: "denied";
+      readonly reasons: readonly string[];
+    };
+
+export interface ChannelAdapterReceipt {
+  readonly externalId: string;
+  readonly sentAt: string;
+}
+
+export interface ChannelAdapter {
+  readonly id: string;
+  readonly capacity: ChannelCapacity;
+  readonly destinations: readonly string[];
+  start?(options: {
+    readonly ingest: (draft: ChannelInboundDraft) => void | Promise<void>;
+    readonly signal: AbortSignal;
+  }): void | Disposable | Promise<void | Disposable>;
+  send(
+    request: ChannelSendRequest,
+  ): ChannelAdapterReceipt | Promise<ChannelAdapterReceipt>;
+}
+
+export interface PluginChannels {
+  register(adapter: ChannelAdapter): Disposable;
+  send(request: ChannelSendRequest): Promise<ChannelSendReceipt>;
+}
+
+export interface PluginWebSocketConnectOptions {
+  readonly signal?: AbortSignal | undefined;
+  readonly protocols?: readonly string[] | undefined;
+  readonly maxMessageBytes?: number | undefined;
+  readonly maxQueuedMessages?: number | undefined;
+}
+
+export interface PluginWebSocketConnection extends Disposable {
+  readonly ready: Promise<void>;
+  onMessage(handler: (data: string) => void | Promise<void>): Disposable;
+  onClose(
+    handler: (code: number, reason: string) => void | Promise<void>,
+  ): Disposable;
+  onError(handler: (error: Error) => void | Promise<void>): Disposable;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+}
+
+export interface PluginWebSockets {
+  connect(
+    url: string,
+    options?: PluginWebSocketConnectOptions | undefined,
+  ): Promise<PluginWebSocketConnection>;
+}
+
 export interface GraphStepExecutionContext {
   readonly instanceId: string;
   readonly nodeId: string;
@@ -516,11 +644,14 @@ export interface PluginContext {
   readonly personas: PluginPersonas;
   readonly workspace: PluginWorkspace;
   readonly prompts: PluginPrompts;
+  readonly scanners: PluginScanners;
   readonly graphs: PluginGraphs;
   readonly scheduler: PluginScheduler;
   readonly runtime: PluginRuntime;
   readonly process: PluginProcesses;
   readonly http: PluginHttp;
+  readonly channels: PluginChannels;
+  readonly webSockets: PluginWebSockets;
   readonly window: {
     show(): void;
   };

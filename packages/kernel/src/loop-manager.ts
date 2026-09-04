@@ -12,7 +12,9 @@ import { CostLedger } from "./cost-ledger";
 import { ModelRouter } from "./model-router";
 import type { PersonaService } from "./persona-service";
 import type { PromptAssembler } from "./prompt-assembler";
+import type { ScannerRegistry } from "./scanner-registry";
 import { ToolInvocationError, ToolService } from "./tool-service";
+import type { TrustAuthorizer } from "./trust-authorizer";
 import type { WorkspaceService } from "./workspace-service";
 
 interface LoopRun {
@@ -79,6 +81,8 @@ export class LoopManager {
     readonly personas?: PersonaService,
     readonly prompts?: PromptAssembler,
     readonly workspaces?: WorkspaceService,
+    readonly scanners?: ScannerRegistry,
+    readonly authorizer?: TrustAuthorizer,
   ) {
     this.tools.interactions.subscribe((pending) => {
       const waitingRunIds = new Set(
@@ -417,6 +421,12 @@ export class LoopManager {
     let providerId = input.providerId;
     let modelId = input.modelId;
     try {
+      await this.#reviewContent(
+        run,
+        "user_input",
+        input.prompt,
+        `loop-input:${run.snapshot.id}`,
+      );
       await this.tools.prepareRun(run.snapshot.id);
       for (let turn = 0; turn < 8; turn += 1) {
         if (run.controller.signal.aborted) {
@@ -459,6 +469,14 @@ export class LoopManager {
         providerId = completion.providerId;
         modelId = completion.modelId;
         await this.#waitAtSafePoint(run);
+        if (completion.result.content) {
+          await this.#reviewContent(
+            run,
+            "model_output",
+            completion.result.content,
+            `model-output:${run.snapshot.id}:${turn}`,
+          );
+        }
         if (completion.result.content && !streamed) {
           this.#emit({
             type: "model_token",
@@ -567,6 +585,59 @@ export class LoopManager {
         runId: run.snapshot.id,
         error: message,
       });
+    }
+  }
+
+  async #reviewContent(
+    run: LoopRun,
+    stage: "user_input" | "model_output",
+    text: string,
+    operationId: string,
+  ): Promise<void> {
+    if (!this.scanners || !this.authorizer) {
+      return;
+    }
+    const signal = run.controller.signal;
+    const report = await this.scanners.scan({
+      stage,
+      text,
+      source:
+        stage === "user_input"
+          ? { kind: "user", id: run.ownerPluginId }
+          : { kind: "model", id: run.snapshot.modelId ?? "model" },
+      runId: run.snapshot.id,
+      sessionId: run.snapshot.sessionId,
+      signal,
+    });
+    run.activeToolCallId = operationId;
+    try {
+      const authorization = await this.authorizer.authorize({
+        pluginId: run.ownerPluginId,
+        feature: stage,
+        title:
+          stage === "user_input"
+            ? "Review message safety"
+            : "Review model output safety",
+        approval: "auto",
+        runId: run.snapshot.id,
+        sessionId: run.snapshot.sessionId,
+        toolCallId: operationId,
+        scanReport: report,
+        signal,
+        onInteraction: () => this.#update(run, { status: "waiting" }),
+      });
+      if (!authorization.allowed) {
+        if (stage === "model_output") {
+          this.#dropUnreviewedTokens(run.snapshot.id);
+        }
+        throw new ToolInvocationError(
+          "denied",
+          `${stage === "user_input" ? "User input" : "Model output"} was denied`,
+          { reasons: authorization.reasons },
+        );
+      }
+    } finally {
+      run.activeToolCallId = undefined;
     }
   }
 
@@ -710,6 +781,27 @@ export class LoopManager {
           console.error("[kernel] loop subscriber failed", error),
         );
     }
+  }
+
+  #dropUnreviewedTokens(runId: string): void {
+    const history = this.#eventHistory.get(runId);
+    if (!history) {
+      return;
+    }
+    let lastStart = -1;
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      if (history[index]?.type === "model_start") {
+        lastStart = index;
+        break;
+      }
+    }
+    if (lastStart < 0) {
+      return;
+    }
+    this.#eventHistory.set(runId, [
+      ...history.slice(0, lastStart + 1),
+      ...history.slice(lastStart + 1).filter((event) => event.type !== "model_token"),
+    ]);
   }
 
   #emit(

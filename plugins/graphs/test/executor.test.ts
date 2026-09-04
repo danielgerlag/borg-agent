@@ -831,6 +831,15 @@ describe("HiveMindGraphEngine", () => {
         }),
       ),
     ).toThrow(/invalid task kind langgraph_node/i);
+    expect(() =>
+      validateGraphDefinition(
+        linearDefinition({
+          id: "unbound-incoming-message",
+          triggerKind: "incoming_message",
+          triggerConfig: {},
+        }),
+      ),
+    ).toThrow(/requires a channel binding/i);
 
     const base = linearDefinition({ id: "unreachable-graph" });
     const unreachable: GraphDefinition = {

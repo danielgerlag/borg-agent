@@ -418,13 +418,21 @@ function validateNodeConfig(node: GraphNode): void {
       return;
     }
     case "incoming_message": {
-      const channelId = config.channelId;
-      if (
-        channelId !== undefined &&
-        (typeof channelId !== "string" || channelId.trim().length === 0)
-      ) {
+      const bindings = ["channelId", "adapterId", "destinationId"] as const;
+      for (const binding of bindings) {
+        const value = config[binding];
+        if (
+          value !== undefined &&
+          (typeof value !== "string" || value.trim().length === 0)
+        ) {
+          throw new Error(
+            `Incoming-message trigger ${node.id} has an invalid ${binding}`,
+          );
+        }
+      }
+      if (bindings.every((binding) => config[binding] === undefined)) {
         throw new Error(
-          `Incoming-message trigger ${node.id} has an invalid channelId`,
+          `Incoming-message trigger ${node.id} requires a channel binding`,
         );
       }
       return;
@@ -1022,7 +1030,13 @@ export class HiveMindGraphEngine {
         return false;
       }
       const channelId = trigger.config.channelId;
-      return channelId === undefined || channelId === payload.channelId;
+      const adapterId = trigger.config.adapterId;
+      const destinationId = trigger.config.destinationId;
+      return (
+        (channelId === undefined || channelId === payload.channelId) &&
+        (adapterId === undefined || adapterId === payload.adapterId) &&
+        (destinationId === undefined || destinationId === payload.destinationId)
+      );
     });
     for (const definition of matching) {
       const dedupKey = `${INBOUND_DEDUP_PREFIX}${definition.id}/${payload.id}`;

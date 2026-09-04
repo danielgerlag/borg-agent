@@ -266,14 +266,24 @@ class McpPreparedCatalog {
 
   definitions(): readonly DynamicToolDefinition[] {
     return [...this.#tools.values()]
-      .map((tool) => ({
-        id: tool.id,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-        approval: tool.approval,
-        sideEffect: tool.sideEffect,
-        modelVisible: tool.modelVisible,
-      }));
+      .map((tool) => {
+        const config = this.#persona?.mcpServers.find(
+          (entry) => entry.id === tool.serverId,
+        );
+        return {
+          id: tool.id,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+          approval: tool.approval,
+          sideEffect: tool.sideEffect,
+          modelVisible: tool.modelVisible,
+          security: {
+            outputProvenance: "external" as const,
+            outputClassification: "internal" as const,
+            ...(config ? { channelCapacity: config.channelClass } : {}),
+          },
+        };
+      });
   }
 
   async connect(): Promise<void> {
