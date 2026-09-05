@@ -933,13 +933,15 @@ export class PluginManager {
                 `Command ${operation.commandId} context is no longer active`,
               );
             }
-            return requireLoops().start(
-              input,
-              manifest.id,
-              operation
-                ? AbortSignal.any([operation.signal, controller.signal])
-                : controller.signal,
-              permissions.has("tools.invoke"),
+            return this.#operationContext.exit(() =>
+              requireLoops().start(
+                input,
+                manifest.id,
+                operation
+                  ? AbortSignal.any([operation.signal, controller.signal])
+                  : controller.signal,
+                permissions.has("tools.invoke"),
+              ),
             );
           },
           get: (runId) => {

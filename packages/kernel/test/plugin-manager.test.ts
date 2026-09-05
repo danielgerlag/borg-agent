@@ -9,6 +9,7 @@ import {
 import {
   definePlugin,
   defineTool,
+  defineToolProvider,
   type BorgPluginManifest,
   type ConfigStoreProvider,
   type JsonValue,
@@ -1013,7 +1014,7 @@ describe("PluginManager", () => {
       id: "test.invoke-scoped-tool",
       input: z.object({}).strict(),
       output: z.object({ done: z.boolean() }).strict(),
-      timeoutMs: 20,
+      timeoutMs: 200,
     });
     const manifest = {
       id: "test.tool-caller",
@@ -1189,6 +1190,121 @@ describe("PluginManager", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(loops.list("test.loop-owner")).toHaveLength(0);
     expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("detaches a started loop from its completed command context", async () => {
+    const bus = new CommandEventBus();
+    const { costs, executions, models, tools } = createModelRuntime();
+    const advertisedTools = vi.fn<(toolIds: readonly string[]) => void>();
+    const loops = new LoopManager(models, executions, tools, costs);
+    const http = new NetworkService({
+      fetch: vi.fn(async () => new Response("ok")),
+    });
+    const startLoop = defineCommand({
+      id: "test.start-background-loop",
+      input: z.object({}).strict(),
+      output: z.object({ runId: z.string().uuid() }).strict(),
+    });
+    const manifest = {
+      id: "test.background-loop-owner",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.background-loop-owner/main",
+      permissions: [
+        "loops.start",
+        "models.register",
+        "network:dynamic",
+        "tools.invoke",
+        "tools.provide",
+      ],
+      contributes: {
+        commands: [startLoop.id],
+        kinds: ["llmProvider", "toolProvider"],
+      },
+    } as const satisfies BorgPluginManifest;
+    const manager = new PluginManager(bus, "0.1.0", {
+      executions,
+      http,
+      loops,
+      models,
+      tools,
+    });
+    await manager.activate({
+      manifest,
+      loadMain: async () =>
+        definePlugin({
+          ...manifest,
+          activate(context) {
+            context.models.registerProvider({
+              id: "test.background-provider",
+              models: ["test:model"],
+              egress: {
+                kind: "local",
+                capacity: "local-only",
+              },
+              async complete(request, permit) {
+                advertisedTools(request.tools.map(({ id }) => id));
+                await permit.commit();
+                if (!request.tools.some(({ id }) => id === "dynamic.echo")) {
+                  throw new Error("Dynamic tool was not advertised");
+                }
+                return {
+                  content: "done",
+                  usage: { inputTokens: 1, outputTokens: 1 },
+                };
+              },
+            });
+            context.tools.registerProvider(
+              defineToolProvider({
+                id: "test.dynamic-tools",
+                namespace: "dynamic",
+                async prepare() {
+                  await context.http.fetch("https://example.test/catalog");
+                  return {
+                    definitions: [
+                      {
+                        id: "dynamic.echo",
+                        description: "Echo a value",
+                        inputSchema: {},
+                        approval: "auto",
+                        sideEffect: false,
+                      },
+                    ],
+                    execute: () => ({ ok: true }),
+                  };
+                },
+              }),
+            );
+            context.bus.handle(startLoop, async () => {
+              const run = await context.loops.start({
+                prompt: "background",
+                providerId: "test.background-provider",
+                modelId: "test:model",
+                security: {
+                  kind: "root",
+                  subject: {
+                    kind: "background-loop",
+                    id: startLoop.id,
+                  },
+                  classification: "internal",
+                  provenance: {
+                    kind: "plugin",
+                    id: manifest.id,
+                  },
+                  operationPrefix: "plugin-manager/background-loop",
+                },
+              });
+              return { runId: run.id };
+            });
+          },
+        }),
+    });
+
+    const { runId } = await bus.invoke(startLoop, {});
+    await vi.waitFor(() => {
+      expect(loops.get(runId, manifest.id)?.status).toBe("completed");
+    });
+    expect(advertisedTools).toHaveBeenCalledWith(["dynamic.echo"]);
   });
 });
 

@@ -1410,7 +1410,10 @@ describe("ModelGateway durable call recovery", () => {
     expect(secondComplete).not.toHaveBeenCalled();
 
     controller.abort();
-    await expect(firstCall).rejects.toThrow("Provider aborted");
+    await expect(firstCall).rejects.toMatchObject({
+      name: "ModelProviderFailedError",
+      reason: "cancelled",
+    });
   });
 
   it("fails a recovered output-pending call as indeterminate", async () => {

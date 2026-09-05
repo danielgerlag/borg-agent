@@ -1375,7 +1375,11 @@ describe("ModelGateway fallback preferences and usage", () => {
         },
         new AbortController().signal,
       ),
-    ).rejects.toThrow(/stream failed/);
+    ).rejects.toMatchObject({
+      name: "ModelProviderFailedError",
+      providerId: "borg.partial",
+      reason: "failed",
+    });
     expect(costs.list("run-partial")).toEqual([
       expect.objectContaining({
         inputTokens: 4,
