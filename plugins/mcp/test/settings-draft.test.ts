@@ -65,6 +65,24 @@ describe("MCP settings drafts", () => {
       headerSecretRefs: {},
     });
     expect(parseDraftsForSave([http])).toHaveLength(1);
+    expect(() =>
+      parseDraftsForSave([
+        {
+          ...http,
+          url: "http://example.test/mcp",
+          headerSecretRefs: { Authorization: "auth-ref" },
+        },
+      ]),
+    ).toThrow(/HTTPS or a loopback HTTP URL/);
+    expect(
+      parseDraftsForSave([
+        {
+          ...http,
+          url: "http://localhost:3000/mcp",
+          headerSecretRefs: { Authorization: "auth-ref" },
+        },
+      ]),
+    ).toHaveLength(1);
 
     const stdio = changeDraftTransport(
       {

@@ -86,18 +86,6 @@ export function isAppVisible(tool: McpToolDescriptor): boolean {
   return visibility.includes("app");
 }
 
-export function approvalFor(annotations: McpToolAnnotations | undefined): {
-  readonly approval: ToolApproval;
-  readonly sideEffect: boolean;
-} {
-  const readOnly = annotations?.readOnlyHint === true;
-  const destructive = annotations?.destructiveHint === true;
-  if (readOnly && !destructive) {
-    return { approval: "auto", sideEffect: false };
-  }
-  return { approval: "ask", sideEffect: true };
-}
-
 export function canonicalizeTools(
   serverId: string,
   tools: readonly McpToolDescriptor[],
@@ -114,7 +102,6 @@ export function canonicalizeTools(
     if (!DYNAMIC_TOOL_ID.test(id)) {
       throw new Error(`MCP tool id ${id} is invalid`);
     }
-    const { approval, sideEffect } = approvalFor(tool.annotations);
     const resourceUri = tool._meta?.ui?.resourceUri;
     return {
       id,
@@ -126,8 +113,8 @@ export function canonicalizeTools(
           ? tool.description
           : tool.name,
       inputSchema: tool.inputSchema ?? { type: "object" },
-      approval,
-      sideEffect,
+      approval: "ask",
+      sideEffect: true,
       modelVisible: isModelVisible(tool),
       appVisible: isAppVisible(tool),
       ...(typeof resourceUri === "string" && resourceUri.length > 0

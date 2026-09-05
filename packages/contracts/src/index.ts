@@ -895,6 +895,15 @@ const mcpServerIdSchema = z
 
 const mcpSecretRefSchema = z.string().min(1).max(256);
 
+function isLoopbackMcpHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/\.$/, "");
+  return (
+    normalized === "localhost" ||
+    normalized === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/.test(normalized)
+  );
+}
+
 const mcpServerCommonSchema = z.object({
   id: mcpServerIdSchema,
   enabled: z.boolean().default(true),
@@ -960,7 +969,26 @@ export const mcpServerConfigSchema = z.discriminatedUnion("transport", [
         )
         .default({}),
     })
-    .strict(),
+    .strict()
+    .superRefine((config, context) => {
+      if (Object.keys(config.headerSecretRefs).length === 0) {
+        return;
+      }
+      const url = new URL(config.url);
+      if (
+        url.protocol === "https:" ||
+        (url.protocol === "http:" &&
+          isLoopbackMcpHostname(url.hostname))
+      ) {
+        return;
+      }
+      context.addIssue({
+        code: "custom",
+        path: ["url"],
+        message:
+          "MCP header secrets require HTTPS or a loopback HTTP URL",
+      });
+    }),
 ]);
 
 export type McpServerConfig = z.infer<typeof mcpServerConfigSchema>;
