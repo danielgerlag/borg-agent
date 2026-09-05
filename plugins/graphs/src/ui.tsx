@@ -1000,8 +1000,8 @@ export default defineUiPlugin<Component>({
           class="h-full min-h-0 overflow-hidden bg-[var(--panel)]"
           data-testid="graph-designer"
         >
-          <div class="grid h-full min-h-0 grid-cols-[14rem_minmax(28rem,1fr)_20rem]">
-            <aside class="flex min-h-0 flex-col border-r border-[var(--border)] bg-[var(--panel-muted)]/45 p-3">
+          <div class="grid h-full min-h-0 grid-cols-[10rem_minmax(20rem,1fr)_12rem] lg:grid-cols-[14rem_minmax(28rem,1fr)_20rem]">
+            <aside class="flex min-h-0 flex-col border-r border-[var(--border)] bg-[var(--panel-muted)]/45 p-2 lg:p-3">
               <Button
                 type="button"
                 class="w-full"
@@ -1064,7 +1064,7 @@ export default defineUiPlugin<Component>({
               </div>
             </aside>
 
-            <main class="flex min-w-0 flex-col">
+            <main class="flex min-h-0 min-w-0 flex-col">
               <Show
                 when={draft()}
                 fallback={
@@ -1089,9 +1089,9 @@ export default defineUiPlugin<Component>({
               >
                 {(current) => (
                   <>
-                    <header class="border-b border-[var(--border)] px-5 py-3">
-                      <div class="flex items-start gap-3">
-                        <div class="min-w-0 flex-1">
+                    <header class="border-b border-[var(--border)] px-3 py-3 lg:px-5">
+                      <div class="flex flex-wrap items-start gap-2 lg:flex-nowrap lg:gap-3">
+                        <div class="min-w-0 flex-1 basis-full lg:basis-auto">
                           <label class="sr-only" for="graph-name">
                             Graph name
                           </label>
@@ -1178,7 +1178,7 @@ export default defineUiPlugin<Component>({
                         ref={(element) => {
                           initializeCanvas(element);
                         }}
-                        class="absolute inset-0"
+                        class="h-full w-full"
                         aria-label="Graph canvas"
                         data-testid="graph-canvas"
                       />
@@ -1227,7 +1227,7 @@ export default defineUiPlugin<Component>({
               </Show>
             </main>
 
-            <aside class="min-h-0 overflow-y-auto border-l border-[var(--border)] bg-[var(--panel-muted)]/35 p-4">
+            <aside class="min-h-0 overflow-y-auto border-l border-[var(--border)] bg-[var(--panel-muted)]/35 p-2 lg:p-4">
               <section>
                 <div class="flex items-center gap-2">
                   <Plus
