@@ -109,10 +109,11 @@ Later bundled plugins get one directory each under `plugins/`. A plugin package 
 | `PermissionService` | plugin host permissions and agent/tool policies | pretending in-process code is sandboxed |
 | `LoopManager` | one loop runtime, strategy lifecycle, cancellation, streaming events | chat UI, bot definitions, graph scheduling |
 | `RunRegistry` | generic live-run identity/status/counts for tray and Flight Deck | feature-specific run state |
-| `ModelRouter` | select and invoke `llmProvider` contributions, usage reporting | provider HTTP/auth implementation |
+| `ExecutionSecurityService` | durable execution lineage, classification, bounded provenance, and close/import rules | model transport or product persistence |
+| `ModelGateway` | provider selection, model input/output scanning, egress authorization, usage attribution, and approved-result replay | provider HTTP/auth implementation |
 | `ToolService` | tool contributions, discovery, canonical IDs, invocation pipeline | tool implementation |
 | `InteractionService` | pending queue, wait/resolve/cancel, counts, renderer routing | ask-user wording or graph-gate semantics |
-| `ClassificationService` | labels, high-water state, channel policy, enforcement | scanner implementation |
+| `ClassificationService` | live run projection for tool and channel checks | durable execution classification |
 | `PersistenceFacades` | config, plugin store, and secret routing | SQLite/keychain implementation |
 | `CommunicationService` | normalized inbound/outbound records, dedup, attachments, routing, outbound gate | provider/connector transport |
 | `SchedulerCore` | monotonic timers, cron wakeups, cancellation, run hooks | scheduling UX and feature job definitions |
@@ -120,7 +121,7 @@ Later bundled plugins get one directory each under `plugins/`. A plugin package 
 | `SandboxFactory` | OS, uv, and Node sandbox construction | shell/filesystem tools |
 | `PromptAssembler` | deterministic prompt slots and budgets | memory/context-map construction |
 | `MemoryFacade` | graph and semantic interfaces, provider selection | concrete knowledge database |
-| `CostLedger` | normalized token/cost records and queries | provider-specific pricing/auth |
+| `CostLedger` | process-session token/cost projection and queries | provider-specific pricing/auth or model-call ownership |
 | `AuditService` | structured security and lifecycle audit records | product transcript |
 | `NotificationService` | OS notifications and renderer toast events | feature-specific notification rules |
 | `A2AService` | Agent2Agent server plumbing and task-to-loop mapping | persona/agent product UI |
@@ -251,7 +252,7 @@ Kernel-defined v0 contribution types are:
 
 | Contribution | Selection/usage |
 |---|---|
-| `llmProvider` | many registered; `ModelRouter` selects by model, capability, class, and preference |
+| `llmProvider` | many registered; `ModelGateway` selects by model, capacity, and preference |
 | `tool` / `toolProvider` | many; `ToolService` exposes canonical tools or lazy catalogs |
 | `workspaceView` | ordered renderer slot; chat is one view |
 | `settingsPage` | ordered renderer settings section |
@@ -580,17 +581,20 @@ Sessions and bots store persona IDs, not copied provider clients or tool impleme
 
 ## Model routing and the single loop runtime
 
-`llmProvider` contributions implement model discovery, authentication/setup metadata, completion/streaming, tool-call translation, token caching, and raw usage. They do not register HTTP clients in the kernel.
+`llmProvider` contributions implement model discovery, authentication/setup metadata, completion, tool-call translation, token caching, and raw usage. Each provider declares a local or HTTPS egress destination and a classification capacity. They do not decide whether a request may cross that boundary.
 
-`ModelRouter`:
+`ModelGateway`:
 
-- resolves persona preferences and required capabilities;
-- rejects providers whose channel class cannot carry the effective data class;
-- chooses an active provider/model contribution;
-- normalizes token usage and delegates cost recording;
-- emits model lifecycle events to the owning loop stream.
+- resolves persona preferences and snapshots one provider registration;
+- scans the canonical provider input, including messages and tool definitions;
+- authorizes the durable execution classification against provider capacity;
+- gives the provider a one-shot permit that rechecks classification immediately before generation or network egress;
+- holds raw provider output in memory until completed content and tool calls pass output scanning and authorization;
+- records usage once and stores only approved terminal results for replay;
+- rejects reused operation keys whose canonical request digest changed;
+- treats dispatched or output-pending calls as indeterminate after restart.
 
-Plugins that need a non-agent auxiliary completion use `ctx.models.complete` with no tools. A tool-using or multi-step task uses `ctx.loops`; plugins do not build private model loops.
+Plugins that need a non-agent auxiliary completion use `ctx.models.complete` with an execution ID and stable operation key. This API never supplies tools. A tool-using or multi-step task uses `ctx.loops`; plugins do not build private model loops or call providers directly.
 
 `LoopManager` owns:
 
@@ -598,7 +602,7 @@ Plugins that need a non-agent auxiliary completion use `ctx.models.complete` wit
 - run IDs and lifecycle state;
 - conversation/context limits and cancellation;
 - strategy selection;
-- model routing and token streaming;
+- model requests through `ModelGateway` and approved token projection;
 - tool-call dispatch exclusively through `ToolService`;
 - structured-output validation;
 - cost/audit correlation.
@@ -616,7 +620,7 @@ interface LoopStrategy {
 
 ReAct is required in Slice 3. CodeAct can be a stub until Slice 11. LangGraph may be used behind this interface only if it works cleanly in Electron main, does not leak into SDK contracts, and replaces rather than duplicates loop state. There must never be a LangGraph-backed loop beside an unrelated home-grown product loop.
 
-Loop events include run state, model start/token/end, tool-call arguments/start/result, interaction wait, compaction, usage, final output, cancellation, and failure. They are a dedicated subscription stream because tokens are not command/event bus request messages.
+Loop events include run state, model start/token/end, tool-call arguments/start/result, interaction wait, compaction, usage, final output, cancellation, and failure. Provider chunks do not enter this stream. A `model_token` event means the completed output passed kernel policy and is safe to display.
 
 Chat, bot, graph-agent, scanner-assisted, context-map-assisted, and A2A callers all use this manager or the auxiliary no-tool model API.
 
@@ -942,7 +946,7 @@ interface UsageRecord {
 }
 ```
 
-The kernel records usage and cost through `CostLedger`. Plugins may record non-model costs through `ctx.cost.record`, but cannot edit prior records.
+`ModelGateway` is the only model-usage writer. `CostLedger` projects process-session totals for `cost.read`; plugins cannot create or edit usage records.
 
 Audit records capture security decisions, plugin lifecycle, outbound sends, interactions, tool calls, and overrides. Sensitive arguments/results are represented by classification-aware summaries or hashes, not copied blindly.
 
@@ -1193,6 +1197,10 @@ Per-chat usage is one typed aggregate on the `borg.chat` session document, updat
 ## Slice 9 implementation record
 
 Slice 9 installs one kernel trust path shared by tools, loop content, and channels. `ClassificationService` owns the monotonic per-run watermark. `ScannerRegistry` runs plugin scanners but cannot authorize an operation. `TrustAuthorizer` merges tool policy, channel capacity, and scanner findings into one allow, deny, or approval decision. `ToolService` applies trustworthy static and dynamic-tool security metadata, raises the watermark after parsed results, scans external results, and rechecks approval commitments. Existing tools default to an internal result classification; MCP results are explicitly external and internal.
+
+The post-Slice 9 hardening adds durable execution security without moving product behavior into the kernel. `ExecutionSecurityService` persists product-neutral roots and children, monotonic classification, bounded provenance, host-selected child result flow, and idempotent close state. Chat turns, graph instances, graph agents, and bot attempts persist their execution identity before background work starts. Legacy chat, graph, and bot records migrate with restricted classification. A missing bot loop becomes interrupted and never replays its launch prompt automatically.
+
+All model paths now use `ModelGateway`. The gateway scans canonical input, checks the execution classification against provider capacity, and requires a one-shot dispatch permit immediately before provider work. Raw tokens remain in memory until completed output passes scanning and authorization. Denied content does not reach loop history, logs, returned errors, or durable storage. Approved graph prompt results may replay by stable operation key and request digest; dispatched and output-pending calls fail as indeterminate after restart.
 
 `CommunicationService` registers channel adapters, provides the only inbound ingestion callback, normalizes and persists records before emitting `borg.channel.inboundMessage`, and deduplicates provider message IDs. Outbound sends use an idempotency key, persist the pending commitment before transport, authorize once, recheck classification immediately before publish, and store the terminal receipt. Persistence failures fail closed. The bundled mock adapter gives tests a deterministic public channel. The graph plugin subscribes to the typed event and starts only definitions whose `incoming_message` trigger binding matches.
 

@@ -41,6 +41,8 @@ Configure Discord under **Settings → Discord**. The bot token is written direc
 
 Data classifications are ordered `public < internal < confidential < restricted`. Channel capacities map to ceilings as follows: `public → public`, `internal → internal`, `private → confidential`, and `local-only → restricted`. A run's effective classification can only increase. Classification violations, scanner review findings, and normal tool approval are combined into at most one kernel approval prompt for an operation. Prompt scanner failures or missing coverage require review and cannot bypass channel classification.
 
+Every model completion passes through the kernel `ModelGateway`. The mock provider is `local-only`; Anthropic currently accepts up to `internal` data. The gateway scans the complete provider input, rechecks classification through a one-shot permit immediately before provider work, and holds raw output until the completed response passes scanning and authorization. Denied output is not displayed or persisted. Chat turns, graph instances, and bot attempts persist their execution classification and provenance across restarts. A missing bot run is marked interrupted instead of replaying its prompt.
+
 ## Verification
 
 ```sh
