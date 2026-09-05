@@ -20,7 +20,7 @@ import {
   type Persona,
   type ToolSecurityMetadata,
 } from "@borg/contracts";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ClassificationService } from "./classification-service";
 import type { ExecutionSecurityService } from "./execution-security";
 import { InteractionService } from "./interaction-service";
@@ -41,6 +41,7 @@ const DYNAMIC_TOOL_NAMESPACE = /^[a-z0-9]+(?:[.-][a-z0-9-]+)*$/;
 const PROVIDER_ID = /^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/;
 const MAX_JSON_DEPTH = 32;
 const MAX_JSON_NODES = 100_000;
+const MAX_PROVENANCE_ID_LENGTH = 240;
 
 /** An unlabelled tool result is internal, never public. */
 const DEFAULT_OUTPUT_CLASSIFICATION: DataClassification = "internal";
@@ -275,6 +276,14 @@ function deepFreeze<T>(value: T): T {
 
 function freezePersonaSnapshot(persona: Persona): Persona {
   return deepFreeze(structuredClone(persona));
+}
+
+function toolProvenanceId(toolId: string): string {
+  const readable = `tool:${toolId}`;
+  if (readable.length <= MAX_PROVENANCE_ID_LENGTH) {
+    return readable;
+  }
+  return `tool-sha256:${createHash("sha256").update(toolId).digest("hex")}`;
 }
 
 function freezeDefinition(
@@ -790,6 +799,7 @@ export class ToolService {
     }
 
     const toolCallId = options.toolCallId ?? randomUUID();
+    const outputProvenanceId = toolProvenanceId(toolId);
     const preflight = await this.#authorize(
       {
         pluginId: options.callerPluginId,
@@ -883,7 +893,7 @@ export class ToolService {
             classification: resolved.security.outputClassification,
             provenance: {
               kind: "plugin",
-              id: `tool:${toolId}`,
+              id: outputProvenanceId,
             },
             reason: `Tool ${toolId} produced a result`,
           },

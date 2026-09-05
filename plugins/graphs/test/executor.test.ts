@@ -1,5 +1,6 @@
 import {
   feedbackAsk,
+  executionIdSchema,
   graphDefinitionSaved,
   graphDefinitionSchema,
   graphInstanceCompleted,
@@ -7,11 +8,13 @@ import {
   graphInstanceStarted,
   graphInstanceUpdated,
   graphStepCompleted,
+  modelOperationKeySchema,
   type ExecutionId,
   type GraphDefinition,
   type ModelCompletionResult,
 } from "@borg/contracts";
 import {
+  IndeterminateModelCallError,
   z,
   type JsonValue,
   type LlmProviderContribution,
@@ -279,6 +282,7 @@ function replacePersistedPrompt(
   if (!isJsonObject(persisted)) {
     throw new Error(`Persisted graph ${instanceId} is unavailable`);
   }
+
   const definition = persisted.definition;
   if (!isJsonObject(definition) || !isJsonArray(definition.nodes)) {
     throw new Error(`Persisted graph ${instanceId} has no definition`);
@@ -310,6 +314,23 @@ function replacePersistedPrompt(
       nodes,
     },
   });
+}
+
+function convertPersistedInstanceToLegacy(
+  storedValues: Map<string, JsonValue>,
+  instanceId: string,
+): void {
+  const key = `instances/${instanceId}`;
+  const persisted = storedObject(storedValues, key);
+  const legacy: Record<string, JsonValue> = {
+    ...persisted,
+    version: 1,
+  };
+  delete legacy.security;
+  delete legacy.preservedAttemptNodes;
+  delete legacy.agentExecutionIds;
+  delete legacy.pendingClose;
+  storedValues.set(key, legacy);
 }
 
 const engines: HiveMindGraphEngine[] = [];
@@ -794,6 +815,7 @@ describe("HiveMindGraphEngine", () => {
       },
       endConfig: { output: "$steps.work" },
     });
+
     await engine.saveDefinition(definition);
 
     const instanceId = await engine.launch({
@@ -846,6 +868,99 @@ describe("HiveMindGraphEngine", () => {
     expect(restoredEngine.getInstance(instanceId)).toMatchObject({
       status: "failed",
       error: expect.stringMatching(/reused with a different request/i),
+    });
+  });
+
+  it("does not replay a running prompt migrated without a model journal", async () => {
+    const pending =
+      deferred<Awaited<ReturnType<PluginModels["complete"]>>>();
+    const fixture = createGraphHarness();
+    fixture.modelsComplete.mockImplementation(async () => pending.promise);
+    const engine = await initializedEngine(fixture);
+    const definition = linearDefinition({
+      id: "legacy-running-prompt",
+      taskKind: "invoke_prompt",
+      taskConfig: {
+        prompt: "Do not replay this request",
+        providerId: MODEL_PROVIDER_ID,
+        modelId: MODEL_ID,
+      },
+    });
+    await engine.saveDefinition(definition);
+    const instanceId = await engine.launch({
+      graphId: definition.id,
+      security: GRAPH_LAUNCH_SECURITY,
+    });
+    await vi.waitFor(() => {
+      expect(fixture.modelsComplete).toHaveBeenCalledOnce();
+    });
+    await engine.dispose();
+    pending.resolve({
+      providerId: MODEL_PROVIDER_ID,
+      modelId: MODEL_ID,
+      content: "late result",
+      usage: { inputTokens: 1, outputTokens: 1 },
+      replayed: false,
+    });
+    await fixture.flush();
+    convertPersistedInstanceToLegacy(fixture.storedValues, instanceId);
+
+    resetSecurityRuntime();
+    const restored = createGraphHarness(fixture.storedValues);
+    const restoredEngine = await initializedEngine(restored);
+
+    expect(restored.modelsComplete).not.toHaveBeenCalled();
+    expect(restoredEngine.getInstance(instanceId)).toMatchObject({
+      status: "failed",
+      error: expect.stringMatching(/indeterminate result/i),
+    });
+  });
+
+  it("does not apply graph retry policy to an indeterminate model call", async () => {
+    const fixture = createGraphHarness();
+    fixture.modelsComplete.mockRejectedValue(
+      new IndeterminateModelCallError(
+        executionIdSchema.parse(
+          "10000000-0000-4000-8000-000000000001",
+        ),
+        modelOperationKeySchema.parse(
+          "graph/indeterminate/node/work/attempt/1/prompt",
+        ),
+        "dispatched",
+      ),
+    );
+    const engine = await initializedEngine(fixture);
+    const base = linearDefinition({
+      id: "indeterminate-prompt",
+      taskKind: "invoke_prompt",
+      taskConfig: {
+        prompt: "Do not retry this request",
+        providerId: MODEL_PROVIDER_ID,
+        modelId: MODEL_ID,
+      },
+    });
+    const definition: GraphDefinition = {
+      ...base,
+      nodes: base.nodes.map((node) =>
+        node.id === "work"
+          ? {
+              ...node,
+              onError: { action: "retry", maxAttempts: 3 },
+            }
+          : node,
+      ),
+    };
+    await engine.saveDefinition(definition);
+    const instanceId = await engine.launch({
+      graphId: definition.id,
+      security: GRAPH_LAUNCH_SECURITY,
+    });
+    await fixture.flush();
+
+    expect(fixture.modelsComplete).toHaveBeenCalledOnce();
+    expect(engine.getInstance(instanceId)).toMatchObject({
+      status: "failed",
+      error: expect.stringMatching(/indeterminate/i),
     });
   });
 
@@ -905,6 +1020,7 @@ describe("HiveMindGraphEngine", () => {
       taskKind: "invoke_agent",
       taskConfig: { prompt: "Finish before the parent checkpoint" },
     });
+
     await engine.saveDefinition(definition);
     const instanceId = await engine.launch({
       graphId: definition.id,
@@ -933,6 +1049,47 @@ describe("HiveMindGraphEngine", () => {
     expect(restoredEngine.getInstance(instanceId)).toMatchObject({
       status: "failed",
       error: expect.stringMatching(/indeterminate result/i),
+    });
+  });
+
+  it("does not resurrect a cancelled graph while an agent starts", async () => {
+    const fixture = createGraphHarness();
+    const start = fixture.startLoop.getMockImplementation();
+    if (!start) {
+      throw new Error("Loop start fixture is unavailable");
+    }
+    const releaseStart = deferred<void>();
+    fixture.startLoop.mockImplementation(async (input) => {
+      await releaseStart.promise;
+      return start(input);
+    });
+    const engine = await initializedEngine(fixture);
+    const definition = linearDefinition({
+      id: "cancel-agent-launch",
+      taskKind: "invoke_agent",
+      taskConfig: { prompt: "Wait while starting" },
+    });
+    await engine.saveDefinition(definition);
+    const instanceId = await engine.launch({
+      graphId: definition.id,
+      security: GRAPH_LAUNCH_SECURITY,
+    });
+    await vi.waitFor(() => {
+      expect(fixture.startLoop).toHaveBeenCalledOnce();
+    });
+
+    await expect(engine.cancel(instanceId)).resolves.toBe(true);
+    releaseStart.resolve(undefined);
+    await fixture.flush();
+
+    expect(engine.getInstance(instanceId)?.status).toBe("cancelled");
+    const child = await fixture.executionFor(
+      "graph-agent",
+      `${instanceId}/work/1`,
+    );
+    expect(child.lifecycle).toMatchObject({
+      state: "closed",
+      outcome: "cancelled",
     });
   });
 

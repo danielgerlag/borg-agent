@@ -22,6 +22,7 @@ import {
   type ProvenanceSeed,
 } from "@borg/contracts";
 import {
+  IndeterminateModelCallError,
   type Disposable,
   type GraphStepContribution,
   type GraphTriggerContribution,
@@ -1132,6 +1133,10 @@ export class HiveMindGraphEngine {
       }
       await this.#disposeDelay(instanceId, state.nodeId);
     }
+    await this.#closeOpenAgentExecutions(
+      record,
+      `Graph ${instanceId} was cancelled`,
+    );
     await this.#persistAndCloseExecution(
       record,
       "cancelled",
@@ -1351,6 +1356,25 @@ export class HiveMindGraphEngine {
               preservedAttemptNodes: [],
               agentExecutionIds: {},
             };
+        if (!current.success) {
+          const legacyPrompt = record.instance.nodeStates.find(
+            (state) =>
+              (state.status === "running" ||
+                state.status === "waiting") &&
+              this.#node(record, state.nodeId).kind === "invoke_prompt",
+          );
+          if (legacyPrompt) {
+            const completedAt = new Date().toISOString();
+            legacyPrompt.status = "failed";
+            legacyPrompt.error =
+              "Borg stopped after a model request may have crossed its provider boundary; automatic replay was blocked.";
+            legacyPrompt.completedAt = completedAt;
+            record.instance.status = "failed";
+            record.instance.error = `Step ${legacyPrompt.nodeId} has an indeterminate result and requires a new graph run.`;
+            record.instance.completedAt = completedAt;
+            record.instance.updatedAt = completedAt;
+          }
+        }
         this.#instances.set(parsed.instance.id, record);
         if (!current.success) {
           await this.#persistInstance(record);
@@ -1800,6 +1824,17 @@ export class HiveMindGraphEngine {
       if (this.#isTerminal(record)) {
         return "terminal";
       }
+      if (error instanceof IndeterminateModelCallError) {
+        state.status = "failed";
+        state.error =
+          "The model request has an indeterminate provider result and cannot be retried automatically.";
+        state.completedAt = new Date().toISOString();
+        await this.#fail(
+          record,
+          `Step ${node.id} has an indeterminate result and requires a new graph run.`,
+        );
+        return "terminal";
+      }
       return this.#handleNodeError(record, node, state, error);
     }
   }
@@ -2074,6 +2109,15 @@ export class HiveMindGraphEngine {
       });
       state.childRunId = snapshot.id;
     }
+    if (signal.aborted || this.#isTerminal(record)) {
+      this.context.loops.cancel(snapshot.id);
+      await this.#closeChildExecution(
+        childExecutionId,
+        "cancelled",
+        `Graph agent ${node.id} was cancelled before it started`,
+      );
+      throw abortReason(signal);
+    }
     await this.#markWaiting(record, state);
     const terminal = await this.#awaitLoop(snapshot.id, signal);
     if (terminal.status === "failed") {
@@ -2231,6 +2275,9 @@ export class HiveMindGraphEngine {
     record: InstanceRecord,
     state: GraphNodeState,
   ): Promise<void> {
+    if (this.#isTerminal(record)) {
+      throw new Error(`Graph ${record.instance.id} is already terminal`);
+    }
     state.status = "waiting";
     record.instance.status = "waiting";
     await this.#checkpoint(record);
@@ -2597,6 +2644,10 @@ export class HiveMindGraphEngine {
     delete record.instance.error;
     record.instance.completedAt = completedAt;
     record.instance.updatedAt = completedAt;
+    await this.#closeOpenAgentExecutions(
+      record,
+      `Graph ${record.instance.id} completed before an agent child`,
+    );
     await this.#persistAndCloseExecution(
       record,
       "completed",
@@ -2639,6 +2690,10 @@ export class HiveMindGraphEngine {
     record.instance.error = message;
     record.instance.completedAt = completedAt;
     record.instance.updatedAt = completedAt;
+    await this.#closeOpenAgentExecutions(
+      record,
+      `Graph ${record.instance.id} failed before an agent child`,
+    );
     await this.#persistAndCloseExecution(
       record,
       "failed",
@@ -2760,6 +2815,26 @@ export class HiveMindGraphEngine {
       executionId,
     });
     await execution.close({ outcome, reason });
+  }
+
+  async #closeOpenAgentExecutions(
+    record: InstanceRecord,
+    reason: string,
+  ): Promise<void> {
+    for (const executionId of new Set(
+      Object.values(record.agentExecutionIds),
+    )) {
+      const execution = await this.context.executions.bind({
+        mode: "resume",
+        executionId,
+      });
+      if ((await execution.summary()).lifecycle.state === "open") {
+        await execution.close({
+          outcome: "cancelled",
+          reason,
+        });
+      }
+    }
   }
 
   async #registerToolScope(record: InstanceRecord): Promise<void> {

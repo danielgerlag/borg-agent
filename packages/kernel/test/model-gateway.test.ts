@@ -133,7 +133,9 @@ interface SecurityState {
 interface HarnessOptions {
   readonly backend?: MemoryConfigStore;
   readonly security?: SecurityState;
+  readonly closed?: boolean;
   readonly costs?: CostLedger;
+  readonly observe?: ModelGatewayExecutionPort["observe"];
   readonly scan?: (request: ScanRequest) => Promise<ScanReport>;
   readonly authorize?: (
     request: AuthorizationRequest,
@@ -335,7 +337,14 @@ function createHarness(options: HarnessOptions = {}) {
     },
     classification: security.classification,
     classificationRevision: security.classificationRevision,
-    lifecycle: { state: "open" as const },
+    lifecycle: options.closed
+      ? {
+          state: "closed" as const,
+          outcome: "cancelled" as const,
+          reason: "test execution closed",
+          closedAt: new Date().toISOString(),
+        }
+      : { state: "open" as const },
   });
   const snapshot = vi.fn(
     async (ownerPluginId: string, _executionId: string) => {
@@ -348,11 +357,12 @@ function createHarness(options: HarnessOptions = {}) {
     },
   );
   const observe = vi.fn(
-    async (
-      _ownerPluginId: string,
-      _executionId: string,
-      _input: unknown,
-    ) => summary(),
+    options.observe ??
+      (async (
+        _ownerPluginId: string,
+        _executionId: string,
+        _input: unknown,
+      ) => summary()),
   );
   const commitIfCurrent: ModelGatewayExecutionPort["commitIfCurrent"] =
     async (_ownerPluginId, _executionId, expectedRevision, operation) => {
@@ -1232,6 +1242,56 @@ describe("ModelGateway durable call recovery", () => {
     expect(secondComplete).not.toHaveBeenCalled();
     expect(recordUsage).toHaveBeenCalledTimes(1);
     expect(replayedTokens).toEqual(["released result"]);
+  });
+
+  it("does not release a replayable result before provenance is durable", async () => {
+    const harness = createHarness({
+      observe: async () => {
+        throw new Error("execution closed before provenance commit");
+      },
+    });
+    registerProvider(
+      harness.gateway,
+      vi.fn(successfulProvider("held result")),
+    );
+
+    await expect(
+      harness.gateway.complete(
+        PRINCIPAL,
+        modelRequest(),
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("execution closed before provenance commit");
+    await expect(
+      harness.journal.load(EXECUTION_ID, OPERATION_KEY),
+    ).resolves.toMatchObject({ phase: "output-pending" });
+    await expect(
+      harness.gateway.complete(
+        PRINCIPAL,
+        modelRequest(),
+        new AbortController().signal,
+      ),
+    ).rejects.toBeInstanceOf(IndeterminateModelCallError);
+  });
+
+  it("does not replay released output from a closed execution", async () => {
+    const backend = new MemoryConfigStore();
+    const first = createHarness({ backend });
+    registerProvider(first.gateway, vi.fn(successfulProvider("released")));
+    await first.gateway.complete(
+      PRINCIPAL,
+      modelRequest(),
+      new AbortController().signal,
+    );
+
+    const restarted = createHarness({ backend, closed: true });
+    await expect(
+      restarted.gateway.complete(
+        PRINCIPAL,
+        modelRequest(),
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow(/closed/);
   });
 
   it("rejects operation-key reuse when the request digest changes", async () => {

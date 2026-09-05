@@ -668,6 +668,84 @@ describe("borg.chat harness", () => {
     await restoredHarness.deactivate();
   });
 
+  it("recovers a persisted turn that never reached loop start", async () => {
+    const fixture = createChatHarnessContext();
+    const harness = await createTestHarness(chatPlugin, fixture.context);
+    const created = await fixture.invoke(chatCreateSession, {});
+    const persisted = persistedChatRecord(
+      fixture.store,
+      created.sessionId,
+    );
+    const turnId = crypto.randomUUID();
+    const parent = await fixture.context.executions.grant(
+      persisted.security.headExecutionId,
+    );
+    const turn = await fixture.context.executions.bind({
+      mode: "child",
+      subject: {
+        kind: "chat-turn",
+        id: `${created.sessionId}/${turnId}`,
+      },
+      parent,
+    });
+    const operationPrefix = modelOperationPrefixSchema.parse(
+      `chat/session/${created.sessionId}/turn/${turnId}`,
+    );
+    const interrupted = persistedChatRecordSchema.parse({
+      ...persisted,
+      document: {
+        ...persisted.document,
+        session: {
+          ...persisted.document.session,
+          status: "running",
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      security: {
+        headExecutionId: persisted.security.headExecutionId,
+        active: {
+          turnId,
+          executionId: turn.id,
+          operationPrefix,
+        },
+      },
+    });
+    fixture.store.set(
+      `sessions/${created.sessionId}`,
+      z.json().parse(interrupted),
+    );
+    await harness.deactivate();
+
+    const restored = createChatHarnessContext(fixture.store);
+    const restoredHarness = await createTestHarness(
+      chatPlugin,
+      restored.context,
+    );
+    expect(restored.start).not.toHaveBeenCalled();
+    const recovered = persistedChatRecord(
+      restored.store,
+      created.sessionId,
+    );
+    expect(recovered.security).toEqual({
+      headExecutionId: turn.id,
+    });
+    await expect(restored.executionSnapshot(turn.id)).resolves.toMatchObject({
+      lifecycle: {
+        state: "closed",
+        outcome: "interrupted",
+      },
+    });
+    const document = await restored.invoke(chatGetSession, {
+      sessionId: created.sessionId,
+    });
+    expect(
+      document.entries.some(
+        (entry) => entry.metadata?.status === "interrupted",
+      ),
+    ).toBe(true);
+    await restoredHarness.deactivate();
+  });
+
   it("serializes active-session deletion and cancels its loop", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);

@@ -21,6 +21,7 @@ import {
   type ReleasedModelCompletion,
 } from "@borg/contracts";
 import {
+  IndeterminateModelCallError,
   z,
   type Disposable,
   type JsonValue,
@@ -40,6 +41,7 @@ export type {
   LlmProviderContribution,
   ProviderDispatchPermit,
 } from "@borg/plugin-sdk";
+export { IndeterminateModelCallError } from "@borg/plugin-sdk";
 
 const STORE_NAMESPACE = "kernel.execution-security";
 const MODEL_CALL_PREFIX = "model-calls/";
@@ -365,19 +367,6 @@ export class ModelOperationConflictError extends Error {
   }
 }
 
-export class IndeterminateModelCallError extends Error {
-  constructor(
-    readonly executionId: ExecutionId,
-    readonly operationKey: ModelOperationKey,
-    readonly phase: "dispatched" | "output-pending",
-  ) {
-    super(
-      `Model operation ${operationKey} has an indeterminate provider result`,
-    );
-    this.name = "IndeterminateModelCallError";
-  }
-}
-
 export class ModelInputDeniedError extends Error {
   constructor() {
     super("Model input was denied");
@@ -553,6 +542,7 @@ export class ModelGateway {
         request.executionId,
       ),
     );
+    ensureExecutionOpen(initialSecurity);
     let existing = await this.dependencies.journal.load(
       request.executionId,
       request.operationKey,
@@ -629,7 +619,6 @@ export class ModelGateway {
         `Model operation ${request.operationKey} already failed`,
       );
     }
-    ensureExecutionOpen(initialSecurity);
     const registration = this.#providers.get(target.providerId);
     if (!registration) {
       throw new Error(`LLM provider ${target.providerId} is unavailable`);
@@ -1034,7 +1023,6 @@ export class ModelGateway {
       ),
     );
     let outputInteractionUsed = false;
-    let releasedClassification = outputSecurity.classification;
     while (true) {
       ensureExecutionOpen(outputSecurity);
       const outputAuthorization = await this.#authorize({
@@ -1060,6 +1048,29 @@ export class ModelGateway {
         });
         heldTokens.length = 0;
         throw new ModelOutputDeniedError();
+      }
+      const authorizedSecurity = outputSecurity;
+      outputSecurity = executionSecuritySummarySchema.parse(
+        await this.dependencies.executions.observe(
+          principal.ownerPluginId,
+          request.executionId,
+          {
+            classification: outputSecurity.classification,
+            provenance: {
+              kind: "plugin",
+              id: `model:${registration.provider.id}`,
+            },
+            reason: `Approved model output from ${registration.provider.id}`,
+          },
+        ),
+      );
+      if (
+        outputSecurity.classificationRevision !==
+          authorizedSecurity.classificationRevision ||
+        outputSecurity.classification !==
+          authorizedSecurity.classification
+      ) {
+        continue;
       }
       const release = await this.dependencies.executions.commitIfCurrent(
         principal.ownerPluginId,
@@ -1115,7 +1126,6 @@ export class ModelGateway {
             release.value.reason,
           );
         }
-        releasedClassification = release.value.classification;
         break;
       }
       outputSecurity = executionSecuritySummarySchema.parse(
@@ -1125,18 +1135,6 @@ export class ModelGateway {
         ),
       );
     }
-    await this.dependencies.executions.observe(
-      principal.ownerPluginId,
-      request.executionId,
-      {
-        classification: releasedClassification,
-        provenance: {
-          kind: "plugin",
-          id: `model:${registration.provider.id}`,
-        },
-        reason: `Approved model output from ${registration.provider.id}`,
-      },
-    );
     const blockedBeforeDelivery = this.#releaseBlockReason(
       registration,
       providerSignal,

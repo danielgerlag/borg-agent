@@ -25,6 +25,7 @@ import type {
   ModelCompletionResult,
   ModelDescriptor,
   ModelGatewayRequest,
+  ModelOperationKey,
   ModelUsage,
   ParentExecutionGrant,
   PendingInteraction,
@@ -246,6 +247,19 @@ export interface PluginTools {
 
 export interface ProviderDispatchPermit {
   commit(): Promise<void>;
+}
+
+export class IndeterminateModelCallError extends Error {
+  constructor(
+    readonly executionId: ExecutionId,
+    readonly operationKey: ModelOperationKey,
+    readonly phase: "dispatched" | "output-pending",
+  ) {
+    super(
+      `Model operation ${operationKey} has an indeterminate provider result`,
+    );
+    this.name = "IndeterminateModelCallError";
+  }
 }
 
 export interface LlmProviderContribution {
