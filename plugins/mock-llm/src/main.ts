@@ -1,4 +1,4 @@
-import { definePlugin } from "@borg/plugin-sdk";
+import { definePlugin, z } from "@borg/plugin-sdk";
 import {
   mockTranscriptFixtures,
   type MockTranscriptFixture,
@@ -67,7 +67,11 @@ export default definePlugin({
     context.models.registerProvider({
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete(request, signal, onToken) {
+      egress: {
+        kind: "local",
+        capacity: "local-only",
+      },
+      async complete(request, permit, signal, onToken) {
         signal.throwIfAborted();
         const last = request.messages.at(-1);
         const userPrompt =
@@ -92,6 +96,7 @@ export default definePlugin({
               fixture,
               JSON.parse(last.content),
             )}`;
+          await permit.commit();
           await streamContent(content, signal, onToken);
           return {
             content,
@@ -101,6 +106,7 @@ export default definePlugin({
 
         if (!fixture) {
           const content = `Mock reply: ${userPrompt}`;
+          await permit.commit();
           await streamContent(content, signal, onToken);
           return {
             content,
@@ -110,6 +116,7 @@ export default definePlugin({
         await waitForFixture(fixture.delayMs ?? 0, signal);
         signal.throwIfAborted();
         if (fixture.content !== undefined) {
+          await permit.commit();
           await streamContent(fixture.content, signal, onToken);
           return {
             content: fixture.content,
@@ -124,14 +131,21 @@ export default definePlugin({
           !request.tools.some((tool) => tool.id === fixture.toolCall?.name)
         ) {
           const content = `Mock reply: ${userPrompt}`;
+          await permit.commit();
           await streamContent(content, signal, onToken);
           return {
             content,
             usage,
           };
         }
+        await permit.commit();
         return {
-          toolCalls: [fixture.toolCall],
+          toolCalls: [
+            {
+              ...fixture.toolCall,
+              input: z.json().parse(fixture.toolCall.input),
+            },
+          ],
           usage,
         };
       },

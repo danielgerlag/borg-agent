@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pluginsDirectory = path.join(projectRoot, "plugins");
 const failures = [];
+const kernelSourceDirectory = path.join(projectRoot, "packages/kernel/src");
+const appSourceDirectory = path.join(projectRoot, "apps/desktop/src");
 
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -18,6 +20,62 @@ async function sourceFiles(directory) {
     }
   }
   return files;
+}
+
+const pluginSourceFiles = (
+  await Promise.all(
+    (await readdir(pluginsDirectory, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) =>
+        sourceFiles(path.join(pluginsDirectory, entry.name, "src")),
+      ),
+  )
+).flat();
+const productionFiles = [
+  ...(await sourceFiles(kernelSourceDirectory)),
+  ...(await sourceFiles(appSourceDirectory)),
+  ...pluginSourceFiles,
+];
+for (const filename of productionFiles) {
+  const source = await readFile(filename, "utf8");
+  const relative = path.relative(projectRoot, filename);
+  if (/\bModelRouter\b|model-router/.test(source)) {
+    failures.push(`${relative} references the removed ModelRouter path`);
+  }
+  if (
+    /\bprovider\.complete\s*\(/.test(source) &&
+    relative !== "packages/kernel/src/model-gateway.ts"
+  ) {
+    failures.push(`${relative} invokes a provider completion outside ModelGateway`);
+  }
+  if (/\bcost\.record\s*\(|["']cost\.record["']/.test(source)) {
+    failures.push(`${relative} exposes the removed plugin cost writer`);
+  }
+}
+
+const contractsSource = await readFile(
+  path.join(projectRoot, "packages/contracts/src/index.ts"),
+  "utf8",
+);
+if (
+  !/modelGatewayRequestSchema[\s\S]*executionId:\s*executionIdSchema[\s\S]*operationKey:\s*modelOperationKeySchema/.test(
+    contractsSource,
+  )
+) {
+  failures.push(
+    "Model gateway requests must require executionId and operationKey",
+  );
+}
+
+const pluginSdkSource = await readFile(
+  path.join(projectRoot, "packages/plugin-sdk/src/index.ts"),
+  "utf8",
+);
+if (!/request:\s*Omit<ModelGatewayRequest,\s*"tools">/.test(pluginSdkSource)) {
+  failures.push("PluginModels.complete must use the secured gateway request");
+}
+if (/record\(record:\s*UsageRecord\)/.test(pluginSdkSource)) {
+  failures.push("PluginCost must not expose a usage writer");
 }
 
 for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {

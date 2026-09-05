@@ -7,6 +7,7 @@
   "main": "@borg/plugin-chat/main",
   "ui": "@borg/plugin-chat/ui",
   "permissions": [
+    "executions.manage",
     "loops.start",
     "models.read",
     "personas.read",

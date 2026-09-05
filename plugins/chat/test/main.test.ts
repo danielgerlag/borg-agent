@@ -1,40 +1,299 @@
 import {
   chatCreateSession,
   chatDeleteSession,
+  chatDocumentSchema,
   chatGetSession,
   chatListSessions,
   chatSendMessage,
   chatSpawnSubAgent,
   embeddedContentRegistered,
+  executionIdSchema,
+  modelOperationPrefixSchema,
   personaSchema,
-  type ChatEntry,
-  type ChatSession,
+  type BusEnvelope,
+  type CommandDefinition,
+  type CommandInput,
+  type CommandOutput,
+  type EventDefinition,
+  type EventPayload,
+  type ExecutionId,
   type LoopEvent,
   type LoopRunSnapshot,
   type LoopStartInput,
 } from "@borg/contracts";
 import {
   createTestHarness,
+  z,
+  type ConfigStoreProvider,
   type Disposable,
   type JsonValue,
   type PluginBus,
   type PluginContext,
+  type PluginExecutions,
   type StoreEntry,
   type StoreTransactionOperation,
 } from "@borg/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
+import { ExecutionSecurityService } from "../../../packages/kernel/src/execution-security";
+import {
+  PersistenceRegistry,
+  StoreFacade,
+} from "../../../packages/kernel/src/persistence";
+import manifest from "../borg.plugin.json";
 import chatPlugin from "../src/main";
+
+const CHAT_PLUGIN_ID = chatPlugin.id;
+const INTERNAL_STORE_PREFIX = "__borg_chat_harness__/";
+
+const persistedChatRecordSchema = z
+  .object({
+    version: z.literal(2),
+    document: chatDocumentSchema,
+    security: z
+      .object({
+        headExecutionId: executionIdSchema,
+        active: z
+          .object({
+            turnId: z.string().uuid(),
+            executionId: executionIdSchema,
+            operationPrefix: modelOperationPrefixSchema,
+            runId: z.string().uuid().optional(),
+          })
+          .strict()
+          .optional(),
+        pendingClose: z
+          .object({
+            executionId: executionIdSchema,
+            outcome: z.enum(["completed", "failed", "cancelled"]),
+            reason: z.string().min(1),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+type CommandHandler = (
+  input: unknown,
+  signal: AbortSignal,
+  envelope: BusEnvelope,
+) => unknown | Promise<unknown>;
+
+type EventHandler = (
+  payload: unknown,
+  envelope: BusEnvelope,
+) => void | Promise<void>;
+
+function createEnvelope(kind: BusEnvelope["source"]["kind"]): BusEnvelope {
+  return {
+    correlationId: crypto.randomUUID(),
+    source: { kind, id: CHAT_PLUGIN_ID },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+class ChatHarnessBus implements PluginBus {
+  readonly #handlers = new Map<string, CommandHandler>();
+  readonly #eventHandlers = new Map<string, Set<EventHandler>>();
+
+  constructor(readonly emittedEvents: string[]) {}
+
+  handle<TCommand extends CommandDefinition>(
+    command: TCommand,
+    handler: (
+      input: CommandInput<TCommand>,
+      signal: AbortSignal,
+      envelope: BusEnvelope,
+    ) => CommandOutput<TCommand> | Promise<CommandOutput<TCommand>>,
+  ): Disposable {
+    const storedHandler = handler as CommandHandler;
+    this.#handlers.set(command.id, storedHandler);
+    return {
+      dispose: () => {
+        if (this.#handlers.get(command.id) === storedHandler) {
+          this.#handlers.delete(command.id);
+        }
+      },
+    };
+  }
+
+  async invoke<TCommand extends CommandDefinition>(
+    command: TCommand,
+    input: CommandInput<TCommand>,
+    options?: { readonly signal?: AbortSignal | undefined },
+  ): Promise<CommandOutput<TCommand>> {
+    const handler = this.#handlers.get(command.id);
+    if (!handler) {
+      throw new Error(`Missing handler ${command.id}`);
+    }
+    const result = await handler(
+      input,
+      options?.signal ?? new AbortController().signal,
+      createEnvelope("renderer"),
+    );
+    return command.output.parse(result) as CommandOutput<TCommand>;
+  }
+
+  provides(command: CommandDefinition): boolean {
+    return this.#handlers.has(command.id);
+  }
+
+  async emit<TEvent extends EventDefinition>(
+    event: TEvent,
+    payload: EventPayload<TEvent>,
+  ): Promise<void> {
+    this.emittedEvents.push(event.id);
+    await Promise.all(
+      [...(this.#eventHandlers.get(event.id) ?? [])].map(async (handler) =>
+        handler(payload, createEnvelope("plugin")),
+      ),
+    );
+  }
+
+  on<TEvent extends EventDefinition>(
+    event: TEvent,
+    handler: (
+      payload: EventPayload<TEvent>,
+      envelope: BusEnvelope,
+    ) => void | Promise<void>,
+  ): Disposable {
+    const storedHandler = handler as EventHandler;
+    const subscribers =
+      this.#eventHandlers.get(event.id) ?? new Set<EventHandler>();
+    subscribers.add(storedHandler);
+    this.#eventHandlers.set(event.id, subscribers);
+    return {
+      dispose: () => {
+        subscribers.delete(storedHandler);
+      },
+    };
+  }
+}
+
+function namespacePrefix(namespace: string): string {
+  return namespace === CHAT_PLUGIN_ID
+    ? ""
+    : `${INTERNAL_STORE_PREFIX}store/${encodeURIComponent(namespace)}/`;
+}
+
+function namespaceKey(namespace: string, key: string): string {
+  return `${namespacePrefix(namespace)}${key}`;
+}
+
+function configKey(namespace: string): string {
+  return `${INTERNAL_STORE_PREFIX}config/${encodeURIComponent(namespace)}`;
+}
+
+class MemoryConfigStore implements ConfigStoreProvider {
+  constructor(readonly values: Map<string, JsonValue>) {}
+
+  async readConfig(namespace: string): Promise<unknown | undefined> {
+    return this.values.get(configKey(namespace));
+  }
+
+  async writeConfig(namespace: string, value: JsonValue): Promise<void> {
+    this.values.set(configKey(namespace), value);
+  }
+
+  async getStore(
+    namespace: string,
+    key: string,
+  ): Promise<JsonValue | undefined> {
+    return this.values.get(namespaceKey(namespace, key));
+  }
+
+  async listStore(
+    namespace: string,
+    prefix: string,
+  ): Promise<readonly StoreEntry[]> {
+    const storedPrefix = namespacePrefix(namespace);
+    const entries: StoreEntry[] = [];
+    for (const [storedKey, value] of this.values) {
+      if (
+        namespace === CHAT_PLUGIN_ID &&
+        storedKey.startsWith(INTERNAL_STORE_PREFIX)
+      ) {
+        continue;
+      }
+      if (!storedKey.startsWith(storedPrefix)) {
+        continue;
+      }
+      const key = storedKey.slice(storedPrefix.length);
+      if (key.startsWith(prefix)) {
+        entries.push({ key, value });
+      }
+    }
+    return entries;
+  }
+
+  async applyStoreTransaction(
+    namespace: string,
+    operations: readonly StoreTransactionOperation[],
+  ): Promise<void> {
+    const next = new Map(this.values);
+    for (const operation of operations) {
+      const key = namespaceKey(namespace, operation.key);
+      if (operation.type === "set") {
+        next.set(key, operation.value);
+      } else {
+        next.delete(key);
+      }
+    }
+    this.values.clear();
+    for (const [key, value] of next) {
+      this.values.set(key, value);
+    }
+  }
+}
+
+function unavailable(capability: string): never {
+  throw new Error(`${capability} is unavailable in the chat test harness`);
+}
+
+function persistedChatRecord(
+  store: ReadonlyMap<string, JsonValue>,
+  sessionId: string,
+) {
+  const value = store.get(`sessions/${sessionId}`);
+  if (value === undefined) {
+    throw new Error(`Persisted chat session ${sessionId} is unavailable`);
+  }
+  return persistedChatRecordSchema.parse(value);
+}
 
 function createChatHarnessContext(
   store = new Map<string, JsonValue>(),
 ) {
-  const handlers = new Map<
-    string,
-    (input: unknown, signal: AbortSignal) => unknown | Promise<unknown>
-  >();
-  const eventHandlers = new Map<string, Set<(payload: unknown) => unknown>>();
   const emittedEvents: string[] = [];
+  const bus = new ChatHarnessBus(emittedEvents);
+  const persistence = new PersistenceRegistry();
+  persistence.registerConfigStore(
+    "borg.chat.test-store",
+    new MemoryConfigStore(store),
+  );
+  const storeFacade = new StoreFacade(persistence);
+  const executionSecurity = new ExecutionSecurityService(storeFacade);
+  const executionsReady = executionSecurity.initialize();
+  const executions: PluginExecutions = {
+    bind: async (intent) => {
+      await executionsReady;
+      return executionSecurity.bind(CHAT_PLUGIN_ID, intent, "detached");
+    },
+    grant: async (executionId) => {
+      await executionsReady;
+      await executionSecurity.snapshot(CHAT_PLUGIN_ID, executionId);
+      return executionSecurity.createParentGrant({
+        parentExecutionId: executionId,
+        granteePluginId: CHAT_PLUGIN_ID,
+      });
+    },
+  };
   const runs = new Map<string, LoopRunSnapshot>();
+  const workspaces = new Map<
+    string,
+    { readonly sessionId: string; readonly rootPath: string }
+  >();
   let failingStoreSets = 0;
   let failingTransactions = 0;
   let failLoopStart = false;
@@ -78,92 +337,86 @@ function createChatHarnessContext(
     });
     return true;
   });
-  const release = vi.fn(async () => undefined);
-  const bus = {
-    handle: (command: { readonly id: string }, handler: typeof handlers extends Map<string, infer T> ? T : never) => {
-      handlers.set(command.id, handler);
-      return {
-        dispose: () => {
-          handlers.delete(command.id);
-        },
-      };
-    },
-    invoke: async (command: { readonly id: string }, input: unknown) => {
-      const handler = handlers.get(command.id);
-      if (!handler) {
-        throw new Error(`Missing handler ${command.id}`);
-      }
-      return handler(input, new AbortController().signal);
-    },
-    provides: (command: { readonly id: string }) => handlers.has(command.id),
-    emit: async (event: { readonly id: string }, payload: unknown) => {
-      emittedEvents.push(event.id);
-      await Promise.allSettled(
-        [...(eventHandlers.get(event.id) ?? [])].map(async (handler) =>
-          handler(payload),
-        ),
-      );
-    },
-    on: (event: { readonly id: string }, handler: (payload: unknown) => unknown) => {
-      const subscribers = eventHandlers.get(event.id) ?? new Set();
-      subscribers.add(handler);
-      eventHandlers.set(event.id, subscribers);
-      return {
-        dispose: () => subscribers.delete(handler),
-      };
-    },
-  } as unknown as PluginBus;
+  const release = vi.fn(async (sessionId: string) => {
+    workspaces.delete(sessionId);
+  });
   const general = personaSchema.parse({
     id: "system/general",
     name: "General",
     instructions: "Be useful.",
     preferredModels: ["borg.mock-llm:mock:scripted"],
   });
-  const context = {
-    pluginId: "borg.chat",
+  const context: PluginContext = {
+    pluginId: CHAT_PLUGIN_ID,
     signal: new AbortController().signal,
     bus,
     store: {
-      get: async (key: string) => store.get(key),
+      get: (key) => storeFacade.get(CHAT_PLUGIN_ID, key),
       set: async (key: string, value: JsonValue) => {
         if (failingStoreSets > 0) {
           failingStoreSets -= 1;
           throw new Error("Injected store failure");
         }
-        store.set(key, value);
+        await storeFacade.set(CHAT_PLUGIN_ID, key, value);
       },
-      delete: async (key: string) => {
-        store.delete(key);
-      },
-      list: async (prefix = ""): Promise<readonly StoreEntry[]> =>
-        [...store.entries()]
-          .filter(([key]) => key.startsWith(prefix))
-          .map(([key, value]) => ({ key, value })),
+      delete: (key) => storeFacade.delete(CHAT_PLUGIN_ID, key),
+      list: (prefix = "") => storeFacade.list(CHAT_PLUGIN_ID, prefix),
       transaction: async (operations: readonly StoreTransactionOperation[]) => {
         if (failingTransactions > 0) {
           failingTransactions -= 1;
           throw new Error("Injected transaction failure");
         }
-        for (const operation of operations) {
-          if (operation.type === "set") {
-            store.set(operation.key, operation.value);
-          } else {
-            store.delete(operation.key);
-          }
-        }
+        await storeFacade.transaction(CHAT_PLUGIN_ID, operations);
       },
+    },
+    config: {
+      get: async () => unavailable("config.get"),
+      update: async () => unavailable("config.update"),
+      watch: () => unavailable("config.watch"),
+    },
+    secrets: {
+      get: async () => unavailable("secrets.get"),
+      set: async () => unavailable("secrets.set"),
+      delete: async () => unavailable("secrets.delete"),
+      has: async () => unavailable("secrets.has"),
+    },
+    persistence: {
+      registerConfigStore: () =>
+        unavailable("persistence.registerConfigStore"),
+      registerSecretStore: () =>
+        unavailable("persistence.registerSecretStore"),
+    },
+    executions,
+    tools: {
+      register: () => unavailable("tools.register"),
+      registerProvider: () => unavailable("tools.registerProvider"),
+      registerExecutionScope: () =>
+        unavailable("tools.registerExecutionScope"),
+      invoke: async () => unavailable("tools.invoke"),
+    },
+    models: {
+      registerProvider: () => unavailable("models.registerProvider"),
+      complete: async () => unavailable("models.complete"),
     },
     personas: {
       get: (id: string) => (id === general.id ? general : undefined),
       getDefault: () => general,
       list: () => [general],
+      setDefault: async () => unavailable("personas.setDefault"),
+      create: async () => unavailable("personas.create"),
+      update: async () => unavailable("personas.update"),
+      archive: async () => unavailable("personas.archive"),
     },
     workspace: {
-      allocate: (sessionId: string) => ({
-        sessionId,
-        rootPath: `/tmp/${sessionId}`,
-      }),
-      get: () => undefined,
+      allocate: (sessionId: string) => {
+        const workspace = {
+          sessionId,
+          rootPath: `/virtual/borg-chat-test/${sessionId}`,
+        };
+        workspaces.set(sessionId, workspace);
+        return workspace;
+      },
+      get: (sessionId) => workspaces.get(sessionId),
       listFiles: async () => [],
       release,
     },
@@ -171,8 +424,8 @@ function createChatHarnessContext(
       start,
       get: (runId: string) => runs.get(runId),
       list: () => [...runs.values()],
-      pause: () => false,
-      resume: () => false,
+      pause: () => unavailable("loops.pause"),
+      resume: () => unavailable("loops.resume"),
       cancel,
       subscribe: (
         runId: string,
@@ -188,16 +441,50 @@ function createChatHarnessContext(
         };
       },
     },
-    config: {},
-    secrets: {},
-    persistence: {},
-    tools: {},
-    models: {},
-    interactions: {},
-    cost: {},
-    window: { show: () => undefined },
-    dataDir: "/tmp/borg-chat-test",
-    notify: () => undefined,
+    interactions: {
+      requestHumanInput: () =>
+        unavailable("interactions.requestHumanInput"),
+    },
+    cost: {
+      summary: () => unavailable("cost.summary"),
+      subscribe: () => unavailable("cost.subscribe"),
+    },
+    prompts: {
+      registerSlot: () => unavailable("prompts.registerSlot"),
+    },
+    scanners: {
+      register: () => unavailable("scanners.register"),
+    },
+    graphs: {
+      registerStep: () => unavailable("graphs.registerStep"),
+      registerTrigger: () => unavailable("graphs.registerTrigger"),
+      listSteps: () => unavailable("graphs.listSteps"),
+      listTriggers: () => unavailable("graphs.listTriggers"),
+    },
+    scheduler: {
+      schedule: () => unavailable("scheduler.schedule"),
+      scheduleCron: () => unavailable("scheduler.scheduleCron"),
+      cancel: () => unavailable("scheduler.cancel"),
+    },
+    runtime: {
+      spawn: () => unavailable("runtime.spawn"),
+    },
+    process: {
+      spawn: async () => unavailable("process.spawn"),
+    },
+    http: {
+      fetch: async () => unavailable("http.fetch"),
+    },
+    channels: {
+      register: () => unavailable("channels.register"),
+      send: async () => unavailable("channels.send"),
+    },
+    webSockets: {
+      connect: async () => unavailable("webSockets.connect"),
+    },
+    window: { show: () => unavailable("window.show") },
+    dataDir: "/virtual/borg-chat-test",
+    notify: () => unavailable("notify"),
     logger: {
       debug: () => undefined,
       info: () => undefined,
@@ -205,10 +492,12 @@ function createChatHarnessContext(
       error: () => undefined,
     },
     host: { version: "0.1.0", platform: "test" },
-  } as unknown as PluginContext;
+  };
 
-  const invoke = async <T>(command: { readonly id: string }, input: unknown) =>
-    bus.invoke(command as never, input as never) as Promise<T>;
+  const invoke = <TCommand extends CommandDefinition>(
+    command: TCommand,
+    input: CommandInput<TCommand>,
+  ): Promise<CommandOutput<TCommand>> => bus.invoke(command, input);
   const finish = async (
     runId: string,
     output: string,
@@ -220,7 +509,10 @@ function createChatHarnessContext(
       readonly costsByCurrency?: Readonly<Record<string, number>>;
     },
   ): Promise<void> => {
-    const run = runs.get(runId)!;
+    const run = runs.get(runId);
+    if (!run) {
+      throw new Error(`Loop run ${runId} is unavailable`);
+    }
     runs.set(runId, {
       ...run,
       status: "completed",
@@ -262,11 +554,23 @@ function createChatHarnessContext(
       failLoopStart = true;
     },
     emittedEvents,
-    emit: bus.emit,
+    emit: <TEvent extends EventDefinition>(
+      event: TEvent,
+      payload: EventPayload<TEvent>,
+    ) => bus.emit(event, payload),
+    executionSnapshot: async (executionId: ExecutionId) => {
+      await executionsReady;
+      return executionSecurity.snapshot(CHAT_PLUGIN_ID, executionId);
+    },
   };
 }
 
 describe("borg.chat harness", () => {
+  it("declares execution security access", () => {
+    expect(chatPlugin.permissions).toContain("executions.manage");
+    expect(manifest.permissions).toContain("executions.manage");
+  });
+
   it("persists the first user message atomically with a new chat", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);
@@ -278,26 +582,18 @@ describe("borg.chat harness", () => {
       }),
     ).rejects.toThrow("Injected store failure");
     expect(
-      await fixture.invoke<{ sessions: readonly ChatSession[] }>(
-        chatListSessions,
-        {},
-      ),
+      await fixture.invoke(chatListSessions, {}),
     ).toEqual({ sessions: [] });
     expect(fixture.release).toHaveBeenCalledOnce();
 
     fixture.failNextLoopStart();
-    const created = await fixture.invoke<{
-      sessionId: string;
-      startError?: string;
-    }>(
-      chatCreateSession,
-      { initialMessage: "Keep this accepted message" },
-    );
+    const created = await fixture.invoke(chatCreateSession, {
+      initialMessage: "Keep this accepted message",
+    });
     expect(created.startError).toContain("Injected loop start failure");
-    const document = await fixture.invoke<{
-      session: ChatSession;
-      entries: readonly { role: string; content: string }[];
-    }>(chatGetSession, { sessionId: created.sessionId });
+    const document = await fixture.invoke(chatGetSession, {
+      sessionId: created.sessionId,
+    });
     expect(document.entries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -314,11 +610,8 @@ describe("borg.chat harness", () => {
   it("persists a persona-backed turn and projects its final transcript", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);
-    const created = await fixture.invoke<{ sessionId: string }>(
-      chatCreateSession,
-      {},
-    );
-    const sent = await fixture.invoke<{ runId: string }>(chatSendMessage, {
+    const created = await fixture.invoke(chatCreateSession, {});
+    const sent = await fixture.invoke(chatSendMessage, {
       sessionId: created.sessionId,
       text: "hello",
     });
@@ -331,16 +624,37 @@ describe("borg.chat harness", () => {
       }),
     );
     await fixture.finish(sent.runId, "mock reply");
+    const beforeRestart = persistedChatRecord(
+      fixture.store,
+      created.sessionId,
+    );
+    expect(beforeRestart.version).toBe(2);
+    expect(beforeRestart.security.active).toBeUndefined();
+    const securityHead = beforeRestart.security.headExecutionId;
     await harness.deactivate();
     const restored = createChatHarnessContext(fixture.store);
     const restoredHarness = await createTestHarness(
       chatPlugin,
       restored.context,
     );
+    const afterRestart = persistedChatRecord(
+      restored.store,
+      created.sessionId,
+    );
+    expect(afterRestart.security.headExecutionId).toBe(securityHead);
+    await expect(
+      restored.executionSnapshot(securityHead),
+    ).resolves.toMatchObject({
+      classification: "internal",
+      lifecycle: { state: "closed", outcome: "completed" },
+      subject: {
+        kind: "chat-turn",
+      },
+    });
     await vi.waitFor(async () => {
-      const document = await restored.invoke<{
-        entries: readonly { role: string; content: string }[];
-      }>(chatGetSession, { sessionId: created.sessionId });
+      const document = await restored.invoke(chatGetSession, {
+        sessionId: created.sessionId,
+      });
       expect(document.entries).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ role: "user", content: "hello" }),
@@ -357,11 +671,8 @@ describe("borg.chat harness", () => {
   it("serializes active-session deletion and cancels its loop", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);
-    const created = await fixture.invoke<{ sessionId: string }>(
-      chatCreateSession,
-      {},
-    );
-    const sent = await fixture.invoke<{ runId: string }>(chatSendMessage, {
+    const created = await fixture.invoke(chatCreateSession, {});
+    const sent = await fixture.invoke(chatSendMessage, {
       sessionId: created.sessionId,
       text: "keep running",
     });
@@ -377,21 +688,16 @@ describe("borg.chat harness", () => {
   it("unblocks a session and exposes an error when terminal persistence fails", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);
-    const created = await fixture.invoke<{ sessionId: string }>(
-      chatCreateSession,
-      {},
-    );
-    const sent = await fixture.invoke<{ runId: string }>(chatSendMessage, {
+    const created = await fixture.invoke(chatCreateSession, {});
+    const sent = await fixture.invoke(chatSendMessage, {
       sessionId: created.sessionId,
       text: "hello",
     });
     fixture.failNextStoreSets(3);
-
     await fixture.finish(sent.runId, "volatile reply");
-    const document = await fixture.invoke<{
-      session: { status: string; activeRunId?: string };
-      entries: readonly { content: string }[];
-    }>(chatGetSession, { sessionId: created.sessionId });
+    const document = await fixture.invoke(chatGetSession, {
+      sessionId: created.sessionId,
+    });
     expect(document.session).toMatchObject({
       status: "error",
       activeRunId: undefined,
@@ -402,17 +708,29 @@ describe("borg.chat harness", () => {
         "The turn finished, but its result could not be saved.",
       ]),
     );
+    const retried = await fixture.invoke(chatSendMessage, {
+      sessionId: created.sessionId,
+      text: "try again",
+    });
+    await fixture.finish(retried.runId, "saved reply");
+    await expect(
+      fixture.invoke(chatGetSession, {
+        sessionId: created.sessionId,
+      }),
+    ).resolves.toMatchObject({
+      session: {
+        status: "idle",
+        activeRunId: undefined,
+      },
+    });
     await harness.deactivate();
   });
 
   it("keeps an active session intact when durable deletion fails", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);
-    const created = await fixture.invoke<{ sessionId: string }>(
-      chatCreateSession,
-      {},
-    );
-    const sent = await fixture.invoke<{ runId: string }>(chatSendMessage, {
+    const created = await fixture.invoke(chatCreateSession, {});
+    const sent = await fixture.invoke(chatSendMessage, {
       sessionId: created.sessionId,
       text: "keep running",
     });
@@ -433,20 +751,36 @@ describe("borg.chat harness", () => {
   it("keeps child sessions reachable when their parent is deleted", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);
-    const parent = await fixture.invoke<{ sessionId: string }>(
-      chatCreateSession,
-      {},
+    const parent = await fixture.invoke(chatCreateSession, {});
+    const child = await fixture.invoke(chatSpawnSubAgent, {
+      parentSessionId: parent.sessionId,
+      task: "child task",
+    });
+    const parentHead = persistedChatRecord(
+      fixture.store,
+      parent.sessionId,
+    ).security.headExecutionId;
+    const childHead = persistedChatRecord(
+      fixture.store,
+      child.childSessionId,
+    ).security.headExecutionId;
+    const parentSecurity = await fixture.executionSnapshot(parentHead);
+    const childSecurity = await fixture.executionSnapshot(childHead);
+    expect(childSecurity.classification).toBe(
+      parentSecurity.classification,
     );
-    const child = await fixture.invoke<{ childSessionId: string; runId: string }>(
-      chatSpawnSubAgent,
-      { parentSessionId: parent.sessionId, task: "child task" },
-    );
+    expect(childSecurity).toMatchObject({
+      rootExecutionId: parentSecurity.rootExecutionId,
+      parentExecutionId: parentSecurity.id,
+      subject: {
+        kind: "chat-session",
+        id: child.childSessionId,
+      },
+    });
     await fixture.finish(child.runId, "child reply");
 
     await fixture.invoke(chatDeleteSession, { sessionId: parent.sessionId });
-    const listed = await fixture.invoke<{
-      sessions: readonly { id: string; parentSessionId?: string }[];
-    }>(chatListSessions, {});
+    const listed = await fixture.invoke(chatListSessions, {});
     expect(listed.sessions).toEqual([
       expect.objectContaining({
         id: child.childSessionId,
@@ -459,10 +793,7 @@ describe("borg.chat harness", () => {
   it("publishes child deletion when sub-agent startup rolls back", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);
-    const parent = await fixture.invoke<{ sessionId: string }>(
-      chatCreateSession,
-      {},
-    );
+    const parent = await fixture.invoke(chatCreateSession, {});
     fixture.failNextLoopStart();
 
     await expect(
@@ -472,9 +803,9 @@ describe("borg.chat harness", () => {
       }),
     ).rejects.toThrow("Injected loop start failure");
     expect(fixture.emittedEvents).toContain("borg.chat.session.deleted");
-    const listed = await fixture.invoke<{
-      sessions: readonly { id: string }[];
-    }>(chatListSessions, { includeChildren: true });
+    const listed = await fixture.invoke(chatListSessions, {
+      includeChildren: true,
+    });
     expect(listed.sessions.map(({ id }) => id)).toEqual([parent.sessionId]);
     await harness.deactivate();
   });
@@ -482,11 +813,8 @@ describe("borg.chat harness", () => {
   it("accumulates durable session usage exactly once from the terminal snapshot", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);
-    const created = await fixture.invoke<{ sessionId: string }>(
-      chatCreateSession,
-      {},
-    );
-    const first = await fixture.invoke<{ runId: string }>(chatSendMessage, {
+    const created = await fixture.invoke(chatCreateSession, {});
+    const first = await fixture.invoke(chatSendMessage, {
       sessionId: created.sessionId,
       text: "first",
     });
@@ -497,17 +825,9 @@ describe("borg.chat harness", () => {
       cacheWriteTokens: 1,
       costsByCurrency: { USD: 0.01 },
     });
-    const afterFirst = await fixture.invoke<{
-      session: {
-        usage: {
-          inputTokens: number;
-          outputTokens: number;
-          cachedInputTokens: number;
-          cacheWriteTokens: number;
-          costsByCurrency: Record<string, number>;
-        };
-      };
-    }>(chatGetSession, { sessionId: created.sessionId });
+    const afterFirst = await fixture.invoke(chatGetSession, {
+      sessionId: created.sessionId,
+    });
     expect(afterFirst.session.usage).toEqual({
       inputTokens: 10,
       outputTokens: 4,
@@ -516,7 +836,7 @@ describe("borg.chat harness", () => {
       costsByCurrency: { USD: 0.01 },
     });
 
-    const second = await fixture.invoke<{ runId: string }>(chatSendMessage, {
+    const second = await fixture.invoke(chatSendMessage, {
       sessionId: created.sessionId,
       text: "second",
     });
@@ -525,17 +845,9 @@ describe("borg.chat harness", () => {
       outputTokens: 1,
       costsByCurrency: { USD: 0.002 },
     });
-    const afterSecond = await fixture.invoke<{
-      session: {
-        usage: {
-          inputTokens: number;
-          outputTokens: number;
-          cachedInputTokens: number;
-          cacheWriteTokens: number;
-          costsByCurrency: Record<string, number>;
-        };
-      };
-    }>(chatGetSession, { sessionId: created.sessionId });
+    const afterSecond = await fixture.invoke(chatGetSession, {
+      sessionId: created.sessionId,
+    });
     expect(afterSecond.session.usage).toEqual({
       inputTokens: 13,
       outputTokens: 5,
@@ -550,17 +862,9 @@ describe("borg.chat harness", () => {
       chatPlugin,
       restored.context,
     );
-    const restoredDocument = await restored.invoke<{
-      session: {
-        usage: {
-          inputTokens: number;
-          outputTokens: number;
-          cachedInputTokens: number;
-          cacheWriteTokens: number;
-          costsByCurrency: Record<string, number>;
-        };
-      };
-    }>(chatGetSession, { sessionId: created.sessionId });
+    const restoredDocument = await restored.invoke(chatGetSession, {
+      sessionId: created.sessionId,
+    });
     expect(restoredDocument.session.usage).toEqual({
       inputTokens: 13,
       outputTokens: 5,
@@ -574,10 +878,7 @@ describe("borg.chat harness", () => {
   it("persists embedded content snapshots without duplicates", async () => {
     const fixture = createChatHarnessContext();
     const harness = await createTestHarness(chatPlugin, fixture.context);
-    const created = await fixture.invoke<{ sessionId: string }>(
-      chatCreateSession,
-      {},
-    );
+    const created = await fixture.invoke(chatCreateSession, {});
     const registered = {
       sessionId: created.sessionId,
       content: {
@@ -591,10 +892,9 @@ describe("borg.chat harness", () => {
     await fixture.emit(embeddedContentRegistered, registered);
     await fixture.emit(embeddedContentRegistered, registered);
 
-    const document = await fixture.invoke<{ entries: readonly ChatEntry[] }>(
-      chatGetSession,
-      { sessionId: created.sessionId },
-    );
+    const document = await fixture.invoke(chatGetSession, {
+      sessionId: created.sessionId,
+    });
     expect(
       document.entries.filter(
         (entry) => entry.metadata?.kind === "embedded_content",
@@ -617,9 +917,9 @@ describe("borg.chat harness", () => {
       chatPlugin,
       restored.context,
     );
-    const restoredDocument = await restored.invoke<{
-      entries: readonly ChatEntry[];
-    }>(chatGetSession, { sessionId: created.sessionId });
+    const restoredDocument = await restored.invoke(chatGetSession, {
+      sessionId: created.sessionId,
+    });
     expect(
       restoredDocument.entries.some(
         (entry) => entry.metadata?.kind === "embedded_content",

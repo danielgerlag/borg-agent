@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ProviderDispatchPermit } from "@borg/plugin-sdk";
 import {
   ANTHROPIC_DEFAULT_MODEL,
   ANTHROPIC_PRODUCTION_ENDPOINT,
@@ -14,6 +15,12 @@ import {
   resolveAnthropicModelEndpoint,
 } from "../src/runtime";
 import { createAnthropicHarness } from "./harness";
+
+function createProviderDispatchPermit() {
+  return {
+    commit: vi.fn(async () => undefined),
+  } satisfies ProviderDispatchPermit;
+}
 
 function sseResponse(
   frames: readonly string[],
@@ -315,8 +322,14 @@ describe("Anthropic endpoint gating", () => {
 });
 
 describe("AnthropicProvider", () => {
-  it("sends required headers and streams text", async () => {
+  it("looks up credentials, commits immediately before fetch, sends headers, and streams text", async () => {
+    const dispatchOrder: string[] = [];
+    const permit = createProviderDispatchPermit();
+    permit.commit.mockImplementation(async () => {
+      dispatchOrder.push("commit");
+    });
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      dispatchOrder.push("fetch");
       expect(url).toBe(ANTHROPIC_PRODUCTION_ENDPOINT);
       const headers = new Headers(init?.headers);
       expect(headers.get("x-api-key")).toBe("sk-ant-test");
@@ -331,7 +344,11 @@ describe("AnthropicProvider", () => {
     const tokens: string[] = [];
     const provider = new AnthropicProvider({
       fetchImpl,
-      getApiKey: async () => "sk-ant-test",
+      getApiKey: async () => {
+        await Promise.resolve();
+        dispatchOrder.push("credential");
+        return "sk-ant-test";
+      },
     });
     const result = await provider.complete(
       {
@@ -342,11 +359,14 @@ describe("AnthropicProvider", () => {
         ],
         tools: [],
       },
+      permit,
       new AbortController().signal,
       async (token) => {
         tokens.push(token);
       },
     );
+    expect(dispatchOrder).toEqual(["credential", "commit", "fetch"]);
+    expect(permit.commit).toHaveBeenCalledOnce();
     expect(tokens).toEqual(["Hello from Claude"]);
     expect(result.content).toBe("Hello from Claude");
     expect(result.usage).toMatchObject({
@@ -384,6 +404,7 @@ describe("AnthropicProvider", () => {
           },
         ],
       },
+      createProviderDispatchPermit(),
       new AbortController().signal,
     );
     expect(first.toolCalls).toEqual([
@@ -414,6 +435,7 @@ describe("AnthropicProvider", () => {
           },
         ],
       },
+      createProviderDispatchPermit(),
       new AbortController().signal,
     );
     expect(second.content).toBe("Used the tool");
@@ -441,6 +463,7 @@ describe("AnthropicProvider", () => {
             messages: [{ role: "user", content: "hello" }],
             tools: [],
           },
+          createProviderDispatchPermit(),
           new AbortController().signal,
         ),
       ).rejects.toThrow(message);
@@ -474,6 +497,7 @@ describe("AnthropicProvider", () => {
         messages: [{ role: "user", content: "hello" }],
         tools: [],
       },
+      createProviderDispatchPermit(),
       controller.signal,
     );
     controller.abort();
@@ -503,6 +527,7 @@ describe("AnthropicProvider", () => {
           messages: [{ role: "user", content: "hello" }],
           tools: [],
         },
+        createProviderDispatchPermit(),
         new AbortController().signal,
       ),
     ).rejects.toThrow(SAFE_ANTHROPIC_ERRORS.unknownTool);
@@ -521,6 +546,7 @@ describe("AnthropicProvider", () => {
           messages: [{ role: "user", content: "hello" }],
           tools: [],
         },
+        createProviderDispatchPermit(),
         new AbortController().signal,
       ),
     ).rejects.toThrow(SAFE_ANTHROPIC_ERRORS.protocol);
@@ -537,6 +563,7 @@ describe("AnthropicProvider", () => {
           messages: [{ role: "user", content: "hello" }],
           tools: [],
         },
+        createProviderDispatchPermit(),
         new AbortController().signal,
       ),
     ).rejects.toThrow(SAFE_ANTHROPIC_ERRORS.protocol);
@@ -556,6 +583,7 @@ describe("AnthropicProvider", () => {
           messages: [{ role: "user", content: "hello" }],
           tools: [],
         },
+        createProviderDispatchPermit(),
         new AbortController().signal,
       )
       .catch((error: unknown) => {
@@ -584,6 +612,7 @@ describe("AnthropicProvider", () => {
             },
           ],
         },
+        createProviderDispatchPermit(),
         new AbortController().signal,
       ),
     ).rejects.toThrow(SAFE_ANTHROPIC_ERRORS.unknownTool);
@@ -616,6 +645,7 @@ describe("AnthropicProvider", () => {
           messages: [{ role: "user", content: prompt }],
           tools: [],
         },
+        createProviderDispatchPermit(),
         new AbortController().signal,
       )
       .catch((failure: unknown) => failure);
@@ -664,6 +694,7 @@ describe("AnthropicProvider", () => {
             },
           ],
         },
+        createProviderDispatchPermit(),
         new AbortController().signal,
       ),
     ).rejects.toThrow(SAFE_ANTHROPIC_ERRORS.protocol);

@@ -7,6 +7,7 @@
   "main": "@borg/plugin-graphs/main",
   "ui": "@borg/plugin-graphs/ui",
   "permissions": [
+    "executions.manage",
     "graphs.readContributions",
     "loops.start",
     "models.complete",

@@ -16,6 +16,12 @@ export {
   type CommunicationServiceOptions,
 } from "./communication-service";
 export { CostLedger, type CostRecord } from "./cost-ledger";
+export {
+  ExecutionSecurityService,
+  type ExecutionBindIntent,
+  type ExecutionBinding,
+  type ParentExecutionGrant,
+} from "./execution-security";
 export type { CostSummary } from "@borg/contracts";
 export { GraphContributionRegistry } from "./graph-contribution-registry";
 export { satisfiesBorgEngine } from "./engine-range";
@@ -29,10 +35,18 @@ export {
 } from "./interaction-service";
 export { LoopManager } from "./loop-manager";
 export {
-  ModelRouter,
-  type ModelRouterOptions,
-  type RoutedCompletion,
-} from "./model-router";
+  DurableModelCallJournal,
+  IndeterminateModelCallError,
+  ModelGateway,
+  ModelInputDeniedError,
+  ModelOperationConflictError,
+  ModelOutputDeniedError,
+  ModelProviderFailedError,
+  type ModelGatewayOptions,
+  type ModelGatewayPrincipal,
+  type ModelGatewayObserver,
+  type ProviderDispatchPermit,
+} from "./model-gateway";
 export { PersonaService, DEFAULT_PERSONA_ID } from "./persona-service";
 export {
   PromptAssembler,

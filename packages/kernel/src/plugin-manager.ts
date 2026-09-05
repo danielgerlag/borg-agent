@@ -1,4 +1,10 @@
-import { isKernelOnlyEvent, type CommandDefinition } from "@borg/contracts";
+import {
+  isKernelOnlyEvent,
+  type CommandDefinition,
+  type ExecutionResultFlow,
+  type ExecutionSubject,
+  type ParentExecutionGrant,
+} from "@borg/contracts";
 import {
   pluginManifestSchema,
   type BorgPluginManifest,
@@ -13,12 +19,13 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { CommandEventBus } from "./command-event-bus";
 import type { CommunicationService } from "./communication-service";
 import type { CostLedger } from "./cost-ledger";
+import type { ExecutionSecurityService } from "./execution-security";
 import { satisfiesBorgEngine } from "./engine-range";
 import { PluginLoadError } from "./errors";
 import type { GraphContributionRegistry } from "./graph-contribution-registry";
 import type { InteractionService } from "./interaction-service";
 import type { LoopManager } from "./loop-manager";
-import type { ModelRouter } from "./model-router";
+import type { ModelGateway } from "./model-gateway";
 import type { NotificationService } from "./notification-service";
 import type { PersonaService } from "./persona-service";
 import type { PromptAssembler } from "./prompt-assembler";
@@ -73,7 +80,8 @@ export interface PluginManagerOptions {
   readonly persistence?: PersistenceRegistry;
   readonly notifications?: NotificationService;
   readonly tools?: ToolService;
-  readonly models?: ModelRouter;
+  readonly models?: ModelGateway;
+  readonly executions?: ExecutionSecurityService;
   readonly loops?: LoopManager;
   readonly interactions?: InteractionService;
   readonly costs?: CostLedger;
@@ -88,6 +96,10 @@ export interface PluginManagerOptions {
   readonly channels?: CommunicationService;
   readonly webSockets?: WebSocketService;
   readonly showWindow?: () => void;
+  executionResultFlow?(
+    pluginId: string,
+    subject: ExecutionSubject,
+  ): ExecutionResultFlow;
   getPluginDataDirectory?(pluginId: string): string;
 }
 
@@ -220,6 +232,8 @@ export class PluginManager {
     readonly signal: AbortSignal;
     active: boolean;
   }>();
+  readonly #parentExecutionGrantContext =
+    new AsyncLocalStorage<ParentExecutionGrant>();
 
   constructor(
     readonly bus: CommandEventBus,
@@ -445,13 +459,21 @@ export class PluginManager {
         }
         return this.#options.tools;
       };
-      const requireModels = (): ModelRouter => {
+      const requireModels = (): ModelGateway => {
         assertContextActive();
         assertOrdinaryContext();
         if (!this.#options.models) {
-          throw new Error("Model router is unavailable");
+          throw new Error("Model gateway is unavailable");
         }
         return this.#options.models;
+      };
+      const requireExecutions = (): ExecutionSecurityService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.executions) {
+          throw new Error("Execution security service is unavailable");
+        }
+        return this.#options.executions;
       };
       const requireLoops = (): LoopManager => {
         assertContextActive();
@@ -607,6 +629,34 @@ export class PluginManager {
             );
           },
         },
+        executions: {
+          bind: (intent) => {
+            assertPermission("executions.manage");
+            const resultFlow =
+              intent.mode === "resume"
+                ? "detached"
+                : (this.#options.executionResultFlow?.(
+                    manifest.id,
+                    intent.subject,
+                  ) ?? "merge_to_parent");
+            return requireExecutions().bind(
+              manifest.id,
+              intent,
+              resultFlow,
+            );
+          },
+          grant: async (executionId) => {
+            assertPermission("executions.manage");
+            await requireExecutions().snapshot(
+              manifest.id,
+              executionId,
+            );
+            return await requireExecutions().createParentGrant({
+              parentExecutionId: executionId,
+              granteePluginId: manifest.id,
+            });
+          },
+        },
         tools: {
           register: (tool) => {
             assertPermission("tools.register");
@@ -616,8 +666,9 @@ export class PluginManager {
                 manifest.id,
                 {
                   ...tool,
-                  execute: (input, execution) =>
-                    trackOperation(
+                  execute: (input, execution) => {
+                    const execute = () =>
+                      trackOperation(
                       Promise.resolve().then(async () =>
                         tool.execute(input, {
                           ...execution,
@@ -627,7 +678,14 @@ export class PluginManager {
                           ]),
                         }),
                       ),
-                    ),
+                      );
+                    return execution.parentExecutionGrant
+                      ? this.#parentExecutionGrantContext.run(
+                          execution.parentExecutionGrant,
+                          execute,
+                        )
+                      : execute();
+                  },
                 },
                 {
                   workspaceAccess:
@@ -664,18 +722,26 @@ export class PluginManager {
                         let closed = false;
                         return {
                           definitions: catalog.definitions,
-                          execute: (toolId, input, execution) =>
-                            trackOperation(
-                              Promise.resolve().then(() =>
-                                catalog.execute(toolId, input, {
-                                  ...execution,
-                                  signal: AbortSignal.any([
-                                    execution.signal,
-                                    controller.signal,
-                                  ]),
-                                }),
-                              ),
-                            ),
+                          execute: (toolId, input, execution) => {
+                            const execute = () =>
+                              trackOperation(
+                                Promise.resolve().then(() =>
+                                  catalog.execute(toolId, input, {
+                                    ...execution,
+                                    signal: AbortSignal.any([
+                                      execution.signal,
+                                      controller.signal,
+                                    ]),
+                                  }),
+                                ),
+                              );
+                            return execution.parentExecutionGrant
+                              ? this.#parentExecutionGrantContext.run(
+                                  execution.parentExecutionGrant,
+                                  execute,
+                                )
+                              : execute();
+                          },
                           ...(typeof closer === "function"
                             ? {
                                 close: () => {
@@ -703,6 +769,7 @@ export class PluginManager {
           },
           registerExecutionScope: ({
             runId,
+            executionId,
             sessionId,
             personaId,
             allowedTools = ["*"],
@@ -734,6 +801,7 @@ export class PluginManager {
                 manifest.id,
                 allowedTools,
                 {
+                  executionId,
                   sessionId,
                   ...(workspaceRoot ? { workspaceRoot } : {}),
                   ...(persona ? { persona, personaId: persona.id } : {}),
@@ -745,7 +813,29 @@ export class PluginManager {
             );
             return {
               dispose: () => registration.dispose(),
-              prepare: () => trackOperation(requireTools().prepareScope(runId)),
+              prepare: () =>
+                trackOperation(
+                  Promise.resolve().then(async () => {
+                    if (executionId) {
+                      const summary = await requireExecutions().summary(
+                        manifest.id,
+                        executionId,
+                      );
+                      if (summary.lifecycle.state !== "open") {
+                        throw new Error(
+                          `Execution ${executionId} is closed`,
+                        );
+                      }
+                      requireTools().bindExecutionClassification(
+                        runId,
+                        manifest.id,
+                        executionId,
+                        summary.classification,
+                      );
+                    }
+                    await requireTools().prepareScope(runId);
+                  }),
+                ),
             };
           },
           invoke: (toolId, input, invocationOptions) => {
@@ -756,9 +846,36 @@ export class PluginManager {
                 `Command ${operation.commandId} context is no longer active`,
               );
             }
+            const runId = invocationOptions?.runId;
+            const refreshExecutionClassification = runId
+              ? async () => {
+                  const executionId =
+                    requireTools().executionIdForRun(runId);
+                  if (!executionId) {
+                    return;
+                  }
+                  const summary = await requireExecutions().summary(
+                    manifest.id,
+                    executionId,
+                  );
+                  requireTools().bindExecutionClassification(
+                    runId,
+                    manifest.id,
+                    executionId,
+                    summary.classification,
+                  );
+                }
+              : undefined;
             return requireTools().invoke(toolId, input, {
               callerPluginId: manifest.id,
-              runId: invocationOptions?.runId,
+              runId,
+              ...(refreshExecutionClassification
+                ? {
+                    beforeAuthorization:
+                      refreshExecutionClassification,
+                    beforeCommit: refreshExecutionClassification,
+                  }
+                : {}),
               signal: AbortSignal.any([
                 ...(invocationOptions?.signal
                   ? [invocationOptions.signal]
@@ -774,19 +891,9 @@ export class PluginManager {
             assertPermission("models.register");
             assertContribution("llmProvider");
             return stage(() =>
-              requireModels().registerProvider(manifest.id, {
-                ...provider,
-                complete: (request, signal, onToken, onUsage) =>
-                  trackOperation(
-                    Promise.resolve().then(async () =>
-                      provider.complete(
-                        request,
-                        AbortSignal.any([signal, controller.signal]),
-                        onToken,
-                        onUsage,
-                      ),
-                    ),
-                  ),
+              requireModels().registerProvider(manifest.id, provider, {
+                ownerSignal: controller.signal,
+                trackOperation,
               }),
             );
           },
@@ -801,10 +908,10 @@ export class PluginManager {
             }
             return requireModels().complete(
               {
-                ...request,
-                tools: [],
-                correlationId: randomUUID(),
+                ownerPluginId: manifest.id,
+                feature: "plugin_completion",
               },
+              { ...request, tools: [] },
               signal
                 ? AbortSignal.any([
                     signal,
@@ -896,14 +1003,6 @@ export class PluginManager {
           },
         },
         cost: {
-          record: (record) => {
-            assertContextActive();
-            assertPermission("cost.record");
-            if (!this.#options.costs) {
-              throw new Error("Cost ledger is unavailable");
-            }
-            this.#options.costs.record(record);
-          },
           summary: () => {
             assertContextActive();
             assertPermission("cost.read");
@@ -1319,9 +1418,8 @@ export class PluginManager {
                   signal: operationSignal,
                   active: true,
                 };
-                const pending = this.#operationContext.run(
-                  operation,
-                  async () => {
+                const handle = () =>
+                  this.#operationContext.run(operation, async () => {
                     const expire = (): void => {
                       operation.active = false;
                     };
@@ -1337,8 +1435,13 @@ export class PluginManager {
                       expire();
                       operationSignal.removeEventListener("abort", expire);
                     }
-                  },
-                );
+                  });
+                const pending = envelope.parentExecutionGrant
+                  ? this.#parentExecutionGrantContext.run(
+                      envelope.parentExecutionGrant,
+                      handle,
+                    )
+                  : handle();
                 return trackOperation(pending);
               }),
             );
@@ -1351,6 +1454,8 @@ export class PluginManager {
             const operation = this.#operationContext.getStore();
             return this.bus.invoke(command, input, {
               source: { kind: "plugin", id: manifest.id },
+              parentExecutionGrant:
+                this.#parentExecutionGrantContext.getStore(),
               signal: invocationOptions?.signal
                 ? AbortSignal.any([
                     invocationOptions.signal,

@@ -10,6 +10,7 @@ export const PROMPT_INJECTION_STAGES = [
   "user_input",
   "inbound_message",
   "tool_result",
+  "model_input",
   "model_output",
   "outbound_message",
 ] as const satisfies readonly PromptScanStage[];

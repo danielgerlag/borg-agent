@@ -6,6 +6,7 @@ import {
   type CommandOutput,
   type EventDefinition,
   type EventPayload,
+  type ParentExecutionGrant,
 } from "@borg/contracts";
 import type { Disposable } from "@borg/plugin-sdk";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -33,6 +34,7 @@ interface EventSubscriberRecord {
 interface CorrelationContext {
   readonly correlationId: string;
   readonly operationId: string;
+  readonly parentExecutionGrant?: ParentExecutionGrant | undefined;
 }
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
@@ -85,6 +87,7 @@ export class CommandEventBus {
     options?: {
       readonly signal?: AbortSignal | undefined;
       readonly source?: BusEnvelope["source"] | undefined;
+      readonly parentExecutionGrant?: ParentExecutionGrant | undefined;
     },
   ): Promise<CommandOutput<TCommand>> {
     return (await this.invokeById(
@@ -100,6 +103,7 @@ export class CommandEventBus {
     options?: {
       readonly signal?: AbortSignal | undefined;
       readonly source?: BusEnvelope["source"] | undefined;
+      readonly parentExecutionGrant?: ParentExecutionGrant | undefined;
     },
   ): Promise<unknown> {
     const record = this.#commandHandlers.get(commandId);
@@ -129,6 +133,8 @@ export class CommandEventBus {
     }
     const timeoutMs = record.command.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
     const parent = this.#correlationContext.getStore();
+    const parentExecutionGrant =
+      options?.parentExecutionGrant ?? parent?.parentExecutionGrant;
     const envelope: BusEnvelope = Object.freeze({
       correlationId: parent?.correlationId ?? randomUUID(),
       causationId: parent?.operationId,
@@ -136,6 +142,9 @@ export class CommandEventBus {
         options?.source ?? { kind: "kernel" as const, id: "kernel" },
       ),
       timestamp: new Date().toISOString(),
+      ...(parentExecutionGrant === undefined
+        ? {}
+        : { parentExecutionGrant }),
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
     let removeCancellationListener: (() => void) | undefined;
@@ -177,6 +186,9 @@ export class CommandEventBus {
           {
             correlationId: envelope.correlationId,
             operationId: commandId,
+            ...(parentExecutionGrant === undefined
+              ? {}
+              : { parentExecutionGrant }),
           },
           () =>
             Promise.resolve(

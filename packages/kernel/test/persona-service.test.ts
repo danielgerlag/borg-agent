@@ -1,22 +1,27 @@
 import {
   type ConfigStoreProvider,
   type JsonValue,
+  type LlmProviderContribution,
+  type ProviderEgress,
   type StoreEntry,
   type StoreTransactionOperation,
 } from "@borg/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_PERSONA_ID,
-  CostLedger,
-  InteractionService,
   LoopManager,
-  ModelRouter,
   PersonaService,
   PersistenceRegistry,
   PromptAssembler,
   StoreFacade,
-  ToolService,
 } from "../src";
+import { createSecurityRuntime } from "./security-runtime";
+
+const TEST_PROVIDER_EGRESS = {
+  kind: "remote",
+  capacity: "internal",
+  destination: "https://models.test.invalid/v1/generate",
+} satisfies ProviderEgress;
 
 class MemoryConfigStore implements ConfigStoreProvider {
   readonly values = new Map<string, Map<string, JsonValue>>();
@@ -115,27 +120,51 @@ describe("PersonaService", () => {
     const personas = createService();
     await personas.initialize();
     const prompts = new PromptAssembler(personas);
-    const costs = new CostLedger();
-    const models = new ModelRouter(costs);
-    const complete = vi.fn(async () => ({
-      content: "done",
-      usage: { inputTokens: 1, outputTokens: 1 },
-    }));
+    const { costs, executions, models, tools } = createSecurityRuntime();
+    const complete: LlmProviderContribution["complete"] = vi.fn(
+      async (_request, permit) => {
+        await permit.commit();
+        return {
+          content: "done",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    );
     models.registerProvider("borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
+      egress: TEST_PROVIDER_EGRESS,
       complete,
     });
     const loops = new LoopManager(
       models,
-      new ToolService(new InteractionService()),
+      executions,
+      tools,
       costs,
       () => false,
       personas,
       prompts,
     );
 
-    const run = loops.start({ prompt: "hello" }, "borg.chat");
+    const run = loops.start(
+      {
+        prompt: "hello",
+        security: {
+          kind: "root",
+          subject: {
+            kind: "persona-service-test",
+            id: "default-persona",
+          },
+          classification: "internal",
+          provenance: {
+            kind: "plugin",
+            id: "borg.chat",
+          },
+          operationPrefix: "persona-service/default-persona",
+        },
+      },
+      "borg.chat",
+    );
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("completed"));
     expect(loops.get(run.id)).toMatchObject({
       personaId: DEFAULT_PERSONA_ID,
@@ -154,6 +183,7 @@ describe("PersonaService", () => {
           expect.objectContaining({ role: "user", content: "hello" }),
         ]),
       }),
+      expect.objectContaining({ commit: expect.any(Function) }),
       expect.any(AbortSignal),
       expect.any(Function),
       expect.any(Function),
@@ -165,7 +195,23 @@ describe("PersonaService", () => {
       preferredModels: ["borg.mock-llm:mock:scripted"],
     });
     const personaRun = loops.start(
-      { prompt: "review", personaId: reviewer.id },
+      {
+        prompt: "review",
+        personaId: reviewer.id,
+        security: {
+          kind: "root",
+          subject: {
+            kind: "persona-service-test",
+            id: "reviewer-persona",
+          },
+          classification: "internal",
+          provenance: {
+            kind: "plugin",
+            id: "borg.chat",
+          },
+          operationPrefix: "persona-service/reviewer-persona",
+        },
+      },
       "borg.chat",
     );
     await vi.waitFor(() =>
@@ -182,22 +228,45 @@ describe("PersonaService", () => {
           }),
         ]),
       }),
+      expect.objectContaining({ commit: expect.any(Function) }),
       expect.any(AbortSignal),
       expect.any(Function),
       expect.any(Function),
     );
 
-    const alternateComplete = vi.fn(async () => ({
-      content: "alternate",
-      usage: { inputTokens: 1, outputTokens: 1 },
-    }));
+    const alternateComplete: LlmProviderContribution["complete"] = vi.fn(
+      async (_request, permit) => {
+        await permit.commit();
+        return {
+          content: "alternate",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    );
     models.registerProvider("borg.alternate", {
       id: "borg.alternate",
       models: ["alternate"],
+      egress: TEST_PROVIDER_EGRESS,
       complete: alternateComplete,
     });
     const override = loops.start(
-      { prompt: "use the override", modelId: "alternate" },
+      {
+        prompt: "use the override",
+        modelId: "alternate",
+        security: {
+          kind: "root",
+          subject: {
+            kind: "persona-service-test",
+            id: "model-override",
+          },
+          classification: "internal",
+          provenance: {
+            kind: "plugin",
+            id: "borg.chat",
+          },
+          operationPrefix: "persona-service/model-override",
+        },
+      },
       "borg.chat",
     );
     await vi.waitFor(() =>

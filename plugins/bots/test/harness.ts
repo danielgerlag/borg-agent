@@ -1,33 +1,170 @@
 import {
   personaSchema,
+  type BusEnvelope,
+  type CommandDefinition,
+  type CommandInput,
+  type CommandOutput,
+  type EventDefinition,
+  type EventPayload,
   type LoopEvent,
   type LoopRunSnapshot,
   type LoopStartInput,
+  type ParentExecutionGrant,
 } from "@borg/contracts";
+import {
+  CommandEventBus,
+  ExecutionSecurityService,
+  PersistenceRegistry,
+  StoreFacade,
+} from "../../../packages/kernel/src";
 import type {
+  ConfigStoreProvider,
   Disposable,
   JsonValue,
   PluginBus,
   PluginContext,
+  PluginExecutions,
+  PluginStore,
   StoreEntry,
   StoreTransactionOperation,
+  ToolContribution,
 } from "@borg/plugin-sdk";
 import { vi } from "vitest";
 
-type CommandHandler = (
-  input: unknown,
-  signal: AbortSignal,
-) => unknown | Promise<unknown>;
+function unavailable(capability: string): never {
+  throw new Error(`${capability} is unavailable in the bot harness`);
+}
 
-export function createBotHarness(store = new Map<string, JsonValue>()) {
-  const handlers = new Map<string, CommandHandler>();
-  const eventHandlers = new Map<string, Set<(payload: unknown) => unknown>>();
+class MemoryConfigStore implements ConfigStoreProvider {
+  constructor(readonly values: Map<string, JsonValue>) {}
+
+  async readConfig(_namespace: string): Promise<unknown | undefined> {
+    return unavailable("Config reads");
+  }
+
+  async writeConfig(_namespace: string, _value: JsonValue): Promise<void> {
+    return unavailable("Config writes");
+  }
+
+  async getStore(
+    namespace: string,
+    key: string,
+  ): Promise<JsonValue | undefined> {
+    return this.values.get(this.#storageKey(namespace, key));
+  }
+
+  async listStore(
+    namespace: string,
+    prefix: string,
+  ): Promise<readonly StoreEntry[]> {
+    const storagePrefix = this.#storageKey(namespace, prefix);
+    return [...this.values.entries()]
+      .filter(([key]) => key.startsWith(storagePrefix))
+      .map(([key, value]) => ({
+        key:
+          namespace === "borg.bots"
+            ? key
+            : key.slice(this.#namespacePrefix(namespace).length),
+        value,
+      }));
+  }
+
+  async applyStoreTransaction(
+    namespace: string,
+    operations: readonly StoreTransactionOperation[],
+  ): Promise<void> {
+    const values = new Map(this.values);
+    for (const operation of operations) {
+      const key = this.#storageKey(namespace, operation.key);
+      if (operation.type === "set") {
+        values.set(key, operation.value);
+      } else {
+        values.delete(key);
+      }
+    }
+    this.values.clear();
+    for (const [key, value] of values) {
+      this.values.set(key, value);
+    }
+  }
+
+  #storageKey(namespace: string, key: string): string {
+    return namespace === "borg.bots"
+      ? key
+      : `${this.#namespacePrefix(namespace)}${key}`;
+  }
+
+  #namespacePrefix(namespace: string): string {
+    return `.harness/${encodeURIComponent(namespace)}/`;
+  }
+}
+
+function createPluginStore(store: Map<string, JsonValue>): PluginStore {
+  return {
+    get: async (key) => store.get(key),
+    set: async (key, value) => {
+      store.set(key, value);
+    },
+    delete: async (key) => {
+      store.delete(key);
+    },
+    list: async (prefix = "") =>
+      [...store.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([key, value]) => ({ key, value })),
+    transaction: async (operations) => {
+      const next = new Map(store);
+      for (const operation of operations) {
+        if (operation.type === "set") {
+          next.set(operation.key, operation.value);
+        } else {
+          next.delete(operation.key);
+        }
+      }
+      store.clear();
+      for (const [key, value] of next) {
+        store.set(key, value);
+      }
+    },
+  };
+}
+
+export async function createBotHarness(
+  store = new Map<string, JsonValue>(),
+) {
+  const commandBus = new CommandEventBus();
   const emittedEvents: string[] = [];
   const runs = new Map<string, LoopRunSnapshot>();
+  const workspaces = new Map<
+    string,
+    { readonly sessionId: string; readonly rootPath: string }
+  >();
+  const registeredTools = new Map<string, ToolContribution>();
   const runSubscribers = new Map<
     string,
     Set<(event: LoopEvent) => void | Promise<void>>
   >();
+  const persistence = new PersistenceRegistry();
+  persistence.registerConfigStore(
+    "borg.bots.test-store",
+    new MemoryConfigStore(store),
+  );
+  const executionSecurity = new ExecutionSecurityService(
+    new StoreFacade(persistence),
+  );
+  await executionSecurity.initialize();
+
+  const executions: PluginExecutions = {
+    bind: (intent) =>
+      executionSecurity.bind("borg.bots", intent, "detached"),
+    grant: async (executionId) => {
+      await executionSecurity.snapshot("borg.bots", executionId);
+      return executionSecurity.createParentGrant({
+        parentExecutionId: executionId,
+        granteePluginId: "borg.bots",
+      });
+    },
+  };
   const start = vi.fn(async (input: LoopStartInput) => {
     const now = new Date().toISOString();
     const snapshot: LoopRunSnapshot = {
@@ -67,97 +204,114 @@ export function createBotHarness(store = new Map<string, JsonValue>()) {
     instructions: "Be useful.",
     preferredModels: ["borg.mock-llm:mock:scripted"],
   });
-  const bus = {
-    handle: (command: { readonly id: string }, handler: CommandHandler) => {
-      handlers.set(command.id, handler);
-      return {
-        dispose: () => {
-          handlers.delete(command.id);
-        },
-      };
-    },
-    invoke: async (command: { readonly id: string }, input: unknown) => {
-      const handler = handlers.get(command.id);
-      if (!handler) {
-        throw new Error(`Missing handler ${command.id}`);
-      }
-      return handler(input, new AbortController().signal);
-    },
-    provides: (command: { readonly id: string }) => handlers.has(command.id),
-    emit: async (event: { readonly id: string }, payload: unknown) => {
+  const bus: PluginBus = {
+    handle: <TCommand extends CommandDefinition>(
+      command: TCommand,
+      handler: (
+        input: CommandInput<TCommand>,
+        signal: AbortSignal,
+        envelope: BusEnvelope,
+      ) => CommandOutput<TCommand> | Promise<CommandOutput<TCommand>>,
+    ) =>
+      commandBus.handle(
+        "borg.bots",
+        new Set([command.id]),
+        command,
+        handler,
+      ),
+    invoke: async <TCommand extends CommandDefinition>(
+      command: TCommand,
+      input: CommandInput<TCommand>,
+      options?: { readonly signal?: AbortSignal | undefined },
+    ): Promise<CommandOutput<TCommand>> =>
+      commandBus.invoke(command, input, {
+        source: { kind: "plugin", id: "borg.bots" },
+        ...(options?.signal ? { signal: options.signal } : {}),
+      }),
+    provides: (command) => commandBus.provides(command),
+    emit: async <TEvent extends EventDefinition>(
+      event: TEvent,
+      payload: EventPayload<TEvent>,
+    ) => {
       emittedEvents.push(event.id);
-      await Promise.allSettled(
-        [...(eventHandlers.get(event.id) ?? [])].map(async (handler) =>
-          handler(payload),
-        ),
+      await commandBus.emit(
+        "borg.bots",
+        new Set([event.id]),
+        event,
+        payload,
       );
     },
-    on: (
-      event: { readonly id: string },
-      handler: (payload: unknown) => unknown,
-    ) => {
-      const subscribers = eventHandlers.get(event.id) ?? new Set();
-      subscribers.add(handler);
-      eventHandlers.set(event.id, subscribers);
-      return {
-        dispose: () => subscribers.delete(handler),
-      };
-    },
-  } as unknown as PluginBus;
-  const context = {
+    on: <TEvent extends EventDefinition>(
+      event: TEvent,
+      handler: (
+        payload: EventPayload<TEvent>,
+        envelope: BusEnvelope,
+      ) => void | Promise<void>,
+    ) => commandBus.on("borg.bots", event, handler),
+  };
+  const context: PluginContext = {
     pluginId: "borg.bots",
     signal: new AbortController().signal,
     bus,
-    store: {
-      get: async (key: string) => store.get(key),
-      set: async (key: string, value: JsonValue) => {
-        store.set(key, value);
-      },
-      delete: async (key: string) => {
-        store.delete(key);
-      },
-      list: async (prefix = ""): Promise<readonly StoreEntry[]> =>
-        [...store.entries()]
-          .filter(([key]) => key.startsWith(prefix))
-          .map(([key, value]) => ({ key, value })),
-      transaction: async (operations: readonly StoreTransactionOperation[]) => {
-        for (const operation of operations) {
-          if (operation.type === "set") {
-            store.set(operation.key, operation.value);
-          } else {
-            store.delete(operation.key);
-          }
-        }
-      },
-    },
+    store: createPluginStore(store),
+    executions,
     personas: {
-      get: (id: string) => (id === general.id ? general : undefined),
+      get: (id) => (id === general.id ? general : undefined),
       getDefault: () => general,
       list: () => [general],
+      setDefault: async () => unavailable("Persona mutation"),
+      create: async () => unavailable("Persona creation"),
+      update: async () => unavailable("Persona mutation"),
+      archive: async () => unavailable("Persona archival"),
     },
     workspace: {
-      allocate: (sessionId: string) => ({
-        sessionId,
-        rootPath: `/tmp/${sessionId}`,
-      }),
-      get: (sessionId: string) => ({
-        sessionId,
-        rootPath: `/tmp/${sessionId}`,
-      }),
+      allocate: (sessionId) => {
+        const workspace = {
+          sessionId,
+          rootPath: `.borg-bots-test/${sessionId}`,
+        };
+        workspaces.set(sessionId, workspace);
+        return workspace;
+      },
+      get: (sessionId) => workspaces.get(sessionId),
       listFiles: async () => [],
-      release: async () => undefined,
+      release: async (sessionId) => {
+        workspaces.delete(sessionId);
+      },
     },
     loops: {
       start,
-      get: (runId: string) => runs.get(runId),
+      get: (runId) => runs.get(runId),
       list: () => [...runs.values()],
-      pause: () => false,
-      resume: () => false,
+      pause: (runId) => {
+        const run = runs.get(runId);
+        if (
+          !run ||
+          (run.status !== "running" && run.status !== "waiting")
+        ) {
+          return false;
+        }
+        runs.set(runId, {
+          ...run,
+          status: "paused",
+          updatedAt: new Date().toISOString(),
+        });
+        return true;
+      },
+      resume: (runId) => {
+        const run = runs.get(runId);
+        if (!run || run.status !== "paused") {
+          return false;
+        }
+        runs.set(runId, {
+          ...run,
+          status: "running",
+          updatedAt: new Date().toISOString(),
+        });
+        return true;
+      },
       cancel,
-      subscribe: (
-        runId: string,
-        handler: (event: LoopEvent) => void | Promise<void>,
-      ): Disposable => {
+      subscribe: (runId, handler): Disposable => {
         const subscribers = runSubscribers.get(runId) ?? new Set();
         subscribers.add(handler);
         runSubscribers.set(runId, subscribers);
@@ -169,17 +323,87 @@ export function createBotHarness(store = new Map<string, JsonValue>()) {
       },
     },
     tools: {
-      register: () => ({ dispose: () => undefined }),
+      register: (tool) => {
+        if (registeredTools.has(tool.id)) {
+          throw new Error(`Tool ${tool.id} is already registered`);
+        }
+        registeredTools.set(tool.id, tool);
+        return {
+          dispose: () => {
+            if (registeredTools.get(tool.id) === tool) {
+              registeredTools.delete(tool.id);
+            }
+          },
+        };
+      },
+      registerProvider: () => unavailable("Tool provider registration"),
+      registerExecutionScope: () => unavailable("Tool execution scopes"),
+      invoke: async () => unavailable("Tool invocation"),
     },
-    config: {},
-    secrets: {},
-    persistence: {},
-    models: {},
-    interactions: {},
-    cost: {},
-    window: { show: () => undefined },
-    dataDir: "/tmp/borg-bots-test",
-    notify: () => undefined,
+    config: {
+      get: async () => unavailable("Config reads"),
+      update: async () => unavailable("Config writes"),
+      watch: () => unavailable("Config watches"),
+    },
+    secrets: {
+      get: async () => unavailable("Secret reads"),
+      set: async () => unavailable("Secret writes"),
+      delete: async () => unavailable("Secret deletion"),
+      has: async () => unavailable("Secret reads"),
+    },
+    persistence: {
+      registerConfigStore: () =>
+        unavailable("Config store registration"),
+      registerSecretStore: () =>
+        unavailable("Secret store registration"),
+    },
+    models: {
+      registerProvider: () => unavailable("Model provider registration"),
+      complete: async () => unavailable("Model completion"),
+    },
+    interactions: {
+      requestHumanInput: () => unavailable("Human input"),
+    },
+    cost: {
+      summary: () => unavailable("Cost summaries"),
+      subscribe: () => unavailable("Cost subscriptions"),
+    },
+    prompts: {
+      registerSlot: () => unavailable("Prompt slot registration"),
+    },
+    scanners: {
+      register: () => unavailable("Scanner registration"),
+    },
+    graphs: {
+      registerStep: () => unavailable("Graph step registration"),
+      registerTrigger: () => unavailable("Graph trigger registration"),
+      listSteps: () => unavailable("Graph step listing"),
+      listTriggers: () => unavailable("Graph trigger listing"),
+    },
+    scheduler: {
+      schedule: () => unavailable("Scheduling"),
+      scheduleCron: () => unavailable("Cron scheduling"),
+      cancel: () => unavailable("Schedule cancellation"),
+    },
+    runtime: {
+      spawn: () => unavailable("Runtime tasks"),
+    },
+    process: {
+      spawn: async () => unavailable("Processes"),
+    },
+    http: {
+      fetch: async () => unavailable("HTTP"),
+    },
+    channels: {
+      register: () => unavailable("Channel registration"),
+      send: async () => unavailable("Channel sends"),
+    },
+    webSockets: {
+      connect: async () => unavailable("WebSockets"),
+    },
+    window: { show: () => unavailable("Window display") },
+    dataDir: ".borg-bots-test",
+    notify: () => unavailable("Notifications"),
     logger: {
       debug: () => undefined,
       info: () => undefined,
@@ -187,12 +411,21 @@ export function createBotHarness(store = new Map<string, JsonValue>()) {
       error: () => undefined,
     },
     host: { version: "0.1.0", platform: "test" },
-  } as unknown as PluginContext;
+  };
 
-  const invoke = async <T>(command: { readonly id: string }, input: unknown) =>
-    bus.invoke(command as never, input as never) as Promise<T>;
+  const invoke = async <TCommand extends CommandDefinition>(
+    command: TCommand,
+    input: CommandInput<TCommand>,
+    parentExecutionGrant?: ParentExecutionGrant,
+  ): Promise<CommandOutput<TCommand>> =>
+    commandBus.invoke(command, input, {
+      ...(parentExecutionGrant ? { parentExecutionGrant } : {}),
+    });
 
-  const emitLoop = async (runId: string, event: LoopEvent): Promise<void> => {
+  const emitLoop = async (
+    runId: string,
+    event: LoopEvent,
+  ): Promise<void> => {
     const run = runs.get(runId);
     if (run && event.type === "state") {
       runs.set(runId, {
@@ -215,6 +448,7 @@ export function createBotHarness(store = new Map<string, JsonValue>()) {
     cancel,
     emitLoop,
     store,
+    executionSecurity,
     emittedEvents,
   };
 }

@@ -24,6 +24,7 @@ export default definePlugin({
     borg: "^0.1.0",
   },
   permissions: [
+    "executions.manage",
     "loops.start",
     "personas.read",
     "tools.invoke",
@@ -54,8 +55,13 @@ export default definePlugin({
   async activate(context) {
     const runtime = new BotRuntime(context);
 
-    context.bus.handle(botsCreate, async (input) => ({
-      bot: await runtime.create(input),
+    context.bus.handle(botsCreate, async (input, _signal, envelope) => ({
+      bot: await runtime.create({
+        ...input,
+        ...(envelope.parentExecutionGrant
+          ? { parentExecutionGrant: envelope.parentExecutionGrant }
+          : {}),
+      }),
     }));
     context.bus.handle(botsList, async () => ({
       bots: runtime.list(),
@@ -90,6 +96,10 @@ export default definePlugin({
         output: z.object({ bot: botSchema }).strict(),
         approval: "auto",
         sideEffect: true,
+        security: {
+          outputClassification: "restricted",
+          outputProvenance: "external",
+        },
         execute: (input) =>
           context.bus.invoke(botsCreate, input).then(({ bot }) => ({ bot })),
       }),
@@ -102,6 +112,10 @@ export default definePlugin({
         output: z.object({ bots: z.array(botSchema) }).strict(),
         approval: "auto",
         sideEffect: false,
+        security: {
+          outputClassification: "restricted",
+          outputProvenance: "external",
+        },
         execute: () => ({ bots: runtime.list() }),
       }),
     );
@@ -113,6 +127,10 @@ export default definePlugin({
         output: z.object({ bot: botSchema }).strict(),
         approval: "auto",
         sideEffect: true,
+        security: {
+          outputClassification: "restricted",
+          outputProvenance: "external",
+        },
         execute: ({ botId }, execution) =>
           context.bus.invoke(botsStart, { botId }, { signal: execution.signal }),
       }),
@@ -125,6 +143,10 @@ export default definePlugin({
         output: z.object({ bot: botSchema }).strict(),
         approval: "auto",
         sideEffect: true,
+        security: {
+          outputClassification: "restricted",
+          outputProvenance: "external",
+        },
         execute: ({ botId }, execution) =>
           context.bus.invoke(botsStop, { botId }, { signal: execution.signal }),
       }),
@@ -142,6 +164,10 @@ export default definePlugin({
           .strict(),
         approval: "auto",
         sideEffect: false,
+        security: {
+          outputClassification: "restricted",
+          outputProvenance: "external",
+        },
         execute: ({ botId }) => ({
           bot: runtime.get(botId) ?? null,
           logs: runtime.listLogs(botId),

@@ -4,14 +4,20 @@ import {
   defineEvent,
   feedbackAsk,
   feedbackResolved,
+  modelOperationKeySchema,
 } from "@borg/contracts";
 import {
   definePlugin,
   defineTool,
   type BorgPluginManifest,
   type ConfigStoreProvider,
+  type JsonValue,
+  type LlmProviderContribution,
   type PluginContext,
   type PluginProcess,
+  type ProviderEgress,
+  type StoreEntry,
+  type StoreTransactionOperation,
   z,
 } from "@borg/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
@@ -19,15 +25,20 @@ import {
   CommandEventBus,
   CommandInvocationError,
   CostLedger,
+  DurableModelCallJournal,
+  ExecutionSecurityService,
   InteractionService,
   LoopManager,
-  ModelRouter,
+  ModelGateway,
   NetworkService,
   PluginManager,
   PersistenceRegistry,
   ProcessSupervisor,
+  ScannerRegistry,
   satisfiesBorgEngine,
+  StoreFacade,
   ToolService,
+  TrustAuthorizer,
   type PluginSource,
 } from "../src";
 
@@ -36,6 +47,121 @@ const ping = defineCommand({
   input: z.object({ value: z.string() }),
   output: z.object({ echoed: z.string() }),
 });
+
+const TEST_PROVIDER_EGRESS = {
+  kind: "remote",
+  capacity: "internal",
+  destination: "https://models.test.invalid/v1/generate",
+} satisfies ProviderEgress;
+
+class MemoryConfigStore implements ConfigStoreProvider {
+  readonly configs = new Map<string, JsonValue>();
+  readonly values = new Map<string, Map<string, JsonValue>>();
+
+  async readConfig(namespace: string): Promise<unknown | undefined> {
+    return this.configs.get(namespace);
+  }
+
+  async writeConfig(namespace: string, value: JsonValue): Promise<void> {
+    this.configs.set(namespace, value);
+  }
+
+  async getStore(
+    namespace: string,
+    key: string,
+  ): Promise<JsonValue | undefined> {
+    return this.values.get(namespace)?.get(key);
+  }
+
+  async listStore(
+    namespace: string,
+    prefix: string,
+  ): Promise<readonly StoreEntry[]> {
+    const values =
+      this.values.get(namespace) ?? new Map<string, JsonValue>();
+    return [...values.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([key, value]) => ({ key, value }));
+  }
+
+  async applyStoreTransaction(
+    namespace: string,
+    operations: readonly StoreTransactionOperation[],
+  ): Promise<void> {
+    const next = new Map(this.values.get(namespace));
+    for (const operation of operations) {
+      if (operation.type === "set") {
+        next.set(operation.key, operation.value);
+      } else {
+        next.delete(operation.key);
+      }
+    }
+    this.values.set(namespace, next);
+  }
+}
+
+function createModelRuntime() {
+  const persistence = new PersistenceRegistry();
+  persistence.registerConfigStore(
+    "test.model-store",
+    new MemoryConfigStore(),
+  );
+  const store = new StoreFacade(persistence);
+  const interactions = new InteractionService();
+  const costs = new CostLedger();
+  const scanners = new ScannerRegistry();
+  scanners.register("test.security", {
+    id: "test.security.allow-model-io",
+    stages: ["model_input", "model_output"],
+    scan: async () => [],
+  });
+  const authorizer = new TrustAuthorizer(interactions);
+  const executions = new ExecutionSecurityService(store);
+  const tools = new ToolService(interactions, {
+    executions,
+    scanners,
+    authorizer,
+  });
+  const models = new ModelGateway({
+    journal: new DurableModelCallJournal(store),
+    executions,
+    scanners,
+    authorizer,
+    costs,
+  });
+  return { costs, executions, interactions, models, tools };
+}
+
+function registerModelProvider(
+  models: ModelGateway,
+  ownerPluginId: string,
+  provider: LlmProviderContribution,
+) {
+  return models.registerProvider(ownerPluginId, provider);
+}
+
+async function bindTestExecution(
+  executions: ExecutionSecurityService,
+  ownerPluginId: string,
+  operationId: string,
+) {
+  return await executions.bind(
+    ownerPluginId,
+    {
+      mode: "root",
+      subject: {
+        kind: "plugin-manager-test",
+        id: operationId,
+      },
+      classification: "internal",
+      provenance: {
+        kind: "plugin",
+        id: "borg.kernel.plugin-manager-test",
+      },
+    },
+    "detached",
+  );
+}
 
 function createSource(id: string, engine = "^0.1.0"): PluginSource {
   const manifest = {
@@ -440,12 +566,16 @@ describe("PluginManager", () => {
 
   it("revokes tool and model contributions before deactivation completes", async () => {
     const bus = new CommandEventBus();
-    const interactions = new InteractionService();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(new CostLedger());
+    const { executions, models, tools } = createModelRuntime();
+    const execution = await bindTestExecution(
+      executions,
+      "test.runtime-client",
+      "runtime-provider-revocation",
+    );
     const manager = new PluginManager(bus, "0.1.0", {
       tools,
       models,
+      executions,
       shutdownTimeoutMs: 1_000,
     });
     let finishDeactivation: (() => void) | undefined;
@@ -477,10 +607,14 @@ describe("PluginManager", () => {
             context.models.registerProvider({
               id: "test.runtime-provider",
               models: ["test:model"],
-              complete: async () => ({
-                content: "done",
-                usage: { inputTokens: 1, outputTokens: 1 },
-              }),
+              egress: TEST_PROVIDER_EGRESS,
+              async complete(_request, permit) {
+                await permit.commit();
+                return {
+                  content: "done",
+                  usage: { inputTokens: 1, outputTokens: 1 },
+                };
+              },
             });
           },
           deactivate: () =>
@@ -495,10 +629,17 @@ describe("PluginManager", () => {
     await expect(
       models.complete(
         {
+          ownerPluginId: "test.runtime-client",
+          feature: "provider-revocation",
+          runId: "run",
+        },
+        {
+          executionId: execution.id,
+          operationKey: modelOperationKeySchema.parse(
+            "plugin-manager/runtime-provider/revocation",
+          ),
           providerId: "test.runtime-provider",
           modelId: "test:model",
-          runId: "run",
-          correlationId: "run",
           messages: [{ role: "user", content: "test" }],
           tools: [],
         },
@@ -909,12 +1050,13 @@ describe("PluginManager", () => {
 
   it("routes permission-scoped auxiliary model completions without tools", async () => {
     const bus = new CommandEventBus();
-    const costs = new CostLedger();
-    const models = new ModelRouter(costs);
-    models.registerProvider("test.provider", {
+    const { costs, executions, models } = createModelRuntime();
+    registerModelProvider(models, "test.provider", {
       id: "test.provider",
       models: ["test:model"],
-      async complete(request) {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(request, permit) {
+        await permit.commit();
         expect(request.tools).toEqual([]);
         return {
           content: "auxiliary result",
@@ -935,7 +1077,18 @@ describe("PluginManager", () => {
       permissions: ["models.complete"],
       contributes: { commands: [complete.id] },
     } as const satisfies BorgPluginManifest;
-    const manager = new PluginManager(bus, "0.1.0", { models });
+    const execution = await bindTestExecution(
+      executions,
+      manifest.id,
+      "auxiliary-model-completion",
+    );
+    const operationKey = modelOperationKeySchema.parse(
+      "plugin-manager/auxiliary-completion",
+    );
+    const manager = new PluginManager(bus, "0.1.0", {
+      models,
+      executions,
+    });
     await manager.activate({
       manifest,
       loadMain: async () =>
@@ -944,11 +1097,13 @@ describe("PluginManager", () => {
           activate(context) {
             context.bus.handle(complete, async () => {
               const completion = await context.models.complete({
+                executionId: execution.id,
+                operationKey,
                 providerId: "test.provider",
                 modelId: "test:model",
                 messages: [{ role: "user", content: "summarize" }],
               });
-              return { content: completion.result.content ?? "" };
+              return { content: completion.content ?? "" };
             });
           },
         }),
@@ -963,20 +1118,23 @@ describe("PluginManager", () => {
 
   it("does not start a loop after its owning command times out", async () => {
     const bus = new CommandEventBus();
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const complete = vi.fn(async () => ({
-      content: "should not run",
-      usage: { inputTokens: 1, outputTokens: 1 },
-    }));
-    models.registerProvider("test.provider", {
+    const { costs, executions, models, tools } = createModelRuntime();
+    const complete: LlmProviderContribution["complete"] = vi.fn(
+      async (_request, permit) => {
+        await permit.commit();
+        return {
+          content: "should not run",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    );
+    registerModelProvider(models, "test.provider", {
       id: "test.provider",
       models: ["test:model"],
+      egress: TEST_PROVIDER_EGRESS,
       complete,
     });
-    const loops = new LoopManager(models, tools, costs);
+    const loops = new LoopManager(models, executions, tools, costs);
     const startLater = defineCommand({
       id: "test.start-later",
       input: z.object({}).strict(),
@@ -991,7 +1149,10 @@ describe("PluginManager", () => {
       permissions: ["loops.start"],
       contributes: { commands: [startLater.id] },
     } as const satisfies BorgPluginManifest;
-    const manager = new PluginManager(bus, "0.1.0", { loops });
+    const manager = new PluginManager(bus, "0.1.0", {
+      executions,
+      loops,
+    });
     await manager.activate({
       manifest,
       loadMain: async () =>
@@ -1000,7 +1161,22 @@ describe("PluginManager", () => {
           activate(context) {
             context.bus.handle(startLater, async () => {
               await new Promise((resolve) => setTimeout(resolve, 30));
-              await context.loops.start({ prompt: "too late" });
+              await context.loops.start({
+                prompt: "too late",
+                security: {
+                  kind: "root",
+                  subject: {
+                    kind: "plugin-command",
+                    id: startLater.id,
+                  },
+                  classification: "internal",
+                  provenance: {
+                    kind: "plugin",
+                    id: manifest.id,
+                  },
+                  operationPrefix: "plugin-manager/start-later",
+                },
+              });
               return { done: true };
             });
           },

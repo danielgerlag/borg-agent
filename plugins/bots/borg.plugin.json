@@ -7,6 +7,7 @@
   "main": "@borg/plugin-bots/main",
   "ui": "@borg/plugin-bots/ui",
   "permissions": [
+    "executions.manage",
     "loops.start",
     "personas.read",
     "tools.invoke",

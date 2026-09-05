@@ -30,6 +30,7 @@ export default definePlugin({
     borg: "^0.1.0",
   },
   permissions: [
+    "executions.manage",
     "graphs.readContributions",
     "loops.start",
     "models.complete",
@@ -108,8 +109,23 @@ export default definePlugin({
     context.bus.handle(graphsDeleteDefinition, async ({ graphId }) => ({
       deleted: await engine.deleteDefinition(graphId),
     }));
-    context.bus.handle(graphsLaunch, async (input) => ({
-      instanceId: await engine.launch(input),
+    context.bus.handle(graphsLaunch, async (input, _signal, envelope) => ({
+      instanceId: await engine.launch({
+        ...input,
+        security: envelope.parentExecutionGrant
+          ? {
+              kind: "child",
+              parent: envelope.parentExecutionGrant,
+            }
+          : {
+              kind: "root",
+              classification: "internal",
+              provenance: {
+                kind: "plugin",
+                id: "borg.graphs.manual",
+              },
+            },
+      }),
     }));
     context.bus.handle(graphsListRunning, ({ sessionId }) => ({
       instances: engine
@@ -186,6 +202,10 @@ export default definePlugin({
           .strict(),
         approval: "auto",
         sideEffect: false,
+        security: {
+          outputClassification: "restricted",
+          outputProvenance: "external",
+        },
         execute: ({ instanceId }) => ({
           instance: engine.getInstance(instanceId),
         }),
