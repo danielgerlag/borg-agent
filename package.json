@@ -13,10 +13,14 @@
     "start": "pnpm build && node scripts/run-electron.mjs",
     "typecheck": "pnpm build && pnpm -r --if-present typecheck && tsc -p tsconfig.tests.json",
     "test": "pnpm build && vitest run",
+    "test:coverage": "pnpm build && vitest run --coverage",
     "test:e2e": "pnpm build && playwright test",
+    "package:mac": "node scripts/package-macos.mjs",
+    "verify:package:mac": "node scripts/verify-packaged-app.mjs",
     "verify:graph-ui": "pnpm build && node scripts/verify-graph-designer.mjs"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.3.0",
     "@vitest/coverage-v8": "^4.1.11",

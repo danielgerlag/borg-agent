@@ -889,6 +889,8 @@ One plugin per provider owns auth/setup, HTTP protocol, tool-call conversion, ca
 
 `borg.mcp` owns stdio/SSE/streamable-HTTP clients, catalogs, persona-config consumption, session tool providers, and validated `ui://` resource discovery. `borg.mcp-apps` owns durable app snapshots, sandboxed frames, app-tool proxies, and invocation correlation. Chat consumes a generic embedded-content renderer contract and does not import either MCP plugin.
 
+MCP server annotations are untrusted metadata. They do not grant automatic approval or mark a call safe to replay. Every MCP tool call, including an MCP App call, enters the normal kernel approval path. An indeterminate transport failure is returned without retrying the tool. Network MCP servers may use plain HTTP without secret headers for local development. Header secret references require HTTPS unless the destination is an explicit loopback host.
+
 The kernel accepts a closed JSON Schema keyword set. It enforces each supported assertion, accepts `format` and the standard descriptive fields as annotations, and rejects every other keyword. The `format` annotation does not reject a tool input.
 
 MCP App content runs in an inner `sandbox="allow-scripts"` `srcdoc` inside an opaque-origin `borg-embedded:` outer sandbox. The outer document is a static Electron protocol response; validated app HTML reaches it only through the nonce-bound bridge. The inner document inherits the outer deny-by-default CSP, while an Electron session request filter denies nonlocal requests from the embedded frame tree even after an in-frame navigation. Both documents deny network, nested frames, forms, objects, workers, media, base URLs, referrers, and host capabilities. The narrow `postMessage` bridge validates source windows, origins, channel, app instance, per-frame nonce, JSON-RPC shape, depth, and byte limits. Requested app permissions and server-provided CSP domains are untrusted metadata and grant no capability in Slice 8. App calls require the configured server to remain available; there is no offline replay of MCP results or app writes.
@@ -1078,6 +1080,8 @@ Native tray menus are not uniformly automatable. Playwright can still:
 Platform-native icon/menu appearance remains a small documented manual check where OS automation cannot reach it.
 
 No E2E assertion may accept arbitrary console errors, catch and ignore a missing feature, or pass by polling only a backend state when the acceptance criterion is visible UI.
+
+GitHub CI runs type checking, source-only TypeScript coverage, and the complete Electron suite on macOS. Coverage excludes `.tsx` because renderer behavior is verified through Electron journeys; the V8 gate applies to executable `.ts` source with explicit statement, branch, function, and line thresholds. A manual workflow builds an unsigned macOS archive, launches the packaged app, completes setup, and opens the graph designer before uploading the artifact. Signing, notarization, and automatic updates remain release work.
 
 ## Slice discipline and boundary checks
 
