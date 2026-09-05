@@ -120,6 +120,10 @@ test("discovers MCP tools and completes an MCP App tool round trip", async () =>
 
   await page.getByTestId("nav-chat").click();
   await sendMessage("scenario:mcp");
+  await expect(page.getByTestId("interaction-overlay")).toContainText(
+    "mcp.mock.echo",
+  );
+  await page.getByTestId("interaction-allow").click();
   const echoActivity = page
     .locator('[data-testid="chat-message"][data-role="tool"]')
     .filter({ hasText: "Used mcp.mock.echo" });
@@ -146,6 +150,10 @@ test("discovers MCP tools and completes an MCP App tool round trip", async () =>
     .frameLocator("#app");
   await expect(app.getByTestId("mcp-app-state")).toHaveText("tool-result");
   await app.getByTestId("mcp-app-submit").click();
+  await expect(page.getByTestId("interaction-overlay")).toContainText(
+    "mcp.mock.app-only",
+  );
+  await page.getByTestId("interaction-allow").click();
   await expect(app.getByTestId("mcp-app-state")).toHaveText("app-only:true");
 
   let observedRequest: (() => void) | undefined;

@@ -2,7 +2,9 @@ import {
   z,
   type Disposable,
   type DynamicToolDefinition,
+  type ExecutionId,
   type JsonValue,
+  type ParentExecutionGrant,
   type PreparedToolCatalog,
   type ToolContribution,
   type ToolExecutionContext,
@@ -18,8 +20,9 @@ import {
   type Persona,
   type ToolSecurityMetadata,
 } from "@borg/contracts";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ClassificationService } from "./classification-service";
+import type { ExecutionSecurityService } from "./execution-security";
 import { InteractionService } from "./interaction-service";
 import {
   assertBoundedJsonSchema,
@@ -38,6 +41,7 @@ const DYNAMIC_TOOL_NAMESPACE = /^[a-z0-9]+(?:[.-][a-z0-9-]+)*$/;
 const PROVIDER_ID = /^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/;
 const MAX_JSON_DEPTH = 32;
 const MAX_JSON_NODES = 100_000;
+const MAX_PROVENANCE_ID_LENGTH = 240;
 
 /** An unlabelled tool result is internal, never public. */
 const DEFAULT_OUTPUT_CLASSIFICATION: DataClassification = "internal";
@@ -55,6 +59,7 @@ export interface ResolvedToolSecurity {
 
 export interface ToolServiceSecurity {
   readonly classification?: ClassificationService | undefined;
+  readonly executions?: ExecutionSecurityService | undefined;
   readonly scanners?: ScannerRegistry | undefined;
   readonly authorizer?: TrustAuthorizer | undefined;
 }
@@ -94,6 +99,7 @@ interface CatalogLease {
 
 interface RunToolPolicy {
   readonly ownerPluginId: string;
+  readonly executionId?: ExecutionId | undefined;
   readonly allowedToolGroups: readonly (readonly string[])[];
   readonly controller: AbortController;
   readonly sessionId?: string | undefined;
@@ -102,13 +108,14 @@ interface RunToolPolicy {
   readonly personaId?: string | undefined;
   readonly dynamicTools: Map<string, DynamicToolBinding>;
   readonly catalogs: CatalogLease[];
-  readonly classificationRun?: Disposable | undefined;
+  classificationRun?: Disposable | undefined;
   preparePromise?: Promise<void> | undefined;
   prepared: boolean;
 }
 
 interface ResolvedInvocation {
   readonly toolId: string;
+  readonly pluginId: string;
   readonly approval: "auto" | "ask" | "deny";
   readonly security: ResolvedToolSecurity;
   readonly workspaceAccess: boolean;
@@ -141,10 +148,14 @@ export interface ToolInvocationOptions {
   readonly toolCallId?: string | undefined;
   readonly runId?: string | undefined;
   readonly signal?: AbortSignal | undefined;
+  beforeAuthorization?(): void | Promise<void>;
+  beforeCommit?(): void | Promise<void>;
   onInteraction?(interactionId: string): void;
 }
 
 export interface RegisterRunPolicyContext {
+  readonly executionId?: ExecutionId | undefined;
+  readonly initialClassification?: DataClassification | undefined;
   readonly sessionId?: string | undefined;
   readonly workspaceRoot?: string | undefined;
   readonly additionalAllowedTools?: readonly string[] | undefined;
@@ -265,6 +276,14 @@ function deepFreeze<T>(value: T): T {
 
 function freezePersonaSnapshot(persona: Persona): Persona {
   return deepFreeze(structuredClone(persona));
+}
+
+function toolProvenanceId(toolId: string): string {
+  const readable = `tool:${toolId}`;
+  if (readable.length <= MAX_PROVENANCE_ID_LENGTH) {
+    return readable;
+  }
+  return `tool-sha256:${createHash("sha256").update(toolId).digest("hex")}`;
 }
 
 function freezeDefinition(
@@ -398,6 +417,7 @@ export class ToolService {
   readonly #runPolicies = new Map<string, RunToolPolicy>();
   readonly #closedCatalogs = new WeakSet<PreparedToolCatalog>();
   readonly #classification: ClassificationService | undefined;
+  readonly #executions: ExecutionSecurityService | undefined;
   readonly #scanners: ScannerRegistry | undefined;
   readonly #authorizer: TrustAuthorizer;
 
@@ -406,6 +426,7 @@ export class ToolService {
     security: ToolServiceSecurity = {},
   ) {
     this.#classification = security.classification;
+    this.#executions = security.executions;
     this.#scanners = security.scanners;
     this.#authorizer =
       security.authorizer ??
@@ -528,9 +549,17 @@ export class ToolService {
     const persona = context?.persona
       ? freezePersonaSnapshot(context.persona)
       : undefined;
-    const classificationRun = this.#classification?.openRun(runId);
+    const classificationRun =
+      context?.executionId &&
+      context.initialClassification === undefined
+        ? undefined
+        : this.#classification?.openRun(
+            runId,
+            context?.initialClassification,
+          );
     const policy: RunToolPolicy = {
       ownerPluginId,
+      executionId: context?.executionId,
       allowedToolGroups: Object.freeze(
         [
           allowedTools,
@@ -559,6 +588,41 @@ export class ToolService {
         }
       },
     };
+  }
+
+  bindExecutionClassification(
+    runId: string,
+    ownerPluginId: string,
+    executionId: ExecutionId,
+    classification: DataClassification,
+  ): void {
+    const policy = this.#runPolicies.get(runId);
+    if (
+      !policy ||
+      policy.ownerPluginId !== ownerPluginId ||
+      policy.executionId !== executionId
+    ) {
+      throw new Error(
+        `Tool policy for run ${runId} cannot bind execution ${executionId}`,
+      );
+    }
+    const parsedClassification =
+      dataClassificationSchema.parse(classification);
+    if (!this.#classification) {
+      return;
+    }
+    if (policy.classificationRun) {
+      this.#classification.raise(
+        runId,
+        parsedClassification,
+        `execution ${executionId} classification`,
+      );
+      return;
+    }
+    policy.classificationRun = this.#classification.openRun(
+      runId,
+      parsedClassification,
+    );
   }
 
   async prepareRun(runId: string): Promise<void> {
@@ -657,6 +721,10 @@ export class ToolService {
     return this.#tools.has(toolId);
   }
 
+  executionIdForRun(runId: string): ExecutionId | undefined {
+    return this.#runPolicies.get(runId)?.executionId;
+  }
+
   describeSecurity(
     toolId: string,
     runId?: string,
@@ -677,6 +745,7 @@ export class ToolService {
     options: ToolInvocationOptions,
   ): Promise<JsonValue> {
     options.signal?.throwIfAborted();
+    await options.beforeAuthorization?.();
     const runPolicy = options.runId
       ? this.#runPolicies.get(options.runId)
       : undefined;
@@ -687,6 +756,16 @@ export class ToolService {
       throw new ToolInvocationError(
         "forbidden",
         `Tool policy for run ${options.runId} is unavailable to ${options.callerPluginId}`,
+      );
+    }
+    if (
+      runPolicy?.executionId &&
+      this.#classification &&
+      !runPolicy.classificationRun
+    ) {
+      throw new ToolInvocationError(
+        "forbidden",
+        `Tool policy for run ${options.runId} has no execution classification`,
       );
     }
     const resolved = this.#resolveInvocation(toolId, options, runPolicy);
@@ -720,6 +799,7 @@ export class ToolService {
     }
 
     const toolCallId = options.toolCallId ?? randomUUID();
+    const outputProvenanceId = toolProvenanceId(toolId);
     const preflight = await this.#authorize(
       {
         pluginId: options.callerPluginId,
@@ -756,7 +836,14 @@ export class ToolService {
         `Tool ${toolId} is no longer available`,
       );
     }
-    // The watermark may have moved while the prompt was open.
+    let parentExecutionGrant: ParentExecutionGrant | undefined;
+    if (runPolicy?.executionId && this.#executions) {
+      parentExecutionGrant = await this.#executions.createParentGrant({
+        parentExecutionId: runPolicy.executionId,
+        granteePluginId: resolved.pluginId,
+      });
+    }
+    await options.beforeCommit?.();
     if (preflight.commitment && !preflight.commitment.recheck()) {
       throw new ToolInvocationError("denied", `Tool ${toolId} was denied`, {
         reasons: [
@@ -764,11 +851,19 @@ export class ToolService {
         ],
       });
     }
+    if (!resolved.isCurrent()) {
+      throw new ToolInvocationError(
+        "unavailable",
+        `Tool ${toolId} is no longer available`,
+      );
+    }
 
     try {
       const result = await resolved.execute(jsonInput, {
         toolCallId,
         runId: options.runId,
+        executionId: runPolicy?.executionId,
+        parentExecutionGrant,
         sessionId: runPolicy?.sessionId,
         workspaceRoot: resolved.workspaceAccess
           ? runPolicy?.workspaceRoot
@@ -788,6 +883,20 @@ export class ToolService {
           options.runId,
           resolved.security.outputClassification,
           `tool ${toolId} output`,
+        );
+      }
+      if (runPolicy?.executionId && this.#executions) {
+        await this.#executions.observe(
+          runPolicy.ownerPluginId,
+          runPolicy.executionId,
+          {
+            classification: resolved.security.outputClassification,
+            provenance: {
+              kind: "plugin",
+              id: outputProvenanceId,
+            },
+            reason: `Tool ${toolId} produced a result`,
+          },
         );
       }
       await this.#reviewOutput(
@@ -901,6 +1010,7 @@ export class ToolService {
     if (registration) {
       return {
         toolId,
+        pluginId: registration.pluginId,
         approval: registration.tool.approval,
         security: registration.security,
         workspaceAccess: registration.workspaceAccess,
@@ -943,6 +1053,7 @@ export class ToolService {
     }
     return {
       toolId,
+      pluginId: binding.pluginId,
       approval: binding.definition.approval,
       security: binding.security,
       workspaceAccess: binding.workspaceAccess,

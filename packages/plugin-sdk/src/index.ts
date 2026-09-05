@@ -9,18 +9,32 @@ import type {
   DataClassification,
   EventDefinition,
   EventPayload,
+  ExecutionCloseInput,
+  ExecutionId,
+  ExecutionObservationInput,
+  ExecutionResumeBindInput,
+  ExecutionRootBindInput,
+  ExecutionSecuritySummary,
+  ExecutionSubject,
   EmbeddedContentSnapshot,
   FeedbackAnswer,
   LoopEvent,
   LoopRunSnapshot,
   LoopStartInput,
+  ModelCompletionRequest,
+  ModelCompletionResult,
   ModelDescriptor,
+  ModelGatewayRequest,
+  ModelOperationKey,
+  ModelUsage,
+  ParentExecutionGrant,
   PendingInteraction,
   Persona,
+  ProviderEgress,
   PromptScanFinding,
   PromptScanStage,
+  ReleasedModelCompletion,
   ToolSecurityMetadata,
-  UsageRecord,
   WorkspaceFile,
   DynamicToolDefinition,
   ToolApproval,
@@ -33,9 +47,24 @@ export type {
   ChannelCapacity,
   DataClassification,
   DynamicToolDefinition,
+  ExecutionCloseInput,
+  ExecutionId,
+  ExecutionObservationInput,
+  ExecutionSecuritySummary,
+  ExecutionSubject,
+  ModelCompletionRequest,
+  ModelCompletionResult,
+  ModelGatewayRequest,
+  ModelMessage,
+  ModelOperationKey,
+  ModelToolCall,
+  ModelUsage,
+  ParentExecutionGrant,
+  ProviderEgress,
   PromptScanAction,
   PromptScanFinding,
   PromptScanStage,
+  ReleasedModelCompletion,
   ToolApproval,
   ToolSecurityMetadata,
 } from "@borg/contracts";
@@ -125,6 +154,8 @@ export interface NotificationRequest {
 export interface ToolExecutionContext {
   readonly toolCallId: string;
   readonly runId?: string | undefined;
+  readonly executionId?: ExecutionId | undefined;
+  readonly parentExecutionGrant?: ParentExecutionGrant | undefined;
   readonly sessionId?: string | undefined;
   readonly workspaceRoot?: string | undefined;
   readonly signal: AbortSignal;
@@ -199,6 +230,7 @@ export interface PluginTools {
   registerProvider(provider: ToolProviderContribution): Disposable;
   registerExecutionScope(options: {
     readonly runId: string;
+    readonly executionId?: ExecutionId | undefined;
     readonly sessionId: string;
     readonly personaId?: string | undefined;
     readonly allowedTools?: readonly string[] | undefined;
@@ -213,51 +245,34 @@ export interface PluginTools {
   ): Promise<JsonValue>;
 }
 
-export interface ModelMessage {
-  readonly role: "system" | "user" | "assistant" | "tool";
-  readonly content: string;
-  readonly toolCallId?: string | undefined;
-  readonly toolCalls?: readonly ModelToolCall[] | undefined;
+export interface ProviderDispatchPermit {
+  commit(): Promise<void>;
 }
 
-export interface ModelToolCall {
-  readonly id: string;
-  readonly name: string;
-  readonly input: unknown;
-}
-
-export interface ModelCompletionRequest {
-  readonly modelId: string;
-  readonly messages: readonly ModelMessage[];
-  readonly tools: readonly {
-    readonly id: string;
-    readonly description: string;
-    readonly inputSchema: JsonValue;
-  }[];
-}
-
-export interface ModelCompletionResult {
-  readonly content?: string | undefined;
-  readonly toolCalls?: readonly ModelToolCall[] | undefined;
-  readonly usage: {
-    readonly inputTokens: number;
-    readonly outputTokens: number;
-    readonly cachedInputTokens?: number | undefined;
-    readonly cacheWriteTokens?: number | undefined;
-    readonly amount?: number | undefined;
-    readonly currency?: string | undefined;
-  };
+export class IndeterminateModelCallError extends Error {
+  constructor(
+    readonly executionId: ExecutionId,
+    readonly operationKey: ModelOperationKey,
+    readonly phase: "dispatched" | "output-pending",
+  ) {
+    super(
+      `Model operation ${operationKey} has an indeterminate provider result`,
+    );
+    this.name = "IndeterminateModelCallError";
+  }
 }
 
 export interface LlmProviderContribution {
   readonly id: string;
   readonly models: readonly string[];
+  readonly egress: ProviderEgress;
   complete(
     request: ModelCompletionRequest,
+    permit: ProviderDispatchPermit,
     signal: AbortSignal,
-    onToken?: ((token: string) => void | Promise<void>) | undefined,
+    onRawToken?: ((token: string) => void | Promise<void>) | undefined,
     onUsage?:
-      | ((usage: ModelCompletionResult["usage"]) => void | Promise<void>)
+      | ((usage: ModelUsage) => void | Promise<void>)
       | undefined,
   ): Promise<ModelCompletionResult>;
 }
@@ -265,17 +280,35 @@ export interface LlmProviderContribution {
 export interface PluginModels {
   registerProvider(provider: LlmProviderContribution): Disposable;
   complete(
-    request: {
-      readonly providerId?: string | undefined;
-      readonly modelId?: string | undefined;
-      readonly messages: readonly ModelMessage[];
-    },
+    request: Omit<ModelGatewayRequest, "tools">,
     signal?: AbortSignal,
-  ): Promise<{
-    readonly providerId: string;
-    readonly modelId: string;
-    readonly result: ModelCompletionResult;
-  }>;
+  ): Promise<ReleasedModelCompletion>;
+}
+
+export type ExecutionBindIntent =
+  | ExecutionRootBindInput
+  | ExecutionResumeBindInput
+  | {
+      readonly mode: "child";
+      readonly subject: ExecutionSubject;
+      readonly parent: ParentExecutionGrant;
+    };
+
+export interface ExecutionBinding {
+  readonly id: ExecutionId;
+  observe(
+    input: ExecutionObservationInput,
+  ): Promise<ExecutionSecuritySummary>;
+  importDetachedResult(
+    childExecutionId: ExecutionId,
+  ): Promise<ExecutionSecuritySummary>;
+  summary(): Promise<ExecutionSecuritySummary>;
+  close(input: ExecutionCloseInput): Promise<ExecutionSecuritySummary>;
+}
+
+export interface PluginExecutions {
+  bind(intent: ExecutionBindIntent): Promise<ExecutionBinding>;
+  grant(executionId: ExecutionId): Promise<ParentExecutionGrant>;
 }
 
 export interface PluginLoops {
@@ -336,7 +369,6 @@ export interface PluginInteractions {
 }
 
 export interface PluginCost {
-  record(record: UsageRecord): void;
   summary(): CostSummary;
   subscribe(handler: (summary: CostSummary) => void | Promise<void>): Disposable;
 }
@@ -636,6 +668,7 @@ export interface PluginContext {
   readonly store: PluginStore;
   readonly secrets: PluginSecrets;
   readonly persistence: PluginPersistenceContributions;
+  readonly executions: PluginExecutions;
   readonly tools: PluginTools;
   readonly models: PluginModels;
   readonly loops: PluginLoops;

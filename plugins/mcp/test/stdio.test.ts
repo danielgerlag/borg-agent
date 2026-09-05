@@ -70,7 +70,7 @@ describe("MCP stdio fixture", () => {
         .some((tool) => tool.id.endsWith(".app-only")),
     ).toBe(false);
     const echo = catalog.definitions.find((tool) => tool.id === "mcp.mock.echo");
-    expect(echo?.approval).toBe("auto");
+    expect(echo?.approval).toBe("ask");
 
     const echoed = await catalog.execute(
       "mcp.mock.echo",

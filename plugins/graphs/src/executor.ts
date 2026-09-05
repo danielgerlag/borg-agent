@@ -11,20 +11,26 @@ import {
   graphInstanceStarted,
   graphInstanceUpdated,
   graphStepCompleted,
+  executionIdSchema,
   type GraphDefinition,
   type GraphInstance,
   type GraphNode,
   type GraphNodeState,
   type LoopRunSnapshot,
+  type DataClassification,
+  type ExecutionId,
+  type ProvenanceSeed,
 } from "@borg/contracts";
 import {
+  IndeterminateModelCallError,
   type Disposable,
   type GraphStepContribution,
   type GraphTriggerContribution,
   type PluginContext,
+  type ParentExecutionGrant,
   z,
 } from "@borg/plugin-sdk";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export const GRAPH_ENGINE_ID = "borg.graphs.hivemind-v1";
 
@@ -35,22 +41,49 @@ const TRIGGER_CURSOR_PREFIX = "trigger-schedules/";
 const INBOUND_DEDUP_PREFIX = "trigger-inbound/";
 const MAX_NODE_EXECUTIONS = 1_000;
 const MAX_CONCURRENT_NODES = 4;
+const OPERATION_ID_SEGMENT_MAX_LENGTH = 48;
 
 const edgeStateSchema = z.enum(["pending", "active", "inactive"]);
 type EdgeState = z.infer<typeof edgeStateSchema>;
 
 interface InstanceRecord {
-  version: 1;
+  version: 2;
   instance: GraphInstance;
+  security: {
+    executionId: ExecutionId;
+  };
   definition: GraphDefinition;
   edgeStates: Record<string, EdgeState>;
   forcedNodes: string[];
   executionCount: number;
   startAnnounced: boolean;
   terminalAnnounced: boolean;
+  preservedAttemptNodes: string[];
+  agentExecutionIds: Record<string, ExecutionId>;
+  pendingClose?: {
+    outcome:
+      | "completed"
+      | "failed"
+      | "cancelled"
+      | "interrupted";
+    reason: string;
+  } | undefined;
 }
 
 type GraphJson = Exclude<GraphNodeState["output"], undefined>;
+
+function operationIdSegment(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const prefix =
+    normalized.slice(0, OPERATION_ID_SEGMENT_MAX_LENGTH) || "node";
+  return `${prefix}-${createHash("sha256")
+    .update(value)
+    .digest("hex")
+    .slice(0, 12)}`;
+}
 
 const persistedDefinitionSchema = z
   .object({
@@ -59,7 +92,7 @@ const persistedDefinitionSchema = z
   })
   .strict();
 
-const persistedInstanceSchema = z
+const legacyPersistedInstanceSchema = z
   .object({
     version: z.literal(1),
     instance: graphInstanceSchema,
@@ -71,6 +104,49 @@ const persistedInstanceSchema = z
     terminalAnnounced: z.boolean().default(false),
   })
   .strict();
+
+const persistedInstanceSchema = z
+  .object({
+    version: z.literal(2),
+    instance: graphInstanceSchema,
+    security: z
+      .object({
+        executionId: executionIdSchema,
+      })
+      .strict(),
+    definition: graphDefinitionSchema,
+    edgeStates: z.record(z.string(), edgeStateSchema),
+    forcedNodes: z.array(z.string()),
+    executionCount: z.number().int().nonnegative(),
+    startAnnounced: z.boolean(),
+    terminalAnnounced: z.boolean().default(false),
+    preservedAttemptNodes: z.array(z.string()).default([]),
+    agentExecutionIds: z.record(z.string(), executionIdSchema).default({}),
+    pendingClose: z
+      .object({
+        outcome: z.enum([
+          "completed",
+          "failed",
+          "cancelled",
+          "interrupted",
+        ]),
+        reason: z.string().min(1),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+type GraphLaunchSecurity =
+  | {
+      readonly kind: "root";
+      readonly classification: DataClassification;
+      readonly provenance: ProvenanceSeed;
+    }
+  | {
+      readonly kind: "child";
+      readonly parent: ParentExecutionGrant;
+    };
 
 const triggerCursorSchema = z
   .object({
@@ -748,6 +824,15 @@ export class HiveMindGraphEngine {
       });
     }
     for (const record of this.#instances.values()) {
+      if (record.pendingClose) {
+        await this.#closeExecution(
+          record,
+          record.pendingClose.outcome,
+          record.pendingClose.reason,
+        );
+        delete record.pendingClose;
+        await this.#persistInstance(record);
+      }
       if (
         record.instance.status === "running" ||
         record.instance.status === "waiting"
@@ -759,6 +844,13 @@ export class HiveMindGraphEngine {
         !record.terminalAnnounced
       ) {
         this.#spawnTerminalAnnouncement(record);
+      }
+      if (
+        record.instance.status === "completed" ||
+        record.instance.status === "failed" ||
+        record.instance.status === "cancelled"
+      ) {
+        await this.#releaseWorkspace(record.instance.id);
       }
     }
   }
@@ -892,6 +984,7 @@ export class HiveMindGraphEngine {
     sessionId?: string | undefined;
     input?: Record<string, GraphJson> | undefined;
     trigger?: string | undefined;
+    security: GraphLaunchSecurity;
   }, persistence?: {
     readonly dedupKey: string;
     readonly dedupValue: GraphJson;
@@ -924,6 +1017,26 @@ export class HiveMindGraphEngine {
 
     const now = new Date().toISOString();
     const instanceId = randomUUID();
+    const execution = await this.context.executions.bind(
+      input.security.kind === "root"
+        ? {
+            mode: "root",
+            subject: {
+              kind: "graph-instance",
+              id: instanceId,
+            },
+            classification: input.security.classification,
+            provenance: input.security.provenance,
+          }
+        : {
+            mode: "child",
+            subject: {
+              kind: "graph-instance",
+              id: instanceId,
+            },
+            parent: input.security.parent,
+          },
+    );
     const instance = graphInstanceSchema.parse({
       id: instanceId,
       graphId: definition.id,
@@ -945,8 +1058,11 @@ export class HiveMindGraphEngine {
       updatedAt: now,
     });
     const record: InstanceRecord = {
-      version: 1,
+      version: 2,
       instance,
+      security: {
+        executionId: execution.id,
+      },
       definition: cloneDefinition(definition),
       edgeStates: Object.fromEntries(
         definition.edges.map(({ id }) => [id, "pending" as const]),
@@ -955,6 +1071,8 @@ export class HiveMindGraphEngine {
       executionCount: 0,
       startAnnounced: false,
       terminalAnnounced: false,
+      preservedAttemptNodes: [],
+      agentExecutionIds: {},
     };
 
     this.context.workspace.allocate(instanceId);
@@ -980,6 +1098,10 @@ export class HiveMindGraphEngine {
     } catch (error) {
       await this.#disposeToolScope(instanceId);
       await this.context.workspace.release(instanceId).catch(() => undefined);
+      await execution.close({
+        outcome: "deleted",
+        reason: `Graph ${instanceId} could not be persisted`,
+      });
       throw error;
     }
     this.#instances.set(instanceId, record);
@@ -1011,7 +1133,15 @@ export class HiveMindGraphEngine {
       }
       await this.#disposeDelay(instanceId, state.nodeId);
     }
-    await this.#persistInstance(record);
+    await this.#closeOpenAgentExecutions(
+      record,
+      `Graph ${instanceId} was cancelled`,
+    );
+    await this.#persistAndCloseExecution(
+      record,
+      "cancelled",
+      `Graph ${instanceId} was cancelled`,
+    );
     await this.context.bus.emit(graphInstanceUpdated, {
       instance: record.instance,
     });
@@ -1061,6 +1191,24 @@ export class HiveMindGraphEngine {
               message: asJsonValue(payload),
             },
             trigger: "incoming_message",
+            security: payload.classification
+              ? {
+                  kind: "root",
+                  classification: payload.classification,
+                  provenance: {
+                    kind: "channel",
+                    id: payload.channelId,
+                    messageId: payload.id,
+                  },
+                }
+              : {
+                  kind: "root",
+                  classification: "restricted",
+                  provenance: {
+                    kind: "legacy",
+                    id: `inbound-message:${payload.id}`,
+                  },
+                },
           },
           {
             dedupKey,
@@ -1145,7 +1293,10 @@ export class HiveMindGraphEngine {
   async #loadInstances(): Promise<void> {
     for (const stored of await this.context.store.list(INSTANCE_PREFIX)) {
       try {
-        const parsed = persistedInstanceSchema.parse(stored.value);
+        const current = persistedInstanceSchema.safeParse(stored.value);
+        const parsed = current.success
+          ? current.data
+          : legacyPersistedInstanceSchema.parse(stored.value);
         const definition = this.#validateDefinition(parsed.definition);
         if (
           parsed.instance.engineId !== GRAPH_ENGINE_ID ||
@@ -1156,16 +1307,89 @@ export class HiveMindGraphEngine {
             `Persisted graph instance ${parsed.instance.id} has an invalid definition snapshot`,
           );
         }
-        this.#instances.set(parsed.instance.id, {
-          version: 1,
-          instance: parsed.instance,
-          definition,
-          edgeStates: parsed.edgeStates,
-          forcedNodes: [...parsed.forcedNodes],
-          executionCount: parsed.executionCount,
-          startAnnounced: parsed.startAnnounced,
-          terminalAnnounced: parsed.terminalAnnounced,
-        });
+        const record: InstanceRecord = current.success
+          ? {
+              version: 2,
+              instance: parsed.instance,
+              security: current.data.security,
+              definition,
+              edgeStates: parsed.edgeStates,
+              forcedNodes: [...parsed.forcedNodes],
+              executionCount: parsed.executionCount,
+              startAnnounced: parsed.startAnnounced,
+              terminalAnnounced: parsed.terminalAnnounced,
+              preservedAttemptNodes: [
+                ...current.data.preservedAttemptNodes,
+              ],
+              agentExecutionIds: {
+                ...current.data.agentExecutionIds,
+              },
+              ...(current.data.pendingClose
+                ? { pendingClose: current.data.pendingClose }
+                : {}),
+            }
+          : {
+              version: 2,
+              instance: parsed.instance,
+              security: {
+                executionId: (
+                  await this.context.executions.bind({
+                    mode: "root",
+                    subject: {
+                      kind: "graph-instance",
+                      id: parsed.instance.id,
+                    },
+                    classification: "restricted",
+                    provenance: {
+                      kind: "legacy",
+                      id: `graph-instance:${parsed.instance.id}`,
+                    },
+                  })
+                ).id,
+              },
+              definition,
+              edgeStates: parsed.edgeStates,
+              forcedNodes: [...parsed.forcedNodes],
+              executionCount: parsed.executionCount,
+              startAnnounced: parsed.startAnnounced,
+              terminalAnnounced: parsed.terminalAnnounced,
+              preservedAttemptNodes: [],
+              agentExecutionIds: {},
+            };
+        if (!current.success) {
+          const legacyPrompt = record.instance.nodeStates.find(
+            (state) =>
+              (state.status === "running" ||
+                state.status === "waiting") &&
+              this.#node(record, state.nodeId).kind === "invoke_prompt",
+          );
+          if (legacyPrompt) {
+            const completedAt = new Date().toISOString();
+            legacyPrompt.status = "failed";
+            legacyPrompt.error =
+              "Borg stopped after a model request may have crossed its provider boundary; automatic replay was blocked.";
+            legacyPrompt.completedAt = completedAt;
+            record.instance.status = "failed";
+            record.instance.error = `Step ${legacyPrompt.nodeId} has an indeterminate result and requires a new graph run.`;
+            record.instance.completedAt = completedAt;
+            record.instance.updatedAt = completedAt;
+          }
+        }
+        this.#instances.set(parsed.instance.id, record);
+        if (!current.success) {
+          await this.#persistInstance(record);
+          if (
+            record.instance.status === "completed" ||
+            record.instance.status === "failed" ||
+            record.instance.status === "cancelled"
+          ) {
+            await this.#persistAndCloseExecution(
+              record,
+              record.instance.status,
+              `Migrated legacy graph ${record.instance.id}`,
+            );
+          }
+        }
       } catch (error) {
         this.context.logger.warn(
           `Skipped unavailable graph instance at ${stored.key}`,
@@ -1231,7 +1455,6 @@ export class HiveMindGraphEngine {
       return (
         (state.status === "running" &&
           (kind === "call_tool" ||
-            kind === "invoke_prompt" ||
             (contributedStep !== undefined &&
               contributedStep.replaySafe !== true))) ||
         ((state.status === "running" || state.status === "waiting") &&
@@ -1248,7 +1471,27 @@ export class HiveMindGraphEngine {
       record.instance.error = `Step ${indeterminate.nodeId} has an indeterminate result and requires a new graph run.`;
       record.instance.completedAt = completedAt;
       record.instance.updatedAt = completedAt;
-      await this.#persistInstance(record);
+      const childExecutionId =
+        record.agentExecutionIds[
+          `${indeterminate.nodeId}:${indeterminate.attempts}`
+        ];
+      if (childExecutionId) {
+        const child = await this.context.executions.bind({
+          mode: "resume",
+          executionId: childExecutionId,
+        });
+        if ((await child.summary()).lifecycle.state === "open") {
+          await child.close({
+            outcome: "interrupted",
+            reason: `Graph agent ${indeterminate.nodeId} was interrupted`,
+          });
+        }
+      }
+      await this.#persistAndCloseExecution(
+        record,
+        "interrupted",
+        `Graph ${record.instance.id} stopped with an indeterminate step`,
+      );
       await this.#releaseWorkspace(record.instance.id);
       this.#spawnTerminalAnnouncement(record);
       return;
@@ -1266,6 +1509,12 @@ export class HiveMindGraphEngine {
         continue;
       }
       if (state.status === "running" || state.status === "waiting") {
+        if (
+          this.#node(record, state.nodeId).kind === "invoke_prompt" &&
+          !record.preservedAttemptNodes.includes(state.nodeId)
+        ) {
+          record.preservedAttemptNodes.push(state.nodeId);
+        }
         state.status = "pending";
         if (!record.forcedNodes.includes(state.nodeId)) {
           record.forcedNodes.push(state.nodeId);
@@ -1512,7 +1761,13 @@ export class HiveMindGraphEngine {
     }
     const state = this.#state(record, node.id);
     state.status = "running";
-    state.attempts += 1;
+    const preservedAttemptIndex =
+      record.preservedAttemptNodes.indexOf(node.id);
+    if (preservedAttemptIndex >= 0) {
+      record.preservedAttemptNodes.splice(preservedAttemptIndex, 1);
+    } else {
+      state.attempts += 1;
+    }
     state.startedAt ??= new Date().toISOString();
     delete state.completedAt;
     delete state.error;
@@ -1567,6 +1822,17 @@ export class HiveMindGraphEngine {
         throw error;
       }
       if (this.#isTerminal(record)) {
+        return "terminal";
+      }
+      if (error instanceof IndeterminateModelCallError) {
+        state.status = "failed";
+        state.error =
+          "The model request has an indeterminate provider result and cannot be retried automatically.";
+        state.completedAt = new Date().toISOString();
+        await this.#fail(
+          record,
+          `Step ${node.id} has an indeterminate result and requires a new graph run.`,
+        );
         return "terminal";
       }
       return this.#handleNodeError(record, node, state, error);
@@ -1654,6 +1920,8 @@ export class HiveMindGraphEngine {
         const system = optionalString(resolved, "system");
         const completion = await this.context.models.complete(
           {
+            executionId: record.security.executionId,
+            operationKey: `graph/${record.instance.id}/node/${operationIdSegment(node.id)}/attempt/${state.attempts}/prompt`,
             ...(optionalString(resolved, "providerId")
               ? { providerId: optionalString(resolved, "providerId") }
               : {}),
@@ -1669,7 +1937,7 @@ export class HiveMindGraphEngine {
           },
           signal,
         );
-        const content = completion.result.content;
+        const content = completion.content;
         if (content === undefined) {
           throw new Error(`Prompt step ${node.id} returned no content`);
         }
@@ -1781,6 +2049,25 @@ export class HiveMindGraphEngine {
       );
     }
 
+    const attemptKey = `${node.id}:${state.attempts}`;
+    let childExecutionId = record.agentExecutionIds[attemptKey];
+    if (!childExecutionId) {
+      const parent = await this.context.executions.grant(
+        record.security.executionId,
+      );
+      const child = await this.context.executions.bind({
+        mode: "child",
+        subject: {
+          kind: "graph-agent",
+          id: `${record.instance.id}/${node.id}/${state.attempts}`,
+        },
+        parent,
+      });
+      childExecutionId = child.id;
+      record.agentExecutionIds[attemptKey] = child.id;
+      await this.#checkpoint(record);
+    }
+
     let snapshot = state.childRunId
       ? this.context.loops.get(state.childRunId)
       : undefined;
@@ -1814,22 +2101,51 @@ export class HiveMindGraphEngine {
           : {}),
         allowedTools,
         sessionId: record.instance.id,
+        security: {
+          kind: "bound",
+          executionId: childExecutionId,
+          operationPrefix: `graph/${record.instance.id}/node/${operationIdSegment(node.id)}/attempt/${state.attempts}/agent`,
+        },
       });
       state.childRunId = snapshot.id;
+    }
+    if (signal.aborted || this.#isTerminal(record)) {
+      this.context.loops.cancel(snapshot.id);
+      await this.#closeChildExecution(
+        childExecutionId,
+        "cancelled",
+        `Graph agent ${node.id} was cancelled before it started`,
+      );
+      throw abortReason(signal);
     }
     await this.#markWaiting(record, state);
     const terminal = await this.#awaitLoop(snapshot.id, signal);
     if (terminal.status === "failed") {
+      await this.#closeChildExecution(
+        childExecutionId,
+        "failed",
+        `Agent run ${terminal.id} failed`,
+      );
       throw new Error(
         terminal.error ?? `Agent run ${terminal.id} failed without an error`,
       );
     }
     if (terminal.status === "cancelled") {
+      await this.#closeChildExecution(
+        childExecutionId,
+        "cancelled",
+        `Agent run ${terminal.id} was cancelled`,
+      );
       throw new Error(`Agent run ${terminal.id} was cancelled`);
     }
     if (terminal.status !== "completed") {
       throw new Error(`Agent run ${terminal.id} ended in ${terminal.status}`);
     }
+    await this.#closeChildExecution(
+      childExecutionId,
+      "completed",
+      `Agent run ${terminal.id} completed`,
+    );
     return asJsonValue({
       runId: terminal.id,
       output: terminal.output ?? "",
@@ -1959,6 +2275,9 @@ export class HiveMindGraphEngine {
     record: InstanceRecord,
     state: GraphNodeState,
   ): Promise<void> {
+    if (this.#isTerminal(record)) {
+      throw new Error(`Graph ${record.instance.id} is already terminal`);
+    }
     state.status = "waiting";
     record.instance.status = "waiting";
     await this.#checkpoint(record);
@@ -2325,7 +2644,15 @@ export class HiveMindGraphEngine {
     delete record.instance.error;
     record.instance.completedAt = completedAt;
     record.instance.updatedAt = completedAt;
-    await this.#persistInstance(record);
+    await this.#closeOpenAgentExecutions(
+      record,
+      `Graph ${record.instance.id} completed before an agent child`,
+    );
+    await this.#persistAndCloseExecution(
+      record,
+      "completed",
+      `Graph ${record.instance.id} completed`,
+    );
     await this.context.bus.emit(graphInstanceUpdated, {
       instance: record.instance,
     });
@@ -2363,7 +2690,15 @@ export class HiveMindGraphEngine {
     record.instance.error = message;
     record.instance.completedAt = completedAt;
     record.instance.updatedAt = completedAt;
-    await this.#persistInstance(record);
+    await this.#closeOpenAgentExecutions(
+      record,
+      `Graph ${record.instance.id} failed before an agent child`,
+    );
+    await this.#persistAndCloseExecution(
+      record,
+      "failed",
+      `Graph ${record.instance.id} failed`,
+    );
     await this.context.bus.emit(graphInstanceUpdated, {
       instance: record.instance,
     });
@@ -2437,12 +2772,78 @@ export class HiveMindGraphEngine {
     });
   }
 
+  async #closeExecution(
+    record: InstanceRecord,
+    outcome:
+      | "completed"
+      | "failed"
+      | "cancelled"
+      | "interrupted"
+      | "deleted",
+    reason: string,
+  ): Promise<void> {
+    const execution = await this.context.executions.bind({
+      mode: "resume",
+      executionId: record.security.executionId,
+    });
+    await execution.close({ outcome, reason });
+  }
+
+  async #persistAndCloseExecution(
+    record: InstanceRecord,
+    outcome:
+      | "completed"
+      | "failed"
+      | "cancelled"
+      | "interrupted",
+    reason: string,
+  ): Promise<void> {
+    record.pendingClose = { outcome, reason };
+    await this.#persistInstance(record);
+    await this.#closeExecution(record, outcome, reason);
+    delete record.pendingClose;
+    await this.#persistInstance(record);
+  }
+
+  async #closeChildExecution(
+    executionId: ExecutionId,
+    outcome: "completed" | "failed" | "cancelled" | "interrupted",
+    reason: string,
+  ): Promise<void> {
+    const execution = await this.context.executions.bind({
+      mode: "resume",
+      executionId,
+    });
+    await execution.close({ outcome, reason });
+  }
+
+  async #closeOpenAgentExecutions(
+    record: InstanceRecord,
+    reason: string,
+  ): Promise<void> {
+    for (const executionId of new Set(
+      Object.values(record.agentExecutionIds),
+    )) {
+      const execution = await this.context.executions.bind({
+        mode: "resume",
+        executionId,
+      });
+      if ((await execution.summary()).lifecycle.state === "open") {
+        await execution.close({
+          outcome: "cancelled",
+          reason,
+        });
+      }
+    }
+  }
+
   async #registerToolScope(record: InstanceRecord): Promise<void> {
     if (this.#toolScopes.has(record.instance.id)) {
       return;
     }
     const scope = this.context.tools.registerExecutionScope({
       runId: record.instance.id,
+      executionId: record.security.executionId,
       sessionId: record.instance.id,
       allowedTools: record.definition.permissions ?? ["*"],
     });
@@ -2491,6 +2892,14 @@ export class HiveMindGraphEngine {
               graphId: definition.id,
               input: graphInput,
               trigger: trigger.kind,
+              security: {
+                kind: "root",
+                classification: "internal",
+                provenance: {
+                  kind: "plugin",
+                  id: `graph-trigger:${definition.id}`,
+                },
+              },
             });
           },
           this.context.signal,
@@ -2558,6 +2967,14 @@ export class HiveMindGraphEngine {
             graphId: definition.id,
             input: { scheduledAt: nextRunAt },
             trigger: "schedule",
+            security: {
+              kind: "root",
+              classification: "internal",
+              provenance: {
+                kind: "plugin",
+                id: `graph-schedule:${definition.id}`,
+              },
+            },
           });
         } catch (error) {
           this.context.logger.error(

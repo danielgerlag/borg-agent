@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: npx --yes pnpm@12.0.0 install --trust-lockfile --frozen-lockfile
+      - name: Type-check
+        run: npx --yes pnpm@12.0.0 typecheck
+      - name: Unit tests and coverage
+        run: npx --yes pnpm@12.0.0 test:coverage
+      - name: Electron tests
+        run: npx --yes pnpm@12.0.0 test:e2e

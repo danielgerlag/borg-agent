@@ -1,0 +1,182 @@
+Architecture arena cross-judge
+
+Decision
+
+Use Candidate 2 as the base. It scores 27/30, ahead of Candidate 1 at 25/30 and Candidate 3 at 20/30.
+
+Candidate 2 best matches the code that exists today. Its subject-indexed `ExecutionBinding`, persisted chat turn and bot attempt IDs, graph operation journal, and tool-to-bus handoff address the actual restart windows instead of describing only the model call. It also has the smallest product-facing API and keeps product names out of the kernel security model.
+
+Do not implement Candidate 2 unchanged. Its optional internal loop root, shape-based handoff, caller-managed child result import, early provider dispatch checkpoint, and missing policy-wait contract are security issues. The grafts below fix them without changing the base model.
+
+Source checks
+
+I checked the candidate claims against the current implementation.
+
+* `LoopManager` forwards provider tokens as `model_token` events before it reviews completed output at `packages/kernel/src/loop-manager.ts:444-480`. Denial removes tokens only from replay history at `packages/kernel/src/loop-manager.ts:791-804`. The existing test proves that a live subscriber already received blocked text at `packages/kernel/test/loop-manager.test.ts:178-210`. Chat appends each live token to the renderer state at `plugins/chat/src/ui.tsx:362-389`.
+* Graph `invoke_prompt` calls `context.models.complete` directly at `plugins/graphs/src/executor.ts:1648-1682`, so it skips the loop scans.
+* Graph attempts are already durable before node work starts. The executor increments `attempts` and checkpoints the running node before `#performNode` at `plugins/graphs/src/executor.ts:1513-1525`. A stable operation key can therefore derive from the instance, node, and persisted attempt without adding another graph field.
+* Bot activation repeats `launchPrompt` when the saved run is missing at `plugins/bots/src/runtime.ts:56-77`.
+* Chat and bot both start a loop before they save the active run link. See `plugins/chat/src/main.ts:407-430` and `plugins/bots/src/runtime.ts:133-164`. Candidate 2 is the only design that clearly persists a turn or attempt identity before loop work starts.
+* Tool-started graph and bot work crosses the command bus. See `plugins/graphs/src/main.ts:162-174` and `plugins/bots/src/main.ts:93-119`. The current bus carries correlation data but no execution security handoff at `packages/kernel/src/command-event-bus.ts:129-135` and `packages/kernel/src/plugin-manager.ts:1307-1355`. A tool-context-only design does not reach the durable owner.
+* Anthropic performs an asynchronous secret lookup inside the provider callback before `fetch` at `plugins/anthropic/src/runtime.ts:381-466`. A gateway checkpoint taken before invoking the callback is not the final egress check.
+* The existing persistence facade supports atomic multi-key writes. `StoreFacade.transaction` delegates to the backend at `packages/kernel/src/persistence.ts:314-338`, and SQLite uses `BEGIN IMMEDIATE` at `plugins/config-sqlite/src/main.ts:77-109`.
+* The architecture explicitly treats main-process plugins as trusted installed code, not isolated tenants, at `docs/architecture.md:238-242`. The design can close host API bypasses and test bundled providers, but it cannot contain malicious Node code in this wave.
+
+Scores
+
+| Criterion | Candidate 1 | Candidate 2 | Candidate 3 |
+| --- | ---: | ---: | ---: |
+| 1. One kernel model gateway, no model-call bypass | 5 | 5 | 4 |
+| 2. Durable classification, provenance, child work, restart, and provider capacity | 4 | 4 | 3 |
+| 3. Safe completed-output release and understandable user experience | 3 | 3 | 4 |
+| 4. Small deep interfaces, Zod types, and boundary validation | 4 | 5 | 4 |
+| 5. One-wave legacy deletion and focused red-to-green tests | 5 | 5 | 3 |
+| 6. Idempotent recovery that fits graph, bot, and tool lifecycles | 4 | 5 | 2 |
+| Total | 25 | 27 | 20 |
+
+Candidate 1
+
+1. Score 5. `ModelGateway` owns provider registration, selection, input scan, capacity authorization, provider invocation, usage, output quarantine, output scan, and release. The migration deletes `ModelRouter.complete` and adds a static boundary check.
+2. Score 4. The durable head and call journal cover classification, provenance, usage, provider capacity, child inheritance, and restart. The design does not show how its `ParentExecutionGrant` survives the existing tool-to-command-bus path. Its product-specific `executionKindSchema` also puts chat, graph, bot, and loop names into shared kernel contracts.
+3. Score 3. The gateway never emits rejected text. However, `quarantinedOutput` stores unapproved content in the current plaintext SQLite store. The design also lacks an interaction callback or a safe product-facing denial result.
+4. Score 4. The model call state machine uses Zod discriminated unions and the completion API is deep. The public execution API is broader than needed, and the closed product enum leaks product ownership into the kernel.
+5. Score 5. The migration explicitly removes the router, in-memory classification service, and public cost writer. Its tests cover the gateway boundary, output release, graph replay, bot restart, chat inheritance, provider capacity, and lifecycle rules.
+6. Score 4. It has the best call-level recovery table: retry before dispatch, resume quarantined output, return approved output, preserve terminal denial, and fail an indeterminate dispatch. It does not fully close the chat and bot crash window between starting a loop and saving the active child link.
+
+Candidate 1 red flags
+
+* Information leakage: `executionKindSchema` hard-codes `chat_session`, `graph_instance`, `bot`, and `loop_run` in the shared domain.
+* Overbroad merge rule: every child close raises its parent. A detached child chat should not taint the parent unless the parent consumes a result.
+* Storage risk: `quarantinedOutput` persists content that policy may reject. A crash can leave that content in ordinary SQLite.
+* Lifecycle mismatch: the tool grant is shown at the tool handler, but current graph and bot tools call a bus command before the durable owner starts.
+* Hidden crash window: bot and chat examples do not persist an attempt or turn link before `loops.start`.
+
+Candidate 2
+
+1. Score 5. One `ModelGateway` stores and invokes provider callbacks. LoopManager and `PluginModels.complete` use it, the old unsecured overload is deleted, and the boundary script checks the invariant.
+2. Score 4. The product-neutral subject index, durable bindings, active feature records, bus handoff, classification revision, provenance, usage, and provider capacity fit the repository. The optional internal loop root can drop inherited classification. `ExecutionHandoff` is also constructible by shape, while the prose relies on a current ambient handoff check.
+3. Score 3. Raw chunks stay in memory, rejected output is discarded, and only approved output is persisted. That is safer than Candidate 1's plaintext quarantine. The design does not tell LoopManager when policy review is waiting and does not define a sanitized output-denied event or error for chat, graphs, and bots.
+4. Score 5. `executions.bind` plus `ExecutionBinding` hides identity lookup, persistence, classification updates, and closure. `models.complete` hides the full model pipeline. Serializable inputs and stored records derive from Zod schemas.
+5. Score 5. The compile-breaking migration deletes `ModelRouter`, `ClassificationService`, `CostLedger.record`, `PluginCost.record`, and `cost.record`. It migrates all durable owners before activation and names focused tests plus a static boundary check.
+6. Score 5. Bind-by-subject closes create-then-save crashes. Chat turn and bot attempt IDs persist before loop start. Graph keys derive from durable attempts. Released graph output replays without another provider call, pre-egress work retries, and missing bot or agent loops become interrupted.
+
+Candidate 2 red flags to fix in the base
+
+* Bypass by default: `callSiteChanges.loopManager` says a missing binding creates an internal root. Plugin-owned loops must not have this fallback.
+* Caller-dependent provenance: `absorbChildResult` relies on graph or chat code remembering to call `parent.observe`.
+* Capability by shape: `ExecutionHandoff` contains only an execution ID. A plugin can construct that object even if the host later intends to reject it.
+* Early dispatch checkpoint: `commitProviderDispatch` runs before the provider callback. Anthropic still awaits its secret before the network request.
+* Unbounded materialization: the append-only provenance journal becomes an unbounded array in `executionSecurityContextSchema`.
+* Missing user state: there is no `onPolicyWait` callback and no safe terminal output-denied contract.
+
+Candidate 3
+
+1. Score 4. `createModelKernel` keeps provider registration, selection, and raw invocation private, and both loop and plugin completions use its gateway. The proof is weaker because the provider owns the final `dispatch.commit` call and the migration names no static model-gateway boundary test.
+2. Score 3. The context tree, live lineage revision, bounded provenance, durable usage, provider generation, destination, and capacity are strong. Plugin roots silently receive an internal seed, `LoopStartRequest.parentExecutionContextId` is optional, and the design does not carry a secure parent through the existing tool-to-bus path.
+3. Score 4. Candidate 3 is the only design with `onPolicyWait`, and it withholds all raw chunks until approval. It still lacks a sanitized product-facing denial result.
+4. Score 4. Most state derives from Zod and the model kernel is deep. The provider request receives a full security attestation, which leaks policy details into the provider wire contract. The per-call context tree and ancestor reads also add more machinery than current callers need.
+5. Score 3. The wave breaks model and provider APIs, but it does not clearly remove `PluginCost.record` or `cost.record`. It under-specifies communication and command-bus migration and omits a static gateway boundary test.
+6. Score 2. Recovery is exhaustive but too conservative and incomplete. There is no request digest for operation-key conflicts. Approved results are not stored. `output_scanned` and `released` calls cannot replay. `output_denied` is classified as indeterminate instead of a reusable terminal denial.
+
+Candidate 3 red flags
+
+* Bypass by default: plugin roots get an implicit internal seed, and loops may omit a parent.
+* Information leakage: `ProviderCompletionRequest.security` sends classification and lineage details to the provider.
+* Security work moves outward: bundled providers must remember when to call `dispatch.commit`.
+* Weak idempotency: operation keys have no request digest, and released graph output is not recoverable.
+* Incomplete deletion: the design converts `cost-ledger.ts` but does not remove the plugin usage writer.
+* Caller-selected lineage: any plugin can request `detached` unless the host restricts who may choose that result flow.
+
+Recommended base and grafts
+
+Start with Candidate 2. Keep these parts unchanged in concept:
+
+* Product-neutral `ExecutionSubject`.
+* Idempotent `executions.bind` by owner and subject.
+* Closed security heads that can seed the next chat turn or bot attempt.
+* Persisted `ChatSecurityState.active.turnId` and `BotSecurityState.active.attemptId` before loop start.
+* One call journal per execution and stable operation key.
+* Approved-result persistence for graph replay.
+* In-memory raw output quarantine with `output-pending-scan` treated as indeterminate after restart.
+* Command-bus propagation for tool-started durable work.
+* Deletion of all legacy completion and usage writers.
+
+Graft these exact ideas from Candidate 1:
+
+1. Make Candidate 1's required `LoopSecurityInput` rule apply to every plugin-owned loop. A root must carry explicit classification and provenance. A child must carry a valid parent capability. Remove Candidate 2's "If absent, bind internal" path. If the kernel needs a standalone root helper, keep that helper kernel-private.
+2. Replace Candidate 2's shape-based handoff with Candidate 1's runtime-only `ParentExecutionGrant`. `ToolService` mints it for one grantee and one active tool or bus chain. `PluginManager` carries the grant through its operation context and nested `BusEnvelope`; plugins never serialize or manufacture it.
+3. Store Candidate 1's immutable provider `registrationId` on each prepared model call and abort calls when that exact registration is disposed. A provider re-registered under the same ID must not satisfy an old call.
+
+Graft these exact ideas from Candidate 3:
+
+1. Use Candidate 3's one-shot `ProviderDispatchPermit.commit()` and `providerGeneration`, but keep the attestation private inside the permit. The provider may prepare its body and load credentials first. It must consume the permit immediately before local generation or network `fetch`. The permit rechecks classification, capacity, operation phase, and provider registration.
+2. Add Candidate 3's `onPolicyWait` signal. Map it to the existing loop `interaction_wait` event instead of adding a second event name. On denial, throw a typed error that contains no model content and let LoopManager emit the existing safe `failed` event.
+3. Add Candidate 3's `merge_to_parent` versus `detached` distinction, but let the host choose it from the operation type. Loop runs, model calls, and consumed graph-agent results merge atomically on close. Detached child chats do not merge merely because they close. Importing a detached result is an explicit service operation.
+4. Keep Candidate 3's remote destination and provider generation in the registered provider record. Start Anthropic at `internal` capacity unless a reviewed policy permits confidential data. Keep mock at `local-only`.
+
+Ideas to reject
+
+Reject these Candidate 1 ideas:
+
+* The product-specific `executionKindSchema`.
+* Plaintext durable `quarantinedOutput` and automatic `resume_quarantined_output` in the first wave.
+* Unconditional merge of every child on close.
+* Reusing every product subject ID as the execution ID when a turn or attempt needs its own generation.
+
+Reject these Candidate 3 ideas:
+
+* Implicit internal roots and optional parent contexts for plugin loops.
+* Sending `ProviderDispatchAttestation` as part of the provider request.
+* Treating `released`, `output_scanned`, or `output_denied` as unrecoverable indeterminate work.
+* Operation-key reuse without a canonical request digest.
+* Keeping any plugin-callable usage writer.
+* Exposing `resultFlow` as a free caller choice.
+* Letting a provider declare model output as trusted in the first wave. Model output remains external provenance and still requires output scanning.
+
+Required red-to-green tests for the synthesized design
+
+Keep Candidate 2's tests and add these cases:
+
+* A plugin loop start without an explicit root seed or parent grant fails before creating a context.
+* A tool invokes `graphs.run` or `bots.create` through the nested command bus, and the durable child inherits the tool execution classification. A copied execution ID without the active grant fails.
+* Anthropic changes classification after credential lookup but before `fetch`; `ProviderDispatchPermit.commit()` blocks the request.
+* Disposing and re-registering the same provider ID cannot resume a call prepared against the old registration.
+* Output review emits `interaction_wait`, emits no `model_token`, and ends with a safe error when denied. The raw text appears in no loop history, log, store entry, or returned error.
+* A crash after a graph result is released but before the node checkpoint returns the stored result once. A digest mismatch fails. A dispatched or output-pending call does not retry.
+* A crash after a chat turn ID or bot attempt ID is saved but before LoopManager starts marks that attempt interrupted without repeating the prompt.
+* Closing a `merge_to_parent` child raises the parent atomically. Closing a detached chat child does not. Importing the detached result raises the parent once.
+* The boundary script finds no production provider callback invocation outside `model-gateway.ts`, no `ModelRouter.complete`, no unsecured `PluginModels.complete`, and no plugin usage writer.
+
+First-wave scope
+
+The prompt forces a large first wave. The security core still has to land as one compatibility-breaking migration because any old overload leaves a bypass.
+
+Keep these items in the first wave:
+
+* Durable execution IDs, classification, bounded provenance, and model call journals.
+* The one model gateway and required provider capacity.
+* The actual-egress permit for bundled providers.
+* Output hold, output scan, safe denial, and approved graph replay.
+* Tool and nested bus handoffs.
+* Chat, graph, and bot version migrations with pre-persisted active identities.
+* Bot and graph fail-closed recovery.
+* Deletion of the router, in-memory classification ownership, and public usage writers.
+* Focused lifecycle, boundary, and crash-point tests.
+
+Defer these items:
+
+* Durable storage and restart resumption of unapproved raw output. Add it only with encryption, retention, deletion, and policy-revision rules.
+* Durable loop transcripts and automatic continuation of bot or graph-agent loops. First-wave recovery should mark them interrupted.
+* Provenance browsing UI and public audit export.
+* Long-term compaction and retention policy beyond a bounded recent-provenance summary.
+* A global append-only trust journal.
+* Process isolation, a network proxy, or hostile-plugin containment.
+* A repository-wide rename of `ChannelCapacity`. Reuse or alias the ordered capacity schema until the security migration is stable.
+
+Final verdict
+
+Candidate 2 is the right base because it models the feature-owned crash windows and fits the existing graph checkpoints, bot records, chat records, tool calls, command bus, and atomic store. Candidate 1 has the strongest required-root and provider-registration capabilities. Candidate 3 has the strongest actual-egress check and policy-wait signal. The combined design is coherent if those grafts replace the listed Candidate 2 weaknesses.
+
+No candidate is ready to implement verbatim. Candidate 2 becomes implementation-ready after the required-root rule, opaque grant, actual-egress permit, host-owned result flow, bounded provenance, and safe policy-wait and denial contract are added.
+
+ISSUES /Users/danielgerlag/dev/borg-agent/.pstack-work/arena-execution-security/judge.txt

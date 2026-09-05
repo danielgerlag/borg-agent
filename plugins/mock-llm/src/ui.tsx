@@ -52,11 +52,25 @@ export default defineUiPlugin<Component>({
         runSubscription = undefined;
         let snapshot: LoopRunSnapshot;
         try {
+          const executionSeed = crypto.randomUUID();
           snapshot = await context.loops.start({
             prompt,
             providerId: "borg.mock-llm",
             modelId: "mock:scripted",
             allowedTools: ["tools.echo", "feedback.ask"],
+            security: {
+              kind: "root",
+              subject: {
+                kind: "debug-loop",
+                id: executionSeed,
+              },
+              classification: "internal",
+              provenance: {
+                kind: "plugin",
+                id: "borg.mock-llm",
+              },
+              operationPrefix: `mock/debug/${executionSeed}`,
+            },
           });
         } catch (error) {
           if (active && currentGeneration === generation) {

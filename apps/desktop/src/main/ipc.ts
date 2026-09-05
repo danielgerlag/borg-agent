@@ -5,7 +5,7 @@ import {
   type CostLedger,
   type InteractionService,
   type LoopManager,
-  type ModelRouter,
+  type ModelGateway,
   type NotificationService,
   type PersonaService,
   type PluginManager,
@@ -310,7 +310,7 @@ export interface IpcBridgeOptions {
   readonly interactions: InteractionService;
   readonly loops: LoopManager;
   readonly personas: PersonaService;
-  readonly models: ModelRouter;
+  readonly models: ModelGateway;
   readonly costs: CostLedger;
   readonly kernelVersion: string;
   readonly startedAt: string;

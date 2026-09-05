@@ -1,0 +1,34 @@
+Base
+
+Candidate 2 is the base. It fits existing durable product records and closes the chat and bot create-then-start crash windows.
+
+Grafts
+
+Candidate 1 supplied required loop security inputs, runtime-only parent grants, and immutable provider registration IDs.
+
+Candidate 3 supplied the one-shot dispatch permit, policy-wait callback, host-owned merge mode, remote destination metadata, and an internal initial capacity for Anthropic.
+
+Rejected
+
+Implicit internal roots remain forbidden for plugin-owned loops.
+
+Unapproved output stays in memory. It is not written to plaintext SQLite.
+
+Detached child chats do not merge into their parent unless the parent imports a result.
+
+Provider security attestations remain kernel-private.
+
+No plugin can choose merge semantics or construct a valid parent grant from an execution ID.
+
+First-wave implementation order
+
+1. Add execution-security schemas and red tests for durable binding, monotonic classification, grants, close, and restart.
+2. Add ModelGateway red tests for input scan, capacity, dispatch permit, output hold, denial, usage, and replay.
+3. Migrate providers, LoopManager, and PluginModels in one compile-breaking wave. Delete the old completion route.
+4. Migrate chat, graphs, bots, tools, and nested commands. Persist active turn or attempt identity before starting work.
+5. Replace bot replay with interrupted recovery.
+6. Add static checks for provider callback ownership and unsecured completion signatures.
+
+Verification predicate
+
+Every model call reaches ModelGateway. A copied execution ID cannot create a child. Rejected provider text reaches no user or store. Classification survives restart. A released graph prompt result replays without provider egress. A missing bot loop never repeats its prompt. All existing unit and Electron tests remain green.

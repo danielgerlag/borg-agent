@@ -398,7 +398,7 @@ export const App: Component<AppProps> = (props) => {
       </Show>
 
       <div
-        class="fixed bottom-5 right-5 z-50 grid w-[min(22rem,calc(100vw-2rem))] gap-3"
+        class="pointer-events-none fixed bottom-5 right-5 z-50 grid w-[min(22rem,calc(100vw-2rem))] gap-3"
         aria-live="polite"
       >
         <For each={props.toasts}>

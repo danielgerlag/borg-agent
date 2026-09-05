@@ -43,7 +43,9 @@ function statusCopy(status: Bot["status"]): string {
       return "Failed";
     case "cancelled":
       return "Cancelled";
-    default:
+    case "interrupted":
+      return "Interrupted";
+    case "stopped":
       return "Stopped";
   }
 }

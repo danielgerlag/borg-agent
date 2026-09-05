@@ -4,10 +4,12 @@ import {
   CommunicationService,
   ConfigFacade,
   CostLedger,
+  DurableModelCallJournal,
+  ExecutionSecurityService,
   GraphContributionRegistry,
   InteractionService,
   LoopManager,
-  ModelRouter,
+  ModelGateway,
   NetworkService,
   NotificationService,
   PersonaService,
@@ -481,13 +483,22 @@ if (!app.requestSingleInstanceLock()) {
     const scanners = new ScannerRegistry();
     const authorizer = new TrustAuthorizer(interactionService, { classification });
     const costs = new CostLedger();
+    const executions = new ExecutionSecurityService(storeFacade);
     const tools = new ToolService(interactionService, {
       classification,
+      executions,
       scanners,
       authorizer,
     });
-    const models = new ModelRouter(costs, {
-      fallbackPreferences: ["borg.mock-llm:mock:scripted"],
+    const models = new ModelGateway({
+      journal: new DurableModelCallJournal(storeFacade),
+      executions,
+      scanners,
+      authorizer,
+      costs,
+      options: {
+        fallbackPreferences: ["borg.mock-llm:mock:scripted"],
+      },
     });
     const personaService = new PersonaService(storeFacade);
     const promptAssembler = new PromptAssembler(personaService);
@@ -508,6 +519,7 @@ if (!app.requestSingleInstanceLock()) {
     webSocketService = new WebSocketService();
     loopManager = new LoopManager(
       models,
+      executions,
       tools,
       costs,
       (pluginId) =>
@@ -516,8 +528,6 @@ if (!app.requestSingleInstanceLock()) {
       personaService,
       promptAssembler,
       workspaceService,
-      scanners,
-      authorizer,
     );
     pluginManager = new PluginManager(bus, KERNEL_VERSION, {
       config: configFacade,
@@ -527,6 +537,7 @@ if (!app.requestSingleInstanceLock()) {
       notifications: notificationService,
       tools,
       models,
+      executions,
       loops: loopManager,
       interactions: interactionService,
       costs,
@@ -540,6 +551,17 @@ if (!app.requestSingleInstanceLock()) {
       scanners,
       channels: communicationService,
       webSockets: webSocketService,
+      executionResultFlow: (pluginId, subject) =>
+        (pluginId === "borg.chat" &&
+          (subject.kind === "chat-session" ||
+            subject.kind === "chat-turn")) ||
+        (pluginId === "borg.bots" &&
+          (subject.kind === "bot" ||
+            subject.kind === "bot-attempt")) ||
+        (pluginId === "borg.graphs" &&
+          subject.kind === "graph-instance")
+          ? "detached"
+          : "merge_to_parent",
       showWindow: showMainWindow,
       getPluginDataDirectory: (pluginId) => {
         const directory = path.join(
@@ -580,6 +602,7 @@ if (!app.requestSingleInstanceLock()) {
       if (!persistence.hasConfigStore()) {
         throw new Error("The selected config store did not install its provider");
       }
+      await executions.initialize();
       await personaService.initialize();
 
       setupSchemaRegistration = configFacade.registerSchema(

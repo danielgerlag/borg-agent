@@ -11,11 +11,13 @@ import type {
   JsonValue,
   PluginBus,
   PluginContext,
+  PluginExecutions,
   StoreEntry,
   StoreTransactionOperation,
   ToolContribution,
 } from "@borg/plugin-sdk";
 import { vi } from "vitest";
+import { createSecurityRuntime } from "../../../packages/kernel/test/security-runtime";
 import { GRAPH_ENGINE_ID } from "../src/executor";
 
 type CommandHandler = (
@@ -119,6 +121,7 @@ export function createGraphHarness(
     readonly triggers?: readonly GraphTriggerContribution[];
   },
 ) {
+  const securityRuntime = createSecurityRuntime();
   const handlers = new Map<string, CommandHandler>();
   const eventHandlers = new Map<string, Set<EventHandler>>();
   const emittedEvents: EmittedEvent[] = [];
@@ -272,6 +275,29 @@ export function createGraphHarness(
     pluginId: "borg.graphs",
     signal: new AbortController().signal,
     bus,
+    executions: {
+      bind: (intent: Parameters<PluginExecutions["bind"]>[0]) =>
+        securityRuntime.executions.bind(
+          "borg.graphs",
+          intent,
+          intent.mode !== "resume" &&
+            intent.subject.kind === "graph-instance"
+            ? "detached"
+            : "merge_to_parent",
+        ),
+      grant: async (
+        executionId: Parameters<PluginExecutions["grant"]>[0],
+      ) => {
+        await securityRuntime.executions.snapshot(
+          "borg.graphs",
+          executionId,
+        );
+        return await securityRuntime.executions.createParentGrant({
+          parentExecutionId: executionId,
+          granteePluginId: "borg.graphs",
+        });
+      },
+    },
     store: {
       get: async (key: string) => {
         const value = storedValues.get(key);
@@ -425,10 +451,9 @@ export function createGraphHarness(
       complete: async () => ({
         providerId: "borg.mock-llm",
         modelId: "mock:scripted",
-        result: {
-          content: "model response",
-          usage: { inputTokens: 1, outputTokens: 1 },
-        },
+        content: "model response",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        replayed: false,
       }),
     },
     personas: {

@@ -33,7 +33,7 @@ On first run, Borg opens a guided setup: welcome, one-click secure-storage verif
 
 Configure MCP servers under **Settings → MCP** for the selected persona. A stdio server needs its executable plus one argument per line; network transports need an `http:` or `https:` URL. Secret fields contain references to Borg-managed secrets, never literal credentials. Save and refresh to inspect the connected catalog. Server tools are available only to runs for that persona and use IDs such as `mcp.mock.echo`.
 
-Slice 8 stores `channelClass`, `reactive`, and `sandbox` server metadata for forward compatibility but does not treat those fields as enforcement. Stdio servers run as child processes under the Borg host user; use only trusted executables and rely on the tool approval policy for side effects.
+Slice 8 stores `channelClass`, `reactive`, and `sandbox` server metadata for forward compatibility but does not treat those fields as enforcement. Stdio servers run as child processes under the Borg host user; use only trusted executables. Every MCP call requires local approval. Server-provided read-only and destructive annotations do not change approval or retry policy. Header secret references require HTTPS, except for loopback development URLs.
 
 MCP App HTML is untrusted renderer content. Borg denies network requests even after in-frame navigation, nested frames, forms, workers, media, device permissions, downloads, and Node/preload access. Declared app permissions and CSP domains are retained as metadata but are not granted in Slice 8. Inline script and style are supported inside the inner sandbox so MCP Apps can initialize. App snapshots persist with their chat; the underlying MCP server must still be enabled and reachable for a later app-originated tool call.
 
@@ -41,14 +41,26 @@ Configure Discord under **Settings → Discord**. The bot token is written direc
 
 Data classifications are ordered `public < internal < confidential < restricted`. Channel capacities map to ceilings as follows: `public → public`, `internal → internal`, `private → confidential`, and `local-only → restricted`. A run's effective classification can only increase. Classification violations, scanner review findings, and normal tool approval are combined into at most one kernel approval prompt for an operation. Prompt scanner failures or missing coverage require review and cannot bypass channel classification.
 
+Every model completion passes through the kernel `ModelGateway`. The mock provider is `local-only`; Anthropic currently accepts up to `internal` data. The gateway scans the complete provider input, rechecks classification through a one-shot permit immediately before provider work, and holds raw output until the completed response passes scanning and authorization. Denied output is not displayed or persisted. Chat turns, graph instances, and bot attempts persist their execution classification and provenance across restarts. A missing bot run is marked interrupted instead of replaying its prompt.
+
 ## Verification
 
 ```sh
 corepack pnpm typecheck
 corepack pnpm test
+corepack pnpm test:coverage
 corepack pnpm test:e2e
 ```
 
 `pnpm test:e2e` launches the real Electron app. On macOS, native tray-menu clicks remain a manual platform check; the automated journey verifies the same show/hide handlers, tray menu model, and continued main-process/plugin lifetime.
+
+## Unsigned macOS alpha
+
+```sh
+corepack pnpm package:mac
+corepack pnpm verify:package:mac
+```
+
+The package command creates `.package/Borg-darwin-<arch>.zip`. The verifier launches the packaged application with a temporary profile, completes setup, and opens a rendered graph. The artifact is unsigned and not notarized. macOS may require an explicit Gatekeeper override. The manual **Unsigned macOS alpha** GitHub workflow builds and uploads the same artifact for 14 days.
 
 Architecture and research are documented in `docs/architecture.md` and `docs/research/hivemind.md`.

@@ -172,7 +172,7 @@ describe("MCP catalog preparation", () => {
     await harness.shutdown();
   });
 
-  it("does not retry a stale tool after a reconnect changes the catalog", async () => {
+  it("does not retry a tool after an indeterminate transport failure", async () => {
     const config = stdioConfig("mock");
     const persona = personaWith([config]);
     const harness = createMcpHarness({ persona });
@@ -221,17 +221,25 @@ describe("MCP catalog preparation", () => {
       signal: new AbortController().signal,
     });
 
-    await expect(
-      catalog.execute(
-        "mcp.mock.echo",
-        {},
-        {
-          toolCallId: "call-1",
-          signal: new AbortController().signal,
-        },
-      ),
-    ).rejects.toThrow(/unavailable after reconnect/);
-    expect(opens).toBe(2);
+    const error = await Promise.resolve()
+      .then(() =>
+        catalog.execute(
+          "mcp.mock.echo",
+          {},
+          {
+            toolCallId: "call-1",
+            signal: new AbortController().signal,
+          },
+        ),
+      )
+      .then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toContain("transport failed");
+    expect(String(error)).not.toContain("secret-token");
+    expect(opens).toBe(1);
     await catalog.close?.();
     await harness.shutdown();
   });

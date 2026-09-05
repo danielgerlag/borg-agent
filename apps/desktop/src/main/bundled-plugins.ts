@@ -46,6 +46,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
       "main": "@borg/plugin-bots/main",
       "ui": "@borg/plugin-bots/ui",
       "permissions": [
+        "executions.manage",
         "loops.start",
         "personas.read",
         "tools.invoke",
@@ -149,6 +150,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
       "main": "@borg/plugin-chat/main",
       "ui": "@borg/plugin-chat/ui",
       "permissions": [
+        "executions.manage",
         "loops.start",
         "models.read",
         "personas.read",
@@ -258,6 +260,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
       "main": "@borg/plugin-graphs/main",
       "ui": "@borg/plugin-graphs/ui",
       "permissions": [
+        "executions.manage",
         "graphs.readContributions",
         "loops.start",
         "models.complete",

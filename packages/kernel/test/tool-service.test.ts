@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { InteractionService, ToolService } from "../src";
 import { ClassificationService } from "../src/classification-service";
 import { ScannerRegistry } from "../src/scanner-registry";
+import { createSecurityRuntime } from "./security-runtime";
 
 const echoSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -1285,5 +1286,66 @@ describe("ToolService result scanning", () => {
       decision: "deny",
     });
     await expect(invocation).rejects.toMatchObject({ code: "denied" });
+  });
+
+  it("records bounded provenance for a valid long tool ID", async () => {
+    const runtime = createSecurityRuntime();
+    const toolId = `test.${"x".repeat(240)}`;
+    const execute = vi.fn(() => ({ ok: true as const }));
+    runtime.tools.register(
+      "test.tools",
+      defineTool({
+        id: toolId,
+        description: "Uses a long canonical tool ID",
+        input: z.object({}).strict(),
+        output: z.object({ ok: z.literal(true) }).strict(),
+        approval: "auto",
+        sideEffect: true,
+        execute,
+      }),
+    );
+    const execution = await runtime.executions.bind(
+      "test.owner",
+      {
+        mode: "root",
+        subject: {
+          kind: "tool-run",
+          id: "long-tool-id",
+        },
+        classification: "internal",
+        provenance: {
+          kind: "plugin",
+          id: "test.owner",
+        },
+      },
+      "detached",
+    );
+    runtime.tools.registerRunPolicy(
+      "run-long-tool",
+      "test.owner",
+      [toolId],
+      {
+        executionId: execution.id,
+        initialClassification: "internal",
+      },
+    );
+
+    await expect(
+      runtime.tools.invoke(toolId, {}, {
+        callerPluginId: "test.owner",
+        runId: "run-long-tool",
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(execute).toHaveBeenCalledOnce();
+    const context = await runtime.executions.snapshot(
+      "test.owner",
+      execution.id,
+    );
+    const source = context.provenance.recent.at(-1)?.source;
+    expect(source).toMatchObject({
+      kind: "plugin",
+      id: expect.stringMatching(/^tool-sha256:/),
+    });
+    expect(source?.id.length).toBeLessThanOrEqual(240);
   });
 });

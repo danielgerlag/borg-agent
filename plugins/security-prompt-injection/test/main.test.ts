@@ -16,6 +16,7 @@ const ALL_STAGES: readonly PromptScanStage[] = [
   "user_input",
   "inbound_message",
   "tool_result",
+  "model_input",
   "model_output",
   "outbound_message",
 ];

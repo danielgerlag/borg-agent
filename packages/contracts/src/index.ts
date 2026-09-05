@@ -16,6 +16,7 @@ export interface BusEnvelope {
     readonly id: string;
   };
   readonly timestamp: string;
+  readonly parentExecutionGrant?: ParentExecutionGrant | undefined;
 }
 
 export interface CommandDefinition<
@@ -224,6 +225,445 @@ export const feedbackResolved = defineEvent({
   }),
 });
 
+export const dataClassificationSchema = z.enum([
+  "public",
+  "internal",
+  "confidential",
+  "restricted",
+]);
+
+export type DataClassification = z.infer<typeof dataClassificationSchema>;
+
+export const channelCapacitySchema = z.enum([
+  "public",
+  "internal",
+  "private",
+  "local-only",
+]);
+
+export type ChannelCapacity = z.infer<typeof channelCapacitySchema>;
+
+export const executionIdSchema = z.string().uuid().brand<"ExecutionId">();
+
+export type ExecutionId = z.infer<typeof executionIdSchema>;
+
+export interface ParentExecutionGrant {
+  readonly [Symbol.toStringTag]: "ParentExecutionGrant";
+}
+
+export const modelOperationKeySchema = z
+  .string()
+  .min(1)
+  .max(240)
+  .regex(/^[a-z0-9][a-z0-9./:_-]*$/)
+  .brand<"ModelOperationKey">();
+
+export type ModelOperationKey = z.infer<typeof modelOperationKeySchema>;
+
+export const modelOperationPrefixSchema = z
+  .string()
+  .min(1)
+  .max(220)
+  .regex(/^[a-z0-9][a-z0-9./:_-]*$/)
+  .brand<"ModelOperationPrefix">();
+
+export type ModelOperationPrefix = z.infer<
+  typeof modelOperationPrefixSchema
+>;
+
+export const executionSubjectSchema = z
+  .object({
+    kind: z
+      .string()
+      .min(1)
+      .max(80)
+      .regex(/^[a-z][a-z0-9-]*$/),
+    id: z.string().min(1).max(240),
+  })
+  .strict();
+
+export type ExecutionSubject = z.infer<typeof executionSubjectSchema>;
+
+export const executionResultFlowSchema = z.enum([
+  "merge_to_parent",
+  "detached",
+]);
+
+export type ExecutionResultFlow = z.infer<
+  typeof executionResultFlowSchema
+>;
+
+export const providerEgressSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("local"),
+      capacity: z.literal("local-only"),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("remote"),
+      capacity: channelCapacitySchema.exclude(["local-only"]),
+      destination: z.string().url().startsWith("https://"),
+    })
+    .strict(),
+]);
+
+export type ProviderEgress = z.infer<typeof providerEgressSchema>;
+
+export const provenanceSeedSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("user"),
+      id: z.string().min(1).max(240),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("channel"),
+      id: z.string().min(1).max(240),
+      messageId: z.string().min(1).max(240),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("plugin"),
+      id: z.string().min(1).max(240),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("legacy"),
+      id: z.string().min(1).max(240),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("execution"),
+      id: executionIdSchema,
+      relation: z.enum(["parent", "child-result", "retry-of"]),
+    })
+    .strict(),
+]);
+
+export type ProvenanceSeed = z.infer<typeof provenanceSeedSchema>;
+
+export const securityObservationSchema = z
+  .object({
+    id: z.string().uuid(),
+    classification: dataClassificationSchema,
+    source: provenanceSeedSchema,
+    reason: z.string().min(1).max(512),
+    observedAt: z.string().datetime(),
+  })
+  .strict();
+
+export type SecurityObservation = z.infer<
+  typeof securityObservationSchema
+>;
+
+export const boundedProvenanceSchema = z
+  .object({
+    recent: z.array(securityObservationSchema).max(64),
+    overflow: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("complete") }).strict(),
+      z
+        .object({
+          kind: z.literal("truncated"),
+          omittedCount: z.number().int().positive(),
+          digestSha256: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
+export type BoundedProvenance = z.infer<
+  typeof boundedProvenanceSchema
+>;
+
+export const executionLifecycleSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("open") }).strict(),
+  z
+    .object({
+      state: z.literal("closed"),
+      outcome: z.enum([
+        "completed",
+        "failed",
+        "cancelled",
+        "interrupted",
+        "deleted",
+      ]),
+      reason: z.string().min(1).max(512),
+      closedAt: z.string().datetime(),
+    })
+    .strict(),
+]);
+
+export type ExecutionLifecycle = z.infer<
+  typeof executionLifecycleSchema
+>;
+
+export const executionSecuritySummarySchema = z
+  .object({
+    id: executionIdSchema,
+    rootExecutionId: executionIdSchema,
+    ownerPluginId: z.string().min(1).max(200),
+    subject: executionSubjectSchema,
+    parentExecutionId: executionIdSchema.optional(),
+    classification: dataClassificationSchema,
+    classificationRevision: z.number().int().positive(),
+    lifecycle: executionLifecycleSchema,
+  })
+  .strict();
+
+export type ExecutionSecuritySummary = z.infer<
+  typeof executionSecuritySummarySchema
+>;
+
+export const executionBindingFingerprintSchema =
+  z.discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("root"),
+        classification: dataClassificationSchema,
+        provenance: provenanceSeedSchema,
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("child"),
+        parentExecutionId: executionIdSchema,
+        rootExecutionId: executionIdSchema,
+      })
+      .strict(),
+  ]);
+
+export const executionSecurityContextSchema =
+  executionSecuritySummarySchema.extend({
+    version: z.literal(1),
+    binding: executionBindingFingerprintSchema,
+    resultFlow: executionResultFlowSchema,
+    provenance: boundedProvenanceSchema,
+    importedDetachedResultIds: z.array(executionIdSchema),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  });
+
+export type ExecutionSecurityContext = z.infer<
+  typeof executionSecurityContextSchema
+>;
+
+export const executionRootBindInputSchema = z
+  .object({
+    mode: z.literal("root"),
+    subject: executionSubjectSchema,
+    classification: dataClassificationSchema,
+    provenance: provenanceSeedSchema,
+  })
+  .strict();
+
+export type ExecutionRootBindInput = z.infer<
+  typeof executionRootBindInputSchema
+>;
+
+export const executionResumeBindInputSchema = z
+  .object({
+    mode: z.literal("resume"),
+    executionId: executionIdSchema,
+  })
+  .strict();
+
+export type ExecutionResumeBindInput = z.infer<
+  typeof executionResumeBindInputSchema
+>;
+
+export const executionObservationInputSchema = z
+  .object({
+    classification: dataClassificationSchema,
+    provenance: provenanceSeedSchema,
+    reason: z.string().min(1).max(512),
+  })
+  .strict();
+
+export type ExecutionObservationInput = z.infer<
+  typeof executionObservationInputSchema
+>;
+
+export const executionCloseInputSchema = z
+  .object({
+    outcome: z.enum([
+      "completed",
+      "failed",
+      "cancelled",
+      "interrupted",
+      "deleted",
+    ]),
+    reason: z.string().min(1).max(512),
+  })
+  .strict();
+
+export type ExecutionCloseInput = z.infer<
+  typeof executionCloseInputSchema
+>;
+
+export type ContractJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | { readonly [key: string]: ContractJsonValue }
+  | readonly ContractJsonValue[];
+
+export const contractJsonValueSchema: z.ZodType<ContractJsonValue> =
+  z.lazy(() =>
+    z.union([
+      z.string(),
+      z.number(),
+      z.boolean(),
+      z.null(),
+      z.array(contractJsonValueSchema).readonly(),
+      z.record(z.string(), contractJsonValueSchema),
+    ]),
+  );
+
+export const modelToolCallSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    input: contractJsonValueSchema,
+  })
+  .strict()
+  .readonly();
+
+export type ModelToolCall = z.infer<typeof modelToolCallSchema>;
+
+export const modelMessageSchema = z
+  .object({
+    role: z.enum(["system", "user", "assistant", "tool"]),
+    content: z.string(),
+    toolCallId: z.string().min(1).optional(),
+    toolCalls: z.array(modelToolCallSchema).readonly().optional(),
+  })
+  .strict()
+  .readonly();
+
+export type ModelMessage = z.infer<typeof modelMessageSchema>;
+
+export const modelToolDefinitionSchema = z
+  .object({
+    id: z.string().min(1),
+    description: z.string(),
+    inputSchema: contractJsonValueSchema,
+  })
+  .strict()
+  .readonly();
+
+export type ModelToolDefinition = z.infer<
+  typeof modelToolDefinitionSchema
+>;
+
+export const modelUsageSchema = z
+  .object({
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    cachedInputTokens: z.number().int().nonnegative().optional(),
+    cacheWriteTokens: z.number().int().nonnegative().optional(),
+    amount: z.number().nonnegative().optional(),
+    currency: z.string().min(1).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if ((value.amount === undefined) !== (value.currency === undefined)) {
+      context.addIssue({
+        code: "custom",
+        path: value.amount === undefined ? ["amount"] : ["currency"],
+        message: "Usage amount and currency must be provided together",
+      });
+    }
+    if (
+      (value.cachedInputTokens ?? 0) +
+        (value.cacheWriteTokens ?? 0) >
+      value.inputTokens
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["inputTokens"],
+        message:
+          "cachedInputTokens and cacheWriteTokens must not exceed inputTokens",
+      });
+    }
+  })
+  .readonly();
+
+export type ModelUsage = z.infer<typeof modelUsageSchema>;
+
+export const modelCompletionResultSchema = z
+  .object({
+    content: z.string().optional(),
+    toolCalls: z.array(modelToolCallSchema).readonly().optional(),
+    usage: modelUsageSchema,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.content === undefined && !value.toolCalls?.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Model completion requires content or a tool call",
+      });
+    }
+  })
+  .readonly();
+
+export type ModelCompletionResult = z.infer<
+  typeof modelCompletionResultSchema
+>;
+
+export const modelCompletionRequestSchema = z
+  .object({
+    modelId: z.string().min(1),
+    messages: z.array(modelMessageSchema).min(1).readonly(),
+    tools: z.array(modelToolDefinitionSchema).readonly(),
+  })
+  .strict()
+  .readonly();
+
+export type ModelCompletionRequest = z.infer<
+  typeof modelCompletionRequestSchema
+>;
+
+export const modelGatewayRequestSchema = z
+  .object({
+    executionId: executionIdSchema,
+    operationKey: modelOperationKeySchema,
+    providerId: z.string().min(1).optional(),
+    modelId: z.string().min(1).optional(),
+    messages: z.array(modelMessageSchema).min(1).readonly(),
+    tools: z.array(modelToolDefinitionSchema).readonly().default([]),
+  })
+  .strict()
+  .readonly();
+
+export type ModelGatewayRequest = z.input<
+  typeof modelGatewayRequestSchema
+>;
+
+export const releasedModelCompletionSchema = z
+  .object({
+    providerId: z.string().min(1),
+    modelId: z.string().min(1),
+    content: z.string().optional(),
+    toolCalls: z.array(modelToolCallSchema).readonly().optional(),
+    usage: modelUsageSchema,
+    replayed: z.boolean(),
+  })
+  .strict()
+  .readonly();
+
+export type ReleasedModelCompletion = z.infer<
+  typeof releasedModelCompletionSchema
+>;
+
 export const usageRecordSchema = z
   .object({
     providerId: z.string().min(1),
@@ -236,6 +676,8 @@ export const usageRecordSchema = z
     currency: z.string().min(1).optional(),
     correlationId: z.string().min(1),
     runId: z.string().min(1).optional(),
+    executionId: executionIdSchema.optional(),
+    operationKey: modelOperationKeySchema.optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -301,6 +743,29 @@ export const loopRunStatusSchema = z.enum([
   "cancelled",
 ]);
 
+export const loopSecurityInputSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("root"),
+      subject: executionSubjectSchema,
+      classification: dataClassificationSchema,
+      provenance: provenanceSeedSchema,
+      operationPrefix: modelOperationPrefixSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("bound"),
+      executionId: executionIdSchema,
+      operationPrefix: modelOperationPrefixSchema,
+    })
+    .strict(),
+]);
+
+export type LoopSecurityInput = z.infer<
+  typeof loopSecurityInputSchema
+>;
+
 export const loopStartInputSchema = z
   .object({
     prompt: z.string().min(1),
@@ -319,6 +784,7 @@ export const loopStartInputSchema = z
           .strict(),
       )
       .optional(),
+    security: loopSecurityInputSchema,
   })
   .strict();
 
@@ -329,6 +795,7 @@ export const loopRunSnapshotSchema = z
     prompt: z.string(),
     personaId: z.string().optional(),
     sessionId: z.string().uuid().optional(),
+    executionId: executionIdSchema.optional(),
     providerId: z.string().optional(),
     modelId: z.string().optional(),
     output: z.string().optional(),
@@ -428,6 +895,15 @@ const mcpServerIdSchema = z
 
 const mcpSecretRefSchema = z.string().min(1).max(256);
 
+function isLoopbackMcpHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/\.$/, "");
+  return (
+    normalized === "localhost" ||
+    normalized === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/.test(normalized)
+  );
+}
+
 const mcpServerCommonSchema = z.object({
   id: mcpServerIdSchema,
   enabled: z.boolean().default(true),
@@ -493,7 +969,26 @@ export const mcpServerConfigSchema = z.discriminatedUnion("transport", [
         )
         .default({}),
     })
-    .strict(),
+    .strict()
+    .superRefine((config, context) => {
+      if (Object.keys(config.headerSecretRefs).length === 0) {
+        return;
+      }
+      const url = new URL(config.url);
+      if (
+        url.protocol === "https:" ||
+        (url.protocol === "http:" &&
+          isLoopbackMcpHostname(url.hostname))
+      ) {
+        return;
+      }
+      context.addIssue({
+        code: "custom",
+        path: ["url"],
+        message:
+          "MCP header secrets require HTTPS or a loopback HTTP URL",
+      });
+    }),
 ]);
 
 export type McpServerConfig = z.infer<typeof mcpServerConfigSchema>;
@@ -1042,28 +1537,11 @@ export const graphStepCompleted = defineEvent({
     .strict(),
 });
 
-export const dataClassificationSchema = z.enum([
-  "public",
-  "internal",
-  "confidential",
-  "restricted",
-]);
-
-export type DataClassification = z.infer<typeof dataClassificationSchema>;
-
-export const channelCapacitySchema = z.enum([
-  "public",
-  "internal",
-  "private",
-  "local-only",
-]);
-
-export type ChannelCapacity = z.infer<typeof channelCapacitySchema>;
-
 export const promptScanStageSchema = z.enum([
   "user_input",
   "inbound_message",
   "tool_result",
+  "model_input",
   "model_output",
   "outbound_message",
 ]);
@@ -1226,6 +1704,7 @@ export const botStatusSchema = z.enum([
   "completed",
   "failed",
   "cancelled",
+  "interrupted",
 ]);
 
 export const botLogLevelSchema = z.enum(["debug", "info", "warn", "error"]);

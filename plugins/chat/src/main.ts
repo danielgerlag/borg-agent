@@ -20,11 +20,14 @@ import {
   feedbackRequested,
   feedbackResolved,
   emptyChatUsage,
+  executionIdSchema,
+  modelOperationPrefixSchema,
   type ChatEntry,
   type ChatSession,
   type ChatUsage,
   type LoopEvent,
   type LoopRunSnapshot,
+  type ExecutionId,
 } from "@borg/contracts";
 import {
   definePlugin,
@@ -35,12 +38,59 @@ import {
 import { randomUUID } from "node:crypto";
 
 type ChatDocument = z.infer<typeof chatDocumentSchema>;
-const persistedChatDocumentSchema = z
+const legacyPersistedChatDocumentSchema = z
   .object({
     version: z.literal(1),
     document: chatDocumentSchema,
   })
   .strict();
+
+const chatSecurityStateSchema = z
+  .object({
+    headExecutionId: executionIdSchema,
+    active: z
+      .object({
+        turnId: z.string().uuid(),
+        executionId: executionIdSchema,
+        operationPrefix: modelOperationPrefixSchema,
+        runId: z.string().uuid().optional(),
+      })
+      .strict()
+      .optional(),
+    pendingClose: z
+      .object({
+        executionId: executionIdSchema,
+        outcome: z.enum(["completed", "failed", "cancelled"]),
+        reason: z.string().min(1),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.active && value.pendingClose) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Chat security cannot be active and pending close together",
+      });
+    }
+  });
+
+type ChatSecurityState = z.infer<typeof chatSecurityStateSchema>;
+
+const persistedChatRecordSchema = z
+  .object({
+    version: z.literal(2),
+    document: chatDocumentSchema,
+    security: chatSecurityStateSchema,
+  })
+  .strict();
+
+interface ChatRecord {
+  readonly document: ChatDocument;
+  readonly security: ChatSecurityState;
+}
 
 function asJsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
@@ -81,6 +131,7 @@ export default definePlugin({
     borg: "^0.1.0",
   },
   permissions: [
+    "executions.manage",
     "loops.start",
     "models.read",
     "personas.read",
@@ -119,22 +170,39 @@ export default definePlugin({
     ],
   },
   async activate(context) {
-    const documents = new Map<string, ChatDocument>();
+    const records = new Map<string, ChatRecord>();
     const queues = new Map<string, Promise<void>>();
     const runSubscriptions = new Map<string, Disposable>();
 
-    const persist = async (document: ChatDocument): Promise<void> => {
+    const persist = async (
+      document: ChatDocument,
+      security?: ChatSecurityState,
+    ): Promise<void> => {
+      const resolvedSecurity =
+        security ?? records.get(document.session.id)?.security;
+      if (!resolvedSecurity) {
+        throw new Error(
+          `Chat session ${document.session.id} has no execution security state`,
+        );
+      }
       await context.store.set(
         `sessions/${document.session.id}`,
-        asJsonValue({ version: 1, document }),
+        asJsonValue({
+          version: 2,
+          document,
+          security: resolvedSecurity,
+        }),
       );
     };
 
-    const persistTerminal = async (document: ChatDocument): Promise<void> => {
+    const persistTerminal = async (
+      document: ChatDocument,
+      security: ChatSecurityState,
+    ): Promise<void> => {
       let failure: unknown;
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         try {
-          await persist(document);
+          await persist(document, security);
           return;
         } catch (error) {
           failure = error;
@@ -170,6 +238,20 @@ export default definePlugin({
       }
     };
 
+    const closePending = async (record: ChatRecord): Promise<void> => {
+      if (!record.security.pendingClose) {
+        return;
+      }
+      const execution = await context.executions.bind({
+        mode: "resume",
+        executionId: record.security.pendingClose.executionId,
+      });
+      await execution.close({
+        outcome: record.security.pendingClose.outcome,
+        reason: record.security.pendingClose.reason,
+      });
+    };
+
     const publishSession = async (document: ChatDocument): Promise<void> => {
       await context.bus.emit(chatSessionUpdated, {
         session: document.session,
@@ -180,10 +262,11 @@ export default definePlugin({
       sessionId: string,
       entry: ChatEntry,
     ): Promise<void> => {
-      const document = documents.get(sessionId);
-      if (!document) {
+      const record = records.get(sessionId);
+      if (!record) {
         throw new Error(`Chat session ${sessionId} is unavailable`);
       }
+      const document = record.document;
       const next = chatDocumentSchema.parse({
         session: {
           ...document.session,
@@ -192,7 +275,7 @@ export default definePlugin({
         entries: [...document.entries, entry],
       });
       await persist(next);
-      documents.set(sessionId, next);
+      records.set(sessionId, { ...record, document: next });
       await context.bus.emit(chatMessageAppended, { sessionId, entry });
     };
 
@@ -200,10 +283,11 @@ export default definePlugin({
       sessionId: string,
       patch: Readonly<Partial<ChatSession>>,
     ): Promise<ChatDocument> => {
-      const document = documents.get(sessionId);
-      if (!document) {
+      const record = records.get(sessionId);
+      if (!record) {
         throw new Error(`Chat session ${sessionId} is unavailable`);
       }
+      const document = record.document;
       const session = chatSessionSchema.parse({
         ...document.session,
         ...patch,
@@ -214,7 +298,7 @@ export default definePlugin({
         entries: document.entries,
       });
       await persist(next);
-      documents.set(sessionId, next);
+      records.set(sessionId, { ...record, document: next });
       await publishSession(next);
       return next;
     };
@@ -226,14 +310,22 @@ export default definePlugin({
       const snapshot = context.loops.get(runId);
       if (
         !snapshot ||
-        !["completed", "failed", "cancelled"].includes(snapshot.status)
+        (snapshot.status !== "completed" &&
+          snapshot.status !== "failed" &&
+          snapshot.status !== "cancelled")
       ) {
         return;
       }
-      const document = documents.get(sessionId);
-      if (!document || document.session.activeRunId !== runId) {
+      const record = records.get(sessionId);
+      const active = record?.security.active;
+      if (
+        !record ||
+        record.document.session.activeRunId !== runId ||
+        active?.runId !== runId
+      ) {
         return;
       }
+      const document = record.document;
       let entry: ChatEntry | undefined;
       if (snapshot.status === "completed" && snapshot.output !== undefined) {
         entry = createEntry("assistant", snapshot.output, { runId });
@@ -260,9 +352,20 @@ export default definePlugin({
         session,
         entries: entry ? [...document.entries, entry] : document.entries,
       });
+      const nextSecurity = chatSecurityStateSchema.parse({
+        headExecutionId: active.executionId,
+        pendingClose: {
+          executionId: active.executionId,
+          outcome: snapshot.status,
+          reason: `Chat turn ${active.turnId} ${snapshot.status}`,
+        },
+      });
       try {
-        await persistTerminal(next);
-        documents.set(sessionId, next);
+        await persistTerminal(next, nextSecurity);
+        records.set(sessionId, {
+          document: next,
+          security: nextSecurity,
+        });
       } catch (error) {
         const persistenceEntry = createEntry(
           "event",
@@ -279,7 +382,10 @@ export default definePlugin({
             persistenceEntry,
           ],
         });
-        documents.set(sessionId, volatile);
+        records.set(sessionId, {
+          document: volatile,
+          security: nextSecurity,
+        });
         if (entry) {
           await context.bus.emit(chatMessageAppended, { sessionId, entry });
         }
@@ -296,6 +402,22 @@ export default definePlugin({
         runSubscriptions.delete(runId);
         return;
       }
+      const turnExecution = await context.executions.bind({
+        mode: "resume",
+        executionId: active.executionId,
+      });
+      await turnExecution.close({
+        outcome: snapshot.status,
+        reason: `Chat turn ${active.turnId} ${snapshot.status}`,
+      });
+      const closedSecurity = chatSecurityStateSchema.parse({
+        headExecutionId: active.executionId,
+      });
+      await persist(next, closedSecurity);
+      records.set(sessionId, {
+        document: next,
+        security: closedSecurity,
+      });
       if (entry) {
         await context.bus.emit(chatMessageAppended, { sessionId, entry });
       }
@@ -316,7 +438,7 @@ export default definePlugin({
       event: LoopEvent,
     ): Promise<void> => {
       await enqueue(sessionId, async () => {
-        const document = documents.get(sessionId);
+        const document = records.get(sessionId)?.document;
         if (!document || document.session.activeRunId !== event.runId) {
           return;
         }
@@ -351,44 +473,97 @@ export default definePlugin({
     };
 
     for (const stored of await context.store.list("sessions/")) {
-      const document =
-        stored.value &&
-        typeof stored.value === "object" &&
-        !Array.isArray(stored.value) &&
-        "version" in stored.value
-          ? persistedChatDocumentSchema.parse(stored.value).document
+      const current = persistedChatRecordSchema.safeParse(stored.value);
+      const document = current.success
+        ? current.data.document
+        : stored.value &&
+            typeof stored.value === "object" &&
+            !Array.isArray(stored.value) &&
+            "version" in stored.value
+          ? legacyPersistedChatDocumentSchema.parse(stored.value).document
           : chatDocumentSchema.parse(stored.value);
+      const legacyExecution = current.success
+        ? undefined
+        : await context.executions.bind({
+            mode: "root",
+            subject: {
+              kind: "chat-session",
+              id: document.session.id,
+            },
+            classification: "restricted",
+            provenance: {
+              kind: "legacy",
+              id: `chat-session:${document.session.id}`,
+            },
+          });
+      const security = current.success
+        ? current.data.security
+        : chatSecurityStateSchema.parse({
+            headExecutionId: legacyExecution?.id,
+          });
+      if (security.pendingClose) {
+        const pendingExecution = await context.executions.bind({
+          mode: "resume",
+          executionId: security.pendingClose.executionId,
+        });
+        await pendingExecution.close({
+          outcome: security.pendingClose.outcome,
+          reason: security.pendingClose.reason,
+        });
+      }
       context.workspace.allocate(document.session.id);
       const interrupted =
+        security.active !== undefined ||
         document.session.activeRunId ||
         ["running", "waiting"].includes(document.session.status);
-      const recovered =
-        interrupted
-          ? chatDocumentSchema.parse({
-              session: {
-                ...document.session,
-                status: "idle",
-                activeRunId: undefined,
-                updatedAt: new Date().toISOString(),
-              },
-              entries: [
-                ...document.entries,
-                createEntry(
-                  "event",
-                  "The previous turn was interrupted when Borg stopped.",
-                  {
-                    ...(document.session.activeRunId
-                      ? { runId: document.session.activeRunId }
-                      : {}),
-                    status: "interrupted",
-                  },
-                ),
-              ],
-            })
-          : document;
-      documents.set(recovered.session.id, recovered);
-      if (recovered !== document) {
-        await persist(recovered);
+      const recovered = interrupted
+        ? chatDocumentSchema.parse({
+            session: {
+              ...document.session,
+              status: "idle",
+              activeRunId: undefined,
+              updatedAt: new Date().toISOString(),
+            },
+            entries: [
+              ...document.entries,
+              createEntry(
+                "event",
+                "The previous turn was interrupted when Borg stopped.",
+                {
+                  ...(document.session.activeRunId
+                    ? { runId: document.session.activeRunId }
+                    : {}),
+                  status: "interrupted",
+                },
+              ),
+            ],
+          })
+        : document;
+      const recoveredSecurity = chatSecurityStateSchema.parse({
+        headExecutionId:
+          security.pendingClose?.executionId ??
+          security.active?.executionId ??
+          security.headExecutionId,
+      });
+      const record = {
+        document: recovered,
+        security: recoveredSecurity,
+      } satisfies ChatRecord;
+      records.set(recovered.session.id, record);
+      if (!current.success || interrupted || security.pendingClose) {
+        await persist(recovered, recoveredSecurity);
+      }
+      const head = await context.executions.bind({
+        mode: "resume",
+        executionId: recoveredSecurity.headExecutionId,
+      });
+      if ((await head.summary()).lifecycle.state === "open") {
+        await head.close({
+          outcome: interrupted ? "interrupted" : "completed",
+          reason: interrupted
+            ? `Chat session ${recovered.session.id} recovered an interrupted turn`
+            : `Chat session ${recovered.session.id} security seed committed`,
+        });
       }
     }
 
@@ -400,36 +575,157 @@ export default definePlugin({
         readonly content: string;
       }[],
     ): Promise<string> => {
-      const current = documents.get(sessionId);
+      const current = records.get(sessionId);
       if (!current) {
         throw new Error(`Chat session ${sessionId} is unavailable`);
       }
+      const turnId = randomUUID();
+      const parent = await context.executions.grant(
+        current.security.headExecutionId,
+      );
+      const turn = await context.executions.bind({
+        mode: "child",
+        subject: {
+          kind: "chat-turn",
+          id: `${sessionId}/${turnId}`,
+        },
+        parent,
+      });
+      await turn.observe({
+        classification: "internal",
+        provenance: {
+          kind: "user",
+          id: `chat-turn:${turnId}`,
+        },
+        reason: `User started chat turn ${turnId}`,
+      });
+      const operationPrefix =
+        modelOperationPrefixSchema.parse(
+          `chat/session/${sessionId}/turn/${turnId}`,
+        );
+      const preparedSecurity = chatSecurityStateSchema.parse({
+        headExecutionId: current.security.headExecutionId,
+        active: {
+          turnId,
+          executionId: turn.id,
+          operationPrefix,
+        },
+      });
+      const preparedDocument = chatDocumentSchema.parse({
+        ...current.document,
+        session: {
+          ...current.document.session,
+          status: "running",
+          activeRunId: undefined,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      await persist(preparedDocument, preparedSecurity);
+      await closePending(current);
+      records.set(sessionId, {
+        document: preparedDocument,
+        security: preparedSecurity,
+      });
       let run: Awaited<ReturnType<typeof context.loops.start>>;
       try {
         run = await context.loops.start({
           prompt: text,
-          personaId: current.session.personaId,
+          personaId: current.document.session.personaId,
           sessionId,
           conversation,
+          security: {
+            kind: "bound",
+            executionId: turn.id,
+            operationPrefix,
+          },
         });
       } catch (error) {
+        const failedSecurity = chatSecurityStateSchema.parse({
+          headExecutionId: turn.id,
+        });
+        const failedDocument = chatDocumentSchema.parse({
+          ...preparedDocument,
+          session: {
+            ...preparedDocument.session,
+            status: "error",
+            activeRunId: undefined,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+        await persist(failedDocument, failedSecurity);
+        records.set(sessionId, {
+          document: failedDocument,
+          security: failedSecurity,
+        });
+        await turn.close({
+          outcome: "failed",
+          reason: `Chat turn ${turnId} could not start`,
+        });
         await append(
           sessionId,
           createEntry("event", `The turn could not start: ${String(error)}`, {
             status: "failed_to_start",
           }),
         );
-        await updateSession(sessionId, { status: "error" });
         throw error;
       }
-      let running: ChatDocument;
-      try {
-        running = await updateSession(sessionId, {
-          status: "running",
+      const runningSecurity = chatSecurityStateSchema.parse({
+        ...preparedSecurity,
+        active: {
+          ...preparedSecurity.active,
+          runId: run.id,
+        },
+      });
+      const running = chatDocumentSchema.parse({
+        ...preparedDocument,
+        session: {
+          ...preparedDocument.session,
           activeRunId: run.id,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      try {
+        await persist(running, runningSecurity);
+        records.set(sessionId, {
+          document: running,
+          security: runningSecurity,
         });
       } catch (error) {
         context.loops.cancel(run.id);
+        const failedSecurity = chatSecurityStateSchema.parse({
+          headExecutionId: turn.id,
+          pendingClose: {
+            executionId: turn.id,
+            outcome: "cancelled",
+            reason: `Chat turn ${turnId} lost its run link`,
+          },
+        });
+        const failedDocument = chatDocumentSchema.parse({
+          ...preparedDocument,
+          session: {
+            ...preparedDocument.session,
+            status: "error",
+            activeRunId: undefined,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+        await persist(failedDocument, failedSecurity);
+        records.set(sessionId, {
+          document: failedDocument,
+          security: failedSecurity,
+        });
+        await turn.close({
+          outcome: "cancelled",
+          reason: `Chat turn ${turnId} lost its run link`,
+        });
+        const closedSecurity = chatSecurityStateSchema.parse({
+          headExecutionId: turn.id,
+        });
+        await persist(failedDocument, closedSecurity);
+        records.set(sessionId, {
+          document: failedDocument,
+          security: closedSecurity,
+        });
         throw error;
       }
       await context.bus.emit(chatTurnStarted, {
@@ -456,21 +752,22 @@ export default definePlugin({
       if (!persona || persona.archived) {
         throw new Error(`Persona ${input.personaId} is unavailable`);
       }
-      if (
-        input.parentSessionId &&
-        !documents.has(input.parentSessionId)
-      ) {
+      const parentRecord = input.parentSessionId
+        ? records.get(input.parentSessionId)
+        : undefined;
+      if (input.parentSessionId && !parentRecord) {
         throw new Error(
           `Parent chat session ${input.parentSessionId} is unavailable`,
         );
       }
       const now = new Date().toISOString();
+      const sessionId = randomUUID();
       const initialMessage = input.initialMessage?.trim();
       const initialEntry = initialMessage
         ? createEntry("user", initialMessage)
         : undefined;
       const session = chatSessionSchema.parse({
-        id: randomUUID(),
+        id: sessionId,
         title:
           input.title ??
           (initialMessage?.slice(0, 48) || "New session"),
@@ -484,14 +781,48 @@ export default definePlugin({
         session,
         entries: initialEntry ? [initialEntry] : [],
       });
+      const execution = parentRecord
+        ? await context.executions.bind({
+            mode: "child",
+            subject: {
+              kind: "chat-session",
+              id: sessionId,
+            },
+            parent: await context.executions.grant(
+              parentRecord.security.headExecutionId,
+            ),
+          })
+        : await context.executions.bind({
+            mode: "root",
+            subject: {
+              kind: "chat-session",
+              id: sessionId,
+            },
+            classification: "internal",
+            provenance: {
+              kind: "user",
+              id: `chat-session:${sessionId}`,
+            },
+          });
+      const security = chatSecurityStateSchema.parse({
+        headExecutionId: execution.id,
+      });
       context.workspace.allocate(session.id);
       try {
-        await persist(document);
-        documents.set(session.id, document);
+        await persist(document, security);
+        records.set(session.id, { document, security });
       } catch (error) {
         await context.workspace.release(session.id).catch(() => undefined);
+        await execution.close({
+          outcome: "deleted",
+          reason: `Chat session ${sessionId} could not be persisted`,
+        });
         throw error;
       }
+      await execution.close({
+        outcome: "completed",
+        reason: `Chat session ${sessionId} was persisted`,
+      });
       await publishSession(document);
       if (initialEntry && initialMessage) {
         await context.bus.emit(chatMessageAppended, {
@@ -507,11 +838,12 @@ export default definePlugin({
       text: string,
     ): Promise<string> =>
       enqueue(sessionId, async () => {
-        const document = documents.get(sessionId);
-        if (!document) {
+        const record = records.get(sessionId);
+        if (!record) {
           throw new Error(`Chat session ${sessionId} is unavailable`);
         }
-        if (document.session.activeRunId) {
+        const document = record.document;
+        if (document.session.activeRunId || record.security.active) {
           throw new Error(`Chat session ${sessionId} already has an active turn`);
         }
         const conversation = document.entries.flatMap((entry) =>
@@ -533,7 +865,7 @@ export default definePlugin({
           entries: [...document.entries, userEntry],
         });
         await persist(withUser);
-        documents.set(sessionId, withUser);
+        records.set(sessionId, { ...record, document: withUser });
         await context.bus.emit(chatMessageAppended, {
           sessionId,
           entry: userEntry,
@@ -561,8 +893,8 @@ export default definePlugin({
     });
 
     context.bus.handle(chatListSessions, (input) => ({
-      sessions: [...documents.values()]
-        .map(({ session }) => session)
+      sessions: [...records.values()]
+        .map(({ document }) => document.session)
         .filter((session) =>
           input.parentSessionId
             ? session.parentSessionId === input.parentSessionId
@@ -574,7 +906,7 @@ export default definePlugin({
     }));
 
     context.bus.handle(chatGetSession, ({ sessionId }) => {
-      const document = documents.get(sessionId);
+      const document = records.get(sessionId)?.document;
       if (!document) {
         throw new Error(`Chat session ${sessionId} is unavailable`);
       }
@@ -593,43 +925,68 @@ export default definePlugin({
 
     context.bus.handle(chatDeleteSession, async ({ sessionId }) => {
       return enqueue(sessionId, async () => {
-        const document = documents.get(sessionId);
-        if (!document) {
+        const record = records.get(sessionId);
+        if (!record) {
           return { deleted: false };
         }
-        const children = [...documents.values()].filter(
-          ({ session }) => session.parentSessionId === sessionId,
+        const document = record.document;
+        const children = [...records.values()].filter(
+          ({ document: child }) =>
+            child.session.parentSessionId === sessionId,
         );
-        const detachedChildren = children.map((child) =>
-          chatDocumentSchema.parse({
-            ...child,
+        const detachedChildren = children.map((child) => ({
+          ...child,
+          document: chatDocumentSchema.parse({
+            ...child.document,
             session: {
-              ...child.session,
+              ...child.document.session,
               parentSessionId: undefined,
               updatedAt: new Date().toISOString(),
             },
           }),
-        );
+        }));
         await context.store.transaction([
           { type: "delete", key: `sessions/${sessionId}` },
           ...detachedChildren.map((child) => ({
             type: "set" as const,
-            key: `sessions/${child.session.id}`,
-            value: asJsonValue({ version: 1, document: child }),
+            key: `sessions/${child.document.session.id}`,
+            value: asJsonValue({
+              version: 2,
+              document: child.document,
+              security: child.security,
+            }),
           })),
         ]);
         for (const child of detachedChildren) {
-          documents.set(child.session.id, child);
+          records.set(child.document.session.id, child);
         }
-        documents.delete(sessionId);
+        records.delete(sessionId);
         const runId = document.session.activeRunId;
         if (runId) {
           context.loops.cancel(runId);
           await runSubscriptions.get(runId)?.dispose();
           runSubscriptions.delete(runId);
         }
+        const executionIds = new Set<ExecutionId>([
+          record.security.headExecutionId,
+          ...(record.security.active
+            ? [record.security.active.executionId]
+            : []),
+        ]);
+        for (const executionId of executionIds) {
+          const execution = await context.executions.bind({
+            mode: "resume",
+            executionId,
+          });
+          if ((await execution.summary()).lifecycle.state === "open") {
+            await execution.close({
+              outcome: "deleted",
+              reason: `Chat session ${sessionId} was deleted`,
+            });
+          }
+        }
         for (const child of detachedChildren) {
-          await publishSession(child);
+          await publishSession(child.document);
         }
         await context.workspace.release(sessionId).catch((error: unknown) => {
           context.logger.warn(
@@ -650,7 +1007,7 @@ export default definePlugin({
       chatSpawnSubAgent,
       ({ parentSessionId, personaId, task }) =>
         enqueue(parentSessionId, async () => {
-          const parent = documents.get(parentSessionId);
+          const parent = records.get(parentSessionId)?.document;
           if (!parent) {
             throw new Error(
               `Parent chat session ${parentSessionId} is unavailable`,
@@ -669,7 +1026,20 @@ export default definePlugin({
           } catch (error) {
             try {
               await context.store.delete(`sessions/${childSessionId}`);
-              documents.delete(childSessionId);
+              const child = records.get(childSessionId);
+              records.delete(childSessionId);
+              if (child) {
+                const execution = await context.executions.bind({
+                  mode: "resume",
+                  executionId: child.security.headExecutionId,
+                });
+                if ((await execution.summary()).lifecycle.state === "open") {
+                  await execution.close({
+                    outcome: "deleted",
+                    reason: `Child chat ${childSessionId} was rolled back`,
+                  });
+                }
+              }
               await context.workspace
                 .release(childSessionId)
                 .catch(() => undefined);
@@ -689,7 +1059,7 @@ export default definePlugin({
 
     context.bus.on(feedbackRequested, async ({ interactionId, request }) => {
       const sessionId = request.source?.sessionId;
-      if (!sessionId || !documents.has(sessionId)) {
+      if (!sessionId || !records.has(sessionId)) {
         return;
       }
       await enqueue(sessionId, async () =>
@@ -704,7 +1074,7 @@ export default definePlugin({
     });
 
     context.bus.on(feedbackResolved, async ({ interactionId, source, status }) => {
-      if (!source.sessionId || !documents.has(source.sessionId)) {
+      if (!source.sessionId || !records.has(source.sessionId)) {
         return;
       }
       await enqueue(source.sessionId, async () =>
@@ -722,11 +1092,11 @@ export default definePlugin({
     const embeddedContent = context.bus.on(
       embeddedContentRegistered,
       async ({ sessionId, content }) => {
-        if (!documents.has(sessionId)) {
+        if (!records.has(sessionId)) {
           return;
         }
         await enqueue(sessionId, async () => {
-          const document = documents.get(sessionId);
+          const document = records.get(sessionId)?.document;
           if (
             !document ||
             document.entries.some((entry) => {

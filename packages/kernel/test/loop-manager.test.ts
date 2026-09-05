@@ -1,21 +1,124 @@
-import { defineTool, z } from "@borg/plugin-sdk";
+import {
+  modelOperationKeySchema,
+  type LoopStartInput,
+} from "@borg/contracts";
+import {
+  defineTool,
+  z,
+  type LlmProviderContribution,
+  type ProviderEgress,
+} from "@borg/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   CostLedger,
-  InteractionService,
+  ExecutionSecurityService,
   LoopManager,
-  ModelRouter,
-  ScannerRegistry,
-  ToolService,
-  TrustAuthorizer,
+  type ModelGateway,
 } from "../src";
+import { createSecurityRuntime } from "./security-runtime";
+
+const TEST_PROVIDER_EGRESS = {
+  kind: "remote",
+  capacity: "internal",
+  destination: "https://models.test.invalid/v1/generate",
+} satisfies ProviderEgress;
+
+type LoopStartWithoutSecurity = Omit<LoopStartInput, "security">;
+
+function loopStartInput(
+  operationId: string,
+  input: LoopStartWithoutSecurity,
+): LoopStartInput {
+  return {
+    ...input,
+    security: {
+      kind: "root",
+      subject: {
+        kind: "loop-test",
+        id: operationId,
+      },
+      classification: "internal",
+      provenance: {
+        kind: "plugin",
+        id: "borg.kernel.loop-manager-test",
+      },
+      operationPrefix: `loop-manager/${operationId}`,
+    },
+  };
+}
+
+function registerModelProvider(
+  models: ModelGateway,
+  ownerPluginId: string,
+  provider: LlmProviderContribution,
+) {
+  return models.registerProvider(ownerPluginId, provider);
+}
+
+function createLoopRuntime(
+  canInvokeTools?: (pluginId: string) => boolean,
+) {
+  const runtime = createSecurityRuntime();
+  const loops =
+    canInvokeTools === undefined
+      ? new LoopManager(
+          runtime.models,
+          runtime.executions,
+          runtime.tools,
+          runtime.costs,
+        )
+      : new LoopManager(
+          runtime.models,
+          runtime.executions,
+          runtime.tools,
+          runtime.costs,
+          canInvokeTools,
+        );
+  return { ...runtime, loops };
+}
+
+class DelayedExecutionSecurityService extends ExecutionSecurityService {
+  constructor(
+    store: ConstructorParameters<typeof ExecutionSecurityService>[0],
+    readonly ready: Promise<void>,
+  ) {
+    super(store);
+  }
+
+  override async bind(
+    ...args: Parameters<ExecutionSecurityService["bind"]>
+  ) {
+    await this.ready;
+    return await super.bind(...args);
+  }
+}
+
+async function bindModelExecution(
+  executions: ExecutionSecurityService,
+  ownerPluginId: string,
+  operationId: string,
+) {
+  return await executions.bind(
+    ownerPluginId,
+    {
+      mode: "root",
+      subject: {
+        kind: "model-test",
+        id: operationId,
+      },
+      classification: "internal",
+      provenance: {
+        kind: "plugin",
+        id: "borg.kernel.loop-manager-test",
+      },
+    },
+    "detached",
+  );
+}
 
 function createRuntime() {
-  const interactions = new InteractionService();
-  const costs = new CostLedger();
-  const tools = new ToolService(interactions);
-  const models = new ModelRouter(costs);
-  const loops = new LoopManager(models, tools, costs);
+  const runtime = createLoopRuntime();
+  const { models, tools } = runtime;
   const executeEcho = vi.fn(({ text }: { readonly text: string }) => ({
     echoed: text,
   }));
@@ -32,10 +135,12 @@ function createRuntime() {
       execute: executeEcho,
     }),
   );
-  models.registerProvider("borg.mock-llm", {
+  registerModelProvider(models, "borg.mock-llm", {
     id: "borg.mock-llm",
     models: ["mock:scripted"],
-    async complete(request) {
+    egress: TEST_PROVIDER_EGRESS,
+    async complete(request, permit) {
+      await permit.commit();
       const toolResult = request.messages.find(({ role }) => role === "tool");
       return toolResult
         ? {
@@ -64,18 +169,28 @@ function createRuntime() {
           };
     },
   });
-  return { interactions, costs, loops, executeEcho };
+  return { ...runtime, executeEcho };
 }
 
 describe("LoopManager", () => {
+  it("rejects a loop without explicit execution security", () => {
+    const { loops } = createLoopRuntime();
+
+    expect(() =>
+      Reflect.apply(loops.start, loops, [{ prompt: "unsecured" }]),
+    ).toThrow(/security/i);
+  });
+
   it("runs a model-tool-model flow through approval and records usage", async () => {
     const { interactions, costs, loops } = createRuntime();
-    const run = loops.start({
-      prompt: "use echo",
-      providerId: "borg.mock-llm",
-      modelId: "mock:scripted",
-      allowedTools: ["tools.echo"],
-    });
+    const run = loops.start(
+      loopStartInput("model-tool-model-flow", {
+        prompt: "use echo",
+        providerId: "borg.mock-llm",
+        modelId: "mock:scripted",
+        allowedTools: ["tools.echo"],
+      }),
+    );
     const eventTypes: string[] = [];
     let toolInput: unknown;
     loops.subscribeRun(run.id, "kernel.loop", (event) => {
@@ -126,10 +241,12 @@ describe("LoopManager", () => {
 
   it("fails the run when the user denies a tool", async () => {
     const { interactions, loops, executeEcho } = createRuntime();
-    const run = loops.start({
-      prompt: "use echo",
-      allowedTools: ["tools.echo"],
-    });
+    const run = loops.start(
+      loopStartInput("denied-tool", {
+        prompt: "use echo",
+        allowedTools: ["tools.echo"],
+      }),
+    );
     await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
     interactions.respond(interactions.listPending()[0]!.id, {
       kind: "approval",
@@ -140,27 +257,11 @@ describe("LoopManager", () => {
     expect(executeEcho).not.toHaveBeenCalled();
   });
 
-  it("drops denied model tokens from replayed run history", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const scanners = new ScannerRegistry();
-    const authorizer = new TrustAuthorizer(interactions);
-    const loops = new LoopManager(
-      models,
-      tools,
-      costs,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      scanners,
-      authorizer,
-    );
+  it("withholds denied model tokens from live and replayed history", async () => {
+    const { loops, models, scanners } = createLoopRuntime();
     scanners.register("borg.security", {
       id: "borg.security.prompt-injection",
-      stages: ["user_input", "model_output"],
+      stages: ["model_output"],
       scan: async ({ stage }) =>
         stage === "model_output"
           ? [
@@ -172,11 +273,13 @@ describe("LoopManager", () => {
             ]
           : [],
     });
-    models.registerProvider("borg.mock-llm", {
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete(_request, _signal, onToken) {
-        await onToken?.("blocked text");
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit, _signal, onRawToken) {
+        await permit.commit();
+        await onRawToken?.("blocked text");
         return {
           content: "blocked text",
           usage: {
@@ -190,7 +293,9 @@ describe("LoopManager", () => {
     });
 
     const live: string[] = [];
-    const run = loops.start({ prompt: "hello" });
+    const run = loops.start(
+      loopStartInput("denied-model-output", { prompt: "hello" }),
+    );
     loops.subscribeRun(run.id, "kernel.loop", (event) => {
       if (event.type === "model_token") {
         live.push(event.token);
@@ -198,7 +303,7 @@ describe("LoopManager", () => {
     });
 
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("failed"));
-    expect(live).toEqual(["blocked text"]);
+    expect(live).toEqual([]);
     expect(loops.get(run.id)?.error).toMatch(/denied/);
 
     const replayed: string[] = [];
@@ -210,12 +315,68 @@ describe("LoopManager", () => {
     expect(replayed).toEqual([]);
   });
 
+  it("emits interaction_wait while approved model output stays held", async () => {
+    const { interactions, loops, models, scanners } = createLoopRuntime();
+    scanners.register("borg.review", {
+      id: "borg.review.model-output",
+      stages: ["model_output"],
+      scan: async () => [
+        {
+          code: "review.output",
+          action: "review",
+          reason: "model output needs review",
+        },
+      ],
+    });
+    registerModelProvider(models, "borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit, _signal, onRawToken) {
+        await permit.commit();
+        await onRawToken?.("approved text");
+        return {
+          content: "approved text",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+
+    const tokens: string[] = [];
+    const events: string[] = [];
+    const run = loops.start(
+      loopStartInput("reviewed-model-output", { prompt: "hello" }),
+    );
+    loops.subscribeRun(run.id, "kernel.loop", (event) => {
+      events.push(event.type);
+      if (event.type === "model_token") {
+        tokens.push(event.token);
+      }
+    });
+
+    await vi.waitFor(() =>
+      expect(interactions.listPending()).toHaveLength(1),
+    );
+    expect(events).toContain("interaction_wait");
+    expect(tokens).toEqual([]);
+    interactions.respond(interactions.listPending()[0]!.id, {
+      kind: "approval",
+      decision: "allow",
+    });
+    await vi.waitFor(() =>
+      expect(loops.get(run.id)?.status).toBe("completed"),
+    );
+    expect(tokens).toEqual(["approved text"]);
+  });
+
   it("cancels a pending approval when its run ends", async () => {
     const { interactions, loops, executeEcho } = createRuntime();
-    const run = loops.start({
-      prompt: "use echo",
-      allowedTools: ["tools.echo"],
-    });
+    const run = loops.start(
+      loopStartInput("cancel-pending-approval", {
+        prompt: "use echo",
+        allowedTools: ["tools.echo"],
+      }),
+    );
     await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
 
     expect(loops.cancel(run.id)).toBe(true);
@@ -224,12 +385,66 @@ describe("LoopManager", () => {
     expect(executeEcho).not.toHaveBeenCalled();
   });
 
+  it("closes late-bound execution security when setup is cancelled", async () => {
+    const runtime = createSecurityRuntime();
+    let releaseBinding = (): void => {
+      throw new Error("Binding gate was not initialized");
+    };
+    const bindingGate = new Promise<void>((resolve) => {
+      releaseBinding = resolve;
+    });
+    const executions = new DelayedExecutionSecurityService(
+      runtime.store,
+      bindingGate,
+    );
+    const loops = new LoopManager(
+      runtime.models,
+      executions,
+      runtime.tools,
+      runtime.costs,
+    );
+    const input = loopStartInput("cancel-during-security-bind", {
+      prompt: "cancel during setup",
+    });
+    if (input.security.kind !== "root") {
+      throw new Error("Test loop security must be a root");
+    }
+    const run = loops.start(input);
+
+    expect(loops.cancel(run.id)).toBe(true);
+    releaseBinding();
+    const execution = await executions.bind(
+      "kernel.loop",
+      {
+        mode: "root",
+        subject: input.security.subject,
+        classification: "internal",
+        provenance: {
+          kind: "plugin",
+          id: "borg.kernel.loop-manager-test",
+        },
+      },
+      "detached",
+    );
+    await vi.waitFor(async () =>
+      expect((await execution.summary()).lifecycle).toMatchObject({
+        state: "closed",
+        outcome: "cancelled",
+      }),
+    );
+    await expect(runtime.tools.prepareRun(run.id)).rejects.toThrow(
+      /unavailable/,
+    );
+  });
+
   it("drains terminal event subscribers when cancelling owned runs", async () => {
     const { interactions, loops } = createRuntime();
-    const run = loops.start({
-      prompt: "use echo",
-      allowedTools: ["tools.echo"],
-    });
+    const run = loops.start(
+      loopStartInput("drain-cancelled-subscribers", {
+        prompt: "use echo",
+        allowedTools: ["tools.echo"],
+      }),
+    );
     await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -254,15 +469,13 @@ describe("LoopManager", () => {
   });
 
   it("reports an unavailable feedback tool instead of bypassing the registry", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const loops = new LoopManager(models, tools, costs);
-    models.registerProvider("borg.mock-llm", {
+    const { interactions, loops, models } = createLoopRuntime();
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete() {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
         return {
           toolCalls: [
             {
@@ -276,18 +489,16 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start({ prompt: "ask" });
+    const run = loops.start(
+      loopStartInput("unavailable-feedback-tool", { prompt: "ask" }),
+    );
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("failed"));
     expect(loops.get(run.id)?.error).toContain("unavailable");
     expect(interactions.listPending()).toHaveLength(0);
   });
 
   it("waits for human feedback and continues the model turn", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const loops = new LoopManager(models, tools, costs);
+    const { interactions, loops, models, tools } = createLoopRuntime();
     tools.register(
       "borg.feedback",
       defineTool({
@@ -321,10 +532,12 @@ describe("LoopManager", () => {
         },
       }),
     );
-    models.registerProvider("borg.mock-llm", {
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete(request) {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(request, permit) {
+        await permit.commit();
         const answer = request.messages.find(({ role }) => role === "tool");
         return answer
           ? {
@@ -348,10 +561,12 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start({
-      prompt: "ask for feedback",
-      allowedTools: ["feedback.ask"],
-    });
+    const run = loops.start(
+      loopStartInput("human-feedback", {
+        prompt: "ask for feedback",
+        allowedTools: ["feedback.ask"],
+      }),
+    );
     await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
     const pending = interactions.listPending()[0]!;
     interactions.respond(pending.id, {
@@ -363,19 +578,17 @@ describe("LoopManager", () => {
   });
 
   it("pauses at a safe point and resumes without losing the turn", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const loops = new LoopManager(models, tools, costs);
+    const { loops, models } = createLoopRuntime();
     let finishModel: (() => void) | undefined;
-    models.registerProvider("borg.mock-llm", {
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete() {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
         await new Promise<void>((resolve) => {
           finishModel = resolve;
         });
+        await permit.commit();
         return {
           content: "paused safely",
           usage: { inputTokens: 1, outputTokens: 1 },
@@ -383,7 +596,9 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start({ prompt: "pause me" });
+    const run = loops.start(
+      loopStartInput("pause-and-resume", { prompt: "pause me" }),
+    );
     await vi.waitFor(() => expect(finishModel).toBeDefined());
     expect(loops.pause(run.id)).toBe(true);
     finishModel?.();
@@ -394,16 +609,14 @@ describe("LoopManager", () => {
   });
 
   it("keeps cancellation terminal when a provider returns late", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const loops = new LoopManager(models, tools, costs);
+    const { costs, loops, models } = createLoopRuntime();
     let finishModel: (() => void) | undefined;
-    models.registerProvider("borg.mock-llm", {
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete() {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
         await new Promise<void>((resolve) => {
           finishModel = resolve;
         });
@@ -414,7 +627,9 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start({ prompt: "cancel me" });
+    const run = loops.start(
+      loopStartInput("late-provider-cancellation", { prompt: "cancel me" }),
+    );
     await vi.waitFor(() => expect(finishModel).toBeDefined());
     expect(loops.cancel(run.id)).toBe(true);
     finishModel?.();
@@ -430,19 +645,17 @@ describe("LoopManager", () => {
   });
 
   it("counts live runs by owner without exposing ownership on snapshots", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const loops = new LoopManager(models, tools, costs);
+    const { loops, models } = createLoopRuntime();
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
-    models.registerProvider("borg.mock-llm", {
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete() {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
         await held;
         return {
           content: "done",
@@ -451,8 +664,14 @@ describe("LoopManager", () => {
       },
     });
 
-    const chat = loops.start({ prompt: "chat turn" }, "borg.chat");
-    const bot = loops.start({ prompt: "bot turn" }, "borg.bots");
+    const chat = loops.start(
+      loopStartInput("owned-chat-run", { prompt: "chat turn" }),
+      "borg.chat",
+    );
+    const bot = loops.start(
+      loopStartInput("owned-bot-run", { prompt: "bot turn" }),
+      "borg.bots",
+    );
     expect(chat).not.toHaveProperty("ownerPluginId");
     expect(loops.countLive()).toBe(2);
     expect(loops.countLive("borg.bots")).toBe(1);
@@ -465,11 +684,7 @@ describe("LoopManager", () => {
   });
 
   it("does not advertise or invoke tools for a loop owner without permission", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const loops = new LoopManager(models, tools, costs, () => false);
+    const { loops, models, tools } = createLoopRuntime(() => false);
     tools.register(
       "borg.tools.echo",
       defineTool({
@@ -483,10 +698,12 @@ describe("LoopManager", () => {
       }),
     );
     let advertisedTools = -1;
-    models.registerProvider("borg.mock-llm", {
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete(request) {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(request, permit) {
+        await permit.commit();
         advertisedTools = request.tools.length;
         return {
           toolCalls: [
@@ -501,32 +718,35 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start({ prompt: "try a tool" }, "borg.unprivileged");
+    const run = loops.start(
+      loopStartInput("unprivileged-tool-run", { prompt: "try a tool" }),
+      "borg.unprivileged",
+    );
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("failed"));
     expect(advertisedTools).toBe(0);
     expect(loops.get(run.id)?.error).toContain("cannot invoke tools");
   });
 
   it("routes an explicit model to the provider that exposes it", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const loops = new LoopManager(models, tools, costs);
-    models.registerProvider("borg.first", {
+    const { loops, models } = createLoopRuntime();
+    registerModelProvider(models, "borg.first", {
       id: "borg.first",
       models: ["first:model"],
-      async complete() {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
         return {
           content: "wrong provider",
           usage: { inputTokens: 1, outputTokens: 1 },
         };
       },
     });
-    models.registerProvider("borg.second", {
+    registerModelProvider(models, "borg.second", {
       id: "borg.second",
       models: ["second:model"],
-      async complete() {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
         return {
           content: "right provider",
           usage: { inputTokens: 1, outputTokens: 1 },
@@ -534,10 +754,12 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start({
-      prompt: "route me",
-      modelId: "second:model",
-    });
+    const run = loops.start(
+      loopStartInput("explicit-model-routing", {
+        prompt: "route me",
+        modelId: "second:model",
+      }),
+    );
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("completed"));
     expect(loops.get(run.id)).toMatchObject({
       providerId: "borg.second",
@@ -546,8 +768,7 @@ describe("LoopManager", () => {
   });
 
   it("does not execute a tool removed while approval is pending", async () => {
-    const interactions = new InteractionService();
-    const tools = new ToolService(interactions);
+    const { interactions, tools } = createSecurityRuntime();
     const execute = vi.fn(() => ({ done: true }));
     const registration = tools.register(
       "borg.tools.revocable",
@@ -576,8 +797,7 @@ describe("LoopManager", () => {
   });
 
   it("enforces the kernel-owned allowlist for run-scoped tool calls", async () => {
-    const interactions = new InteractionService();
-    const tools = new ToolService(interactions);
+    const { tools } = createSecurityRuntime();
     const execute = vi.fn(() => ({ done: true }));
     tools.register(
       "borg.tools.restricted",
@@ -614,8 +834,7 @@ describe("LoopManager", () => {
   });
 
   it("requires tools to satisfy every run policy layer", async () => {
-    const interactions = new InteractionService();
-    const tools = new ToolService(interactions);
+    const { tools } = createSecurityRuntime();
     for (const id of ["tools.allowed", "tools.blocked"]) {
       tools.register(
         "borg.tools.layered",
@@ -646,8 +865,7 @@ describe("LoopManager", () => {
   });
 
   it("rejects a result returned after its tool was removed", async () => {
-    const interactions = new InteractionService();
-    const tools = new ToolService(interactions);
+    const { tools } = createSecurityRuntime();
     let finish: (() => void) | undefined;
     const registration = tools.register(
       "borg.tools.revocable",
@@ -677,13 +895,19 @@ describe("LoopManager", () => {
   });
 
   it("does not accept a completion from a removed provider but records its usage", async () => {
-    const costs = new CostLedger();
-    const models = new ModelRouter(costs);
+    const { costs, executions, models } = createSecurityRuntime();
+    const execution = await bindModelExecution(
+      executions,
+      "borg.loop-test",
+      "revoked-provider",
+    );
     let finish: (() => void) | undefined;
-    const registration = models.registerProvider("borg.revocable", {
+    const registration = registerModelProvider(models, "borg.revocable", {
       id: "borg.revocable",
       models: ["revocable:model"],
-      async complete() {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
         await new Promise<void>((resolve) => {
           finish = resolve;
         });
@@ -701,10 +925,17 @@ describe("LoopManager", () => {
 
     const completion = models.complete(
       {
+        ownerPluginId: "borg.loop-test",
+        feature: "loop-test",
+        runId: "run-1",
+      },
+      {
+        executionId: execution.id,
+        operationKey: modelOperationKeySchema.parse(
+          "loop-manager/revoked-provider/model/0",
+        ),
         providerId: "borg.revocable",
         modelId: "revocable:model",
-        runId: "run-1",
-        correlationId: "run-1",
         messages: [{ role: "user", content: "wait" }],
         tools: [],
       },
@@ -720,15 +951,25 @@ describe("LoopManager", () => {
   });
 
   it("does not call a model provider for a pre-cancelled request", async () => {
-    const costs = new CostLedger();
-    const models = new ModelRouter(costs);
-    const complete = vi.fn(async () => ({
-      content: "too late",
-      usage: { inputTokens: 1, outputTokens: 1 },
-    }));
-    models.registerProvider("borg.provider", {
+    const { executions, models } = createSecurityRuntime();
+    const execution = await bindModelExecution(
+      executions,
+      "borg.loop-test",
+      "pre-cancelled-provider",
+    );
+    const complete: LlmProviderContribution["complete"] = vi.fn(
+      async (_request, permit) => {
+        await permit.commit();
+        return {
+          content: "too late",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    );
+    registerModelProvider(models, "borg.provider", {
       id: "borg.provider",
       models: ["provider:model"],
+      egress: TEST_PROVIDER_EGRESS,
       complete,
     });
     const controller = new AbortController();
@@ -737,10 +978,17 @@ describe("LoopManager", () => {
     await expect(
       models.complete(
         {
+          ownerPluginId: "borg.loop-test",
+          feature: "loop-test",
+          runId: "run",
+        },
+        {
+          executionId: execution.id,
+          operationKey: modelOperationKeySchema.parse(
+            "loop-manager/pre-cancelled-provider/model/0",
+          ),
           providerId: "borg.provider",
           modelId: "provider:model",
-          runId: "run",
-          correlationId: "run",
           messages: [{ role: "user", content: "test" }],
           tools: [],
         },
@@ -751,11 +999,7 @@ describe("LoopManager", () => {
   });
 
   it("prepares scoped providers before the first completion and advertises their tools", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const loops = new LoopManager(models, tools, costs);
+    const { loops, models, tools } = createLoopRuntime();
     let advertised: string[] = [];
     tools.registerProvider("borg.mcp", {
       id: "borg.mcp",
@@ -774,10 +1018,12 @@ describe("LoopManager", () => {
         };
       },
     });
-    models.registerProvider("borg.mock-llm", {
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete(request) {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(request, permit) {
+        await permit.commit();
         advertised = request.tools.map(({ id }) => id);
         return {
           content: "done",
@@ -786,21 +1032,24 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start({ prompt: "list tools" });
+    const run = loops.start(
+      loopStartInput("prepared-tool-catalog", { prompt: "list tools" }),
+    );
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("completed"));
     expect(advertised).toEqual(["mcp.demo.echo"]);
   });
 
   it("cancels the run when catalog preparation is aborted", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const loops = new LoopManager(models, tools, costs);
-    const complete = vi.fn(async () => ({
-      content: "should not run",
-      usage: { inputTokens: 1, outputTokens: 1 },
-    }));
+    const { loops, models, tools } = createLoopRuntime();
+    const complete: LlmProviderContribution["complete"] = vi.fn(
+      async (_request, permit) => {
+        await permit.commit();
+        return {
+          content: "should not run",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    );
     let preparing = false;
     tools.registerProvider("borg.mcp", {
       id: "borg.mcp",
@@ -823,13 +1072,18 @@ describe("LoopManager", () => {
         };
       },
     });
-    models.registerProvider("borg.mock-llm", {
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
+      egress: TEST_PROVIDER_EGRESS,
       complete,
     });
 
-    const run = loops.start({ prompt: "cancel during prepare" });
+    const run = loops.start(
+      loopStartInput("cancel-tool-catalog-prepare", {
+        prompt: "cancel during prepare",
+      }),
+    );
     await vi.waitFor(() => expect(preparing).toBe(true));
     expect(loops.cancel(run.id)).toBe(true);
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("cancelled"));
@@ -837,11 +1091,7 @@ describe("LoopManager", () => {
   });
 
   it("degrades the catalog when a provider fails to prepare", async () => {
-    const interactions = new InteractionService();
-    const costs = new CostLedger();
-    const tools = new ToolService(interactions);
-    const models = new ModelRouter(costs);
-    const loops = new LoopManager(models, tools, costs);
+    const { loops, models, tools } = createLoopRuntime();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     let advertised: string[] = [];
     tools.registerProvider("borg.broken", {
@@ -867,10 +1117,12 @@ describe("LoopManager", () => {
         };
       },
     });
-    models.registerProvider("borg.mock-llm", {
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete(request) {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(request, permit) {
+        await permit.commit();
         advertised = request.tools.map(({ id }) => id);
         return {
           content: "done",
@@ -879,7 +1131,11 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start({ prompt: "survive a provider failure" });
+    const run = loops.start(
+      loopStartInput("degraded-tool-catalog", {
+        prompt: "survive a provider failure",
+      }),
+    );
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("completed"));
     expect(advertised).toEqual(["mcp.demo.echo"]);
     expect(loops.get(run.id)?.error).toBeUndefined();
@@ -1018,26 +1274,34 @@ describe("CostLedger", () => {
   });
 });
 
-describe("ModelRouter fallback preferences", () => {
+describe("ModelGateway fallback preferences and usage", () => {
   it("uses desktop-supplied fallback instead of insertion order", async () => {
-    const costs = new CostLedger();
-    const models = new ModelRouter(costs, {
+    const { executions, models } = createSecurityRuntime({
       fallbackPreferences: ["borg.mock-llm:mock:scripted"],
     });
-    models.registerProvider("borg.anthropic", {
+    const execution = await bindModelExecution(
+      executions,
+      "borg.loop-test",
+      "fallback-preference",
+    );
+    registerModelProvider(models, "borg.anthropic", {
       id: "borg.anthropic",
       models: ["claude-sonnet-5"],
-      async complete() {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
         return {
           content: "anthropic",
           usage: { inputTokens: 1, outputTokens: 1 },
         };
       },
     });
-    models.registerProvider("borg.mock-llm", {
+    registerModelProvider(models, "borg.mock-llm", {
       id: "borg.mock-llm",
       models: ["mock:scripted"],
-      async complete() {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
         return {
           content: "mock",
           usage: { inputTokens: 1, outputTokens: 1 },
@@ -1047,7 +1311,15 @@ describe("ModelRouter fallback preferences", () => {
 
     const completion = await models.complete(
       {
-        correlationId: "unqualified",
+        ownerPluginId: "borg.loop-test",
+        feature: "loop-test",
+        runId: "unqualified",
+      },
+      {
+        executionId: execution.id,
+        operationKey: modelOperationKeySchema.parse(
+          "loop-manager/fallback-preference/model/0",
+        ),
         messages: [{ role: "user", content: "hello" }],
         tools: [],
       },
@@ -1056,17 +1328,23 @@ describe("ModelRouter fallback preferences", () => {
     expect(completion).toMatchObject({
       providerId: "borg.mock-llm",
       modelId: "mock:scripted",
-      result: { content: "mock" },
+      content: "mock",
     });
   });
 
   it("records buffered partial usage only when completion throws", async () => {
-    const costs = new CostLedger();
-    const models = new ModelRouter(costs);
-    models.registerProvider("borg.partial", {
+    const { costs, executions, models } = createSecurityRuntime();
+    const execution = await bindModelExecution(
+      executions,
+      "borg.loop-test",
+      "failed-partial-usage",
+    );
+    registerModelProvider(models, "borg.partial", {
       id: "borg.partial",
       models: ["partial:model"],
-      async complete(_request, _signal, _onToken, onUsage) {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit, _signal, _onRawToken, onUsage) {
+        await permit.commit();
         await onUsage?.({
           inputTokens: 4,
           outputTokens: 1,
@@ -1081,16 +1359,27 @@ describe("ModelRouter fallback preferences", () => {
     await expect(
       models.complete(
         {
+          ownerPluginId: "borg.loop-test",
+          feature: "loop-test",
+          runId: "run-partial",
+        },
+        {
+          executionId: execution.id,
+          operationKey: modelOperationKeySchema.parse(
+            "loop-manager/failed-partial-usage/model/0",
+          ),
           providerId: "borg.partial",
           modelId: "partial:model",
-          correlationId: "partial",
-          runId: "run-partial",
           messages: [{ role: "user", content: "hello" }],
           tools: [],
         },
         new AbortController().signal,
       ),
-    ).rejects.toThrow(/stream failed/);
+    ).rejects.toMatchObject({
+      name: "ModelProviderFailedError",
+      providerId: "borg.partial",
+      reason: "failed",
+    });
     expect(costs.list("run-partial")).toEqual([
       expect.objectContaining({
         inputTokens: 4,
@@ -1103,12 +1392,18 @@ describe("ModelRouter fallback preferences", () => {
   });
 
   it("keeps the successful result authoritative over partial usage", async () => {
-    const costs = new CostLedger();
-    const models = new ModelRouter(costs);
-    models.registerProvider("borg.partial", {
+    const { costs, executions, models } = createSecurityRuntime();
+    const execution = await bindModelExecution(
+      executions,
+      "borg.loop-test",
+      "successful-partial-usage",
+    );
+    registerModelProvider(models, "borg.partial", {
       id: "borg.partial",
       models: ["partial:model"],
-      async complete(_request, _signal, _onToken, onUsage) {
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit, _signal, _onRawToken, onUsage) {
+        await permit.commit();
         await onUsage?.({
           inputTokens: 99,
           outputTokens: 99,
@@ -1122,10 +1417,17 @@ describe("ModelRouter fallback preferences", () => {
 
     await models.complete(
       {
+        ownerPluginId: "borg.loop-test",
+        feature: "loop-test",
+        runId: "run-success",
+      },
+      {
+        executionId: execution.id,
+        operationKey: modelOperationKeySchema.parse(
+          "loop-manager/successful-partial-usage/model/0",
+        ),
         providerId: "borg.partial",
         modelId: "partial:model",
-        correlationId: "success",
-        runId: "run-success",
         messages: [{ role: "user", content: "hello" }],
         tools: [],
       },

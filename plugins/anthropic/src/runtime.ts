@@ -1,9 +1,13 @@
-import type {
-  LlmProviderContribution,
-  ModelCompletionRequest,
-  ModelCompletionResult,
-  ModelMessage,
-  ModelToolCall,
+import {
+  z,
+  type JsonValue,
+  type LlmProviderContribution,
+  type ModelCompletionRequest,
+  type ModelCompletionResult,
+  type ModelMessage,
+  type ModelToolCall,
+  type ProviderDispatchPermit,
+  type ProviderEgress,
 } from "@borg/plugin-sdk";
 
 export const ANTHROPIC_PROVIDER_ID = "borg.anthropic";
@@ -353,6 +357,11 @@ interface ToolBlockState {
 export class AnthropicProvider implements LlmProviderContribution {
   readonly id = ANTHROPIC_PROVIDER_ID;
   readonly models = ANTHROPIC_MODELS;
+  readonly egress = Object.freeze({
+    kind: "remote",
+    capacity: "internal",
+    destination: "https://api.anthropic.com",
+  } satisfies ProviderEgress);
   readonly #fetch: typeof fetch;
   readonly #endpoint: string;
   readonly #timeoutMs: number;
@@ -380,6 +389,7 @@ export class AnthropicProvider implements LlmProviderContribution {
 
   async complete(
     request: ModelCompletionRequest,
+    permit: ProviderDispatchPermit,
     signal: AbortSignal,
     onToken?: ((token: string) => void | Promise<void>) | undefined,
     onUsage?:
@@ -398,6 +408,7 @@ export class AnthropicProvider implements LlmProviderContribution {
         body: JSON.stringify(body),
       },
       signal,
+      permit,
     );
 
     if (!response.ok) {
@@ -429,6 +440,7 @@ export class AnthropicProvider implements LlmProviderContribution {
     url: string,
     init: RequestInit,
     signal: AbortSignal,
+    permit?: ProviderDispatchPermit,
   ): Promise<{
     readonly response: Response;
     readonly timeout: AbortSignal;
@@ -449,6 +461,7 @@ export class AnthropicProvider implements LlmProviderContribution {
     const timeout = AbortSignal.timeout(this.#timeoutMs);
     const combined = AbortSignal.any([signal, timeout]);
     throwIfCancelled(combined);
+    await permit?.commit();
 
     try {
       const response = await this.#fetch(url, {
@@ -722,12 +735,13 @@ function mergeUsage(
   };
 }
 
-function parseToolInput(json: string): unknown {
+function parseToolInput(json: string): JsonValue {
   if (json.trim().length === 0) {
     return {};
   }
   try {
-    return JSON.parse(json);
+    const parsed: unknown = JSON.parse(json);
+    return z.json().parse(parsed);
   } catch {
     throw new Error(SAFE_ANTHROPIC_ERRORS.protocol);
   }

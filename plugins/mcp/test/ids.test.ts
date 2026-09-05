@@ -53,8 +53,8 @@ describe("MCP tool canonicalization", () => {
     ]);
     expect(tools[0]).toMatchObject({
       mcpName: "Echo_Tool",
-      approval: "auto",
-      sideEffect: false,
+      approval: "ask",
+      sideEffect: true,
       modelVisible: true,
     });
     expect(tools[1]).toMatchObject({

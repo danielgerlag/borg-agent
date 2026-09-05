@@ -2,6 +2,7 @@ import {
   loopEventSchema,
   loopRunSnapshotSchema,
   loopStartInputSchema,
+  modelOperationKeySchema,
   type LoopEvent,
   type LoopRunSnapshot,
   type LoopStartInput,
@@ -9,12 +10,14 @@ import {
 import type { Disposable, JsonValue, ModelMessage } from "@borg/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import { CostLedger } from "./cost-ledger";
-import { ModelRouter } from "./model-router";
+import {
+  type ExecutionBinding,
+  ExecutionSecurityService,
+} from "./execution-security";
+import { ModelGateway } from "./model-gateway";
 import type { PersonaService } from "./persona-service";
 import type { PromptAssembler } from "./prompt-assembler";
-import type { ScannerRegistry } from "./scanner-registry";
 import { ToolInvocationError, ToolService } from "./tool-service";
-import type { TrustAuthorizer } from "./trust-authorizer";
 import type { WorkspaceService } from "./workspace-service";
 
 interface LoopRun {
@@ -25,6 +28,9 @@ interface LoopRun {
   readonly ownerSignal?: AbortSignal | undefined;
   readonly onOwnerAbort?: (() => void) | undefined;
   toolPolicy?: Disposable | undefined;
+  execution?: ExecutionBinding | undefined;
+  ownsExecution: boolean;
+  activePolicyInteractionId?: string | undefined;
   activeToolCallId?: string | undefined;
   activeToolPluginId?: string | undefined;
   pauseRequested: boolean;
@@ -48,6 +54,7 @@ type WithoutTimestamp<T> = T extends { readonly timestamp: string }
   ? Omit<T, "timestamp">
   : never;
 type LoopEventCandidate = WithoutTimestamp<LoopEvent>;
+const APPROVED_TOKEN_REPLAY_INTERVAL_MS = 20;
 
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -73,7 +80,8 @@ export class LoopManager {
   readonly #announcedInteractionIds = new Set<string>();
 
   constructor(
-    readonly models: ModelRouter,
+    readonly models: ModelGateway,
+    readonly executions: ExecutionSecurityService,
     readonly tools: ToolService,
     readonly costs: CostLedger,
     readonly canInvokeTools: (pluginId: string) => boolean = (pluginId) =>
@@ -81,8 +89,6 @@ export class LoopManager {
     readonly personas?: PersonaService,
     readonly prompts?: PromptAssembler,
     readonly workspaces?: WorkspaceService,
-    readonly scanners?: ScannerRegistry,
-    readonly authorizer?: TrustAuthorizer,
   ) {
     this.tools.interactions.subscribe((pending) => {
       const waitingRunIds = new Set(
@@ -222,6 +228,7 @@ export class LoopManager {
       toolInvocationAllowed,
       ownerSignal,
       onOwnerAbort: ownerSignal ? onOwnerAbort : undefined,
+      ownsExecution: input.security.kind === "root",
       pauseRequested: false,
       snapshot: Object.freeze(loopRunSnapshotSchema.parse({
         id: randomUUID(),
@@ -240,17 +247,6 @@ export class LoopManager {
         updatedAt: now,
       })),
     };
-    run.toolPolicy = this.tools.registerRunPolicy(
-      run.snapshot.id,
-      ownerPluginId,
-      input.allowedTools,
-      {
-        sessionId: input.sessionId,
-        workspaceRoot: workspace?.rootPath,
-        additionalAllowedTools: input.additionalAllowedTools,
-        ...(persona ? { persona } : {}),
-      },
-    );
     this.#runs.set(run.snapshot.id, run);
     ownerSignal?.addEventListener("abort", onOwnerAbort, { once: true });
     if (ownerSignal?.aborted) {
@@ -421,17 +417,54 @@ export class LoopManager {
     let providerId = input.providerId;
     let modelId = input.modelId;
     try {
-      await this.#reviewContent(
-        run,
-        "user_input",
-        input.prompt,
-        `loop-input:${run.snapshot.id}`,
+      const execution =
+        input.security.kind === "root"
+          ? await this.executions.bind(
+              run.ownerPluginId,
+              {
+                mode: "root",
+                subject: input.security.subject,
+                classification: input.security.classification,
+                provenance: input.security.provenance,
+              },
+              "detached",
+            )
+          : await this.executions.bind(
+              run.ownerPluginId,
+              {
+                mode: "resume",
+                executionId: input.security.executionId,
+              },
+              "detached",
+            );
+      run.execution = execution;
+      run.controller.signal.throwIfAborted();
+      this.#update(run, { executionId: execution.id });
+      const executionSummary = await execution.summary();
+      run.controller.signal.throwIfAborted();
+      const workspace = input.sessionId
+        ? this.workspaces?.get(run.ownerPluginId, input.sessionId)
+        : undefined;
+      const persona = input.personaId
+        ? this.personas?.get(input.personaId)
+        : undefined;
+      run.toolPolicy = this.tools.registerRunPolicy(
+        run.snapshot.id,
+        run.ownerPluginId,
+        input.allowedTools,
+        {
+          executionId: execution.id,
+          initialClassification: executionSummary.classification,
+          sessionId: input.sessionId,
+          workspaceRoot: workspace?.rootPath,
+          additionalAllowedTools: input.additionalAllowedTools,
+          ...(persona ? { persona } : {}),
+        },
       );
+      run.controller.signal.throwIfAborted();
       await this.tools.prepareRun(run.snapshot.id);
       for (let turn = 0; turn < 8; turn += 1) {
-        if (run.controller.signal.aborted) {
-          return;
-        }
+        run.controller.signal.throwIfAborted();
         await this.#waitAtSafePoint(run);
         this.#update(run, { status: "running" });
         this.#emit({
@@ -443,10 +476,17 @@ export class LoopManager {
         let streamed = false;
         const completion = await this.models.complete(
           {
+            ownerPluginId: run.ownerPluginId,
+            feature: "loop",
+            runId: run.snapshot.id,
+          },
+          {
+            executionId: execution.id,
+            operationKey: modelOperationKeySchema.parse(
+              `${input.security.operationPrefix}/model/${turn}`,
+            ),
             providerId,
             modelId,
-            runId: run.snapshot.id,
-            correlationId: run.snapshot.id,
             messages,
             tools: run.toolInvocationAllowed
               ? this.tools.listDefinitions(
@@ -457,31 +497,47 @@ export class LoopManager {
               : [],
           },
           run.controller.signal,
-          (token) => {
-            streamed = true;
-            this.#emit({
-              type: "model_token",
-              runId: run.snapshot.id,
-              token,
-            });
+          {
+            onPolicyWait: (interactionId) => {
+              run.activePolicyInteractionId = interactionId;
+              if (!this.#announcedInteractionIds.has(interactionId)) {
+                this.#announcedInteractionIds.add(interactionId);
+                this.#update(run, { status: "waiting" });
+                this.#emit({
+                  type: "interaction_wait",
+                  runId: run.snapshot.id,
+                  interactionId,
+                  kind: "classification",
+                });
+              }
+            },
+            onApprovedToken: async (token) => {
+              streamed = true;
+              this.#emit({
+                type: "model_token",
+                runId: run.snapshot.id,
+                token,
+              });
+              await new Promise<void>((resolve) => {
+                setTimeout(resolve, APPROVED_TOKEN_REPLAY_INTERVAL_MS);
+              });
+            },
           },
         );
+        if (run.activePolicyInteractionId) {
+          this.#announcedInteractionIds.delete(
+            run.activePolicyInteractionId,
+          );
+          run.activePolicyInteractionId = undefined;
+        }
         providerId = completion.providerId;
         modelId = completion.modelId;
         await this.#waitAtSafePoint(run);
-        if (completion.result.content) {
-          await this.#reviewContent(
-            run,
-            "model_output",
-            completion.result.content,
-            `model-output:${run.snapshot.id}:${turn}`,
-          );
-        }
-        if (completion.result.content && !streamed) {
+        if (completion.content && !streamed) {
           this.#emit({
             type: "model_token",
             runId: run.snapshot.id,
-            token: completion.result.content,
+            token: completion.content,
           });
         }
         this.#emit({
@@ -492,13 +548,13 @@ export class LoopManager {
         });
         this.#refreshUsage(run, completion.providerId, completion.modelId);
 
-        if (completion.result.toolCalls?.length) {
+        if (completion.toolCalls?.length) {
           messages.push({
             role: "assistant",
-            content: completion.result.content ?? "",
-            toolCalls: completion.result.toolCalls,
+            content: completion.content ?? "",
+            toolCalls: completion.toolCalls,
           });
-          for (const toolCall of completion.result.toolCalls) {
+          for (const toolCall of completion.toolCalls) {
             await this.#waitAtSafePoint(run);
             if (!run.toolInvocationAllowed) {
               throw new ToolInvocationError(
@@ -519,12 +575,23 @@ export class LoopManager {
               run.snapshot.id,
             );
             let output: JsonValue;
+            const refreshExecutionClassification = async (): Promise<void> => {
+              const summary = await execution.summary();
+              this.tools.bindExecutionClassification(
+                run.snapshot.id,
+                run.ownerPluginId,
+                execution.id,
+                summary.classification,
+              );
+            };
             try {
               output = await this.tools.invoke(toolCall.name, toolCall.input, {
                 callerPluginId: run.ownerPluginId,
                 runId: run.snapshot.id,
                 toolCallId: toolCall.id,
                 signal: run.controller.signal,
+                beforeAuthorization: refreshExecutionClassification,
+                beforeCommit: refreshExecutionClassification,
                 onInteraction: () => this.#update(run, { status: "waiting" }),
               });
             } finally {
@@ -549,16 +616,17 @@ export class LoopManager {
           continue;
         }
 
-        if (completion.result.content !== undefined) {
+        if (completion.content !== undefined) {
           run.controller.signal.throwIfAborted();
+          await this.#closeOwnedExecution(run, "completed");
           this.#update(run, {
             status: "completed",
-            output: completion.result.content,
+            output: completion.content,
           });
           this.#emit({
             type: "final",
             runId: run.snapshot.id,
-            output: completion.result.content,
+            output: completion.content,
           });
           return;
         }
@@ -571,6 +639,7 @@ export class LoopManager {
         if (run.snapshot.status !== "cancelled") {
           this.#update(run, { status: "cancelled", error: "Cancelled" });
         }
+        await this.#closeOwnedExecution(run, "cancelled");
         return;
       }
       const message =
@@ -585,60 +654,31 @@ export class LoopManager {
         runId: run.snapshot.id,
         error: message,
       });
+      await this.#closeOwnedExecution(run, "failed");
+    } finally {
+      if (
+        ["completed", "failed", "cancelled"].includes(
+          run.snapshot.status,
+        ) &&
+        run.toolPolicy
+      ) {
+        await run.toolPolicy.dispose();
+        run.toolPolicy = undefined;
+      }
     }
   }
 
-  async #reviewContent(
+  async #closeOwnedExecution(
     run: LoopRun,
-    stage: "user_input" | "model_output",
-    text: string,
-    operationId: string,
+    outcome: "completed" | "failed" | "cancelled",
   ): Promise<void> {
-    if (!this.scanners || !this.authorizer) {
+    if (!run.ownsExecution || !run.execution) {
       return;
     }
-    const signal = run.controller.signal;
-    const report = await this.scanners.scan({
-      stage,
-      text,
-      source:
-        stage === "user_input"
-          ? { kind: "user", id: run.ownerPluginId }
-          : { kind: "model", id: run.snapshot.modelId ?? "model" },
-      runId: run.snapshot.id,
-      sessionId: run.snapshot.sessionId,
-      signal,
+    await run.execution.close({
+      outcome,
+      reason: `Loop ${run.snapshot.id} ${outcome}`,
     });
-    run.activeToolCallId = operationId;
-    try {
-      const authorization = await this.authorizer.authorize({
-        pluginId: run.ownerPluginId,
-        feature: stage,
-        title:
-          stage === "user_input"
-            ? "Review message safety"
-            : "Review model output safety",
-        approval: "auto",
-        runId: run.snapshot.id,
-        sessionId: run.snapshot.sessionId,
-        toolCallId: operationId,
-        scanReport: report,
-        signal,
-        onInteraction: () => this.#update(run, { status: "waiting" }),
-      });
-      if (!authorization.allowed) {
-        if (stage === "model_output") {
-          this.#dropUnreviewedTokens(run.snapshot.id);
-        }
-        throw new ToolInvocationError(
-          "denied",
-          `${stage === "user_input" ? "User input" : "Model output"} was denied`,
-          { reasons: authorization.reasons },
-        );
-      }
-    } finally {
-      run.activeToolCallId = undefined;
-    }
   }
 
   #refreshUsage(
@@ -781,27 +821,6 @@ export class LoopManager {
           console.error("[kernel] loop subscriber failed", error),
         );
     }
-  }
-
-  #dropUnreviewedTokens(runId: string): void {
-    const history = this.#eventHistory.get(runId);
-    if (!history) {
-      return;
-    }
-    let lastStart = -1;
-    for (let index = history.length - 1; index >= 0; index -= 1) {
-      if (history[index]?.type === "model_start") {
-        lastStart = index;
-        break;
-      }
-    }
-    if (lastStart < 0) {
-      return;
-    }
-    this.#eventHistory.set(runId, [
-      ...history.slice(0, lastStart + 1),
-      ...history.slice(lastStart + 1).filter((event) => event.type !== "model_token"),
-    ]);
   }
 
   #emit(
