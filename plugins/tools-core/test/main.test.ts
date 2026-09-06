@@ -1,11 +1,14 @@
-import { mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type {
-  PluginContext,
-  ToolContribution,
+import {
+  z,
+  type PluginContext,
+  type SandboxRunInput,
+  type ToolContribution,
 } from "@borg/plugin-sdk";
+import { SandboxFactory } from "../../../packages/kernel/src";
 import {
   default as corePlugin,
   resolvePhysicalWorkspacePath,
@@ -81,5 +84,61 @@ describe("core filesystem tools", () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toThrow(/requires a session workspace/);
+  });
+
+  it("runs javascript in the sandbox and cannot write outside the root", async () => {
+    const tools = new Map<string, ToolContribution>();
+    const sandbox = new SandboxFactory();
+    await corePlugin.activate({
+      pluginId: "borg.tools.core",
+      tools: {
+        register: (tool: ToolContribution) => {
+          tools.set(tool.id, tool);
+          return { dispose: () => undefined };
+        },
+      },
+      sandbox: { run: (input: SandboxRunInput) => sandbox.run(input) },
+    } as unknown as PluginContext);
+    const root = await mkdtemp(path.join(os.tmpdir(), "borg-tool-code-"));
+    const outside = path.join(
+      path.dirname(root),
+      `escape-${path.basename(root)}.txt`,
+    );
+    const run = tools.get("code.run")!;
+    const inside = await run.execute(
+      run.input.parse({
+        language: "javascript",
+        source:
+          "import { writeFileSync } from 'node:fs'; writeFileSync('inside.txt', 'ok');",
+      }),
+      {
+        toolCallId: crypto.randomUUID(),
+        sessionId: crypto.randomUUID(),
+        workspaceRoot: root,
+        signal: new AbortController().signal,
+      },
+    );
+    expect(
+      z.object({ exitCode: z.number() }).parse(inside).exitCode,
+    ).toBe(0);
+    await expect(readFile(path.join(root, "inside.txt"), "utf8")).resolves.toBe(
+      "ok",
+    );
+    const escape = await run.execute(
+      run.input.parse({
+        language: "javascript",
+        source: `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(outside)}, 'no');`,
+      }),
+      {
+        toolCallId: crypto.randomUUID(),
+        sessionId: crypto.randomUUID(),
+        workspaceRoot: root,
+        signal: new AbortController().signal,
+      },
+    );
+    expect(
+      z.object({ exitCode: z.number() }).parse(escape).exitCode,
+    ).not.toBe(0);
+    await expect(readFile(outside, "utf8")).rejects.toThrow();
   });
 });

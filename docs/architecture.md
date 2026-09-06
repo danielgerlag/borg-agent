@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This is the implementation architecture through Slice 10. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
+This is the implementation architecture through Slice 11. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
 
 The architecture is deliberately a microkernel:
 
@@ -1219,3 +1219,9 @@ Slice 10 adds semantic memory recall without graph entity APIs. `MemoryFacade` s
 `borg.context-map` contributes prompt slot `borg.context-map.workspace` (order 300). Loop assembly binds the loop owner's `listFiles` onto `PromptSlotContext.workspace`. The slot omits when that handle is missing. `WorkspaceService.listFiles` stays owner-scoped.
 
 `borg.chat` writes accepted user text through `ctx.memory.write` after `loops.start` so the current assemble cannot recall that same turn. A failed or missing memory write is logged and does not fail the chat turn. Host permissions are `memory.read`, `memory.write`, and `memory.provide`.
+
+## Slice 11 implementation record
+
+Slice 11 adds `SandboxFactory` with kinds `os`, `uv`, and `node`. Runs use `cwd` at a real directory root, a scrubbed environment, and `shell: false`. Node writes source under the root and spawns `process.execPath` with `--permission` filesystem allows limited to that root. uv is injected in tests so CI does not require a host install. `ctx.sandbox.run` requires `sandbox.run`. `borg.tools.core` adds `code.run` and `shell.exec`, which execute inside the factory using the session workspace as the root.
+
+`LoopManager` accepts persona `loopStrategy` `code-act`. That path still uses the same run IDs, pause points, and `ModelGateway`. Each turn either runs a fenced javascript/python block in the sandbox or treats unfenced content as the final answer. LangGraph is not used.

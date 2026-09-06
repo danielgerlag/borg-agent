@@ -376,6 +376,9 @@ export async function createBotHarness(
       write: async () => unavailable("Memory writes"),
       retrieve: async () => unavailable("Memory retrieve"),
     },
+    sandbox: {
+      run: async () => unavailable("Sandbox runs"),
+    },
     scanners: {
       register: () => unavailable("Scanner registration"),
     },

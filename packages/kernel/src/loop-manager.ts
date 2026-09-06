@@ -18,6 +18,7 @@ import { ModelGateway } from "./model-gateway";
 import type { PersonaService } from "./persona-service";
 import type { PromptAssembler } from "./prompt-assembler";
 import { ToolInvocationError, ToolService } from "./tool-service";
+import type { SandboxFactory } from "./sandbox-factory";
 import type { WorkspaceService } from "./workspace-service";
 
 interface LoopRun {
@@ -55,6 +56,24 @@ type WithoutTimestamp<T> = T extends { readonly timestamp: string }
   : never;
 type LoopEventCandidate = WithoutTimestamp<LoopEvent>;
 const APPROVED_TOKEN_REPLAY_INTERVAL_MS = 20;
+const CODEACT_INSTRUCTION =
+  "Act by emitting one fenced javascript or python block. When the task is done, reply with the final answer and no code fence.";
+
+function parseCodeFence(
+  content: string,
+): { language: "javascript" | "python"; source: string } | undefined {
+  const match = content.match(
+    /```(javascript|js|python|py)[ \t]*\n([\s\S]*?)```/i,
+  );
+  if (!match) {
+    return undefined;
+  }
+  const tag = match[1]!.toLowerCase();
+  return {
+    language: tag === "python" || tag === "py" ? "python" : "javascript",
+    source: match[2] ?? "",
+  };
+}
 
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -89,6 +108,7 @@ export class LoopManager {
     readonly personas?: PersonaService,
     readonly prompts?: PromptAssembler,
     readonly workspaces?: WorkspaceService,
+    readonly sandboxes?: SandboxFactory,
   ) {
     this.tools.interactions.subscribe((pending) => {
       const waitingRunIds = new Set(
@@ -157,7 +177,11 @@ export class LoopManager {
     if (this.personas && (!persona || persona.archived)) {
       throw new Error(`Persona ${parsedInput.personaId} is unavailable`);
     }
-    if (persona?.loopStrategy !== undefined && persona.loopStrategy !== "react") {
+    if (
+      persona?.loopStrategy !== undefined &&
+      persona.loopStrategy !== "react" &&
+      persona.loopStrategy !== "code-act"
+    ) {
       throw new Error(`Loop strategy ${persona.loopStrategy} is not implemented`);
     }
     if (
@@ -472,6 +496,18 @@ export class LoopManager {
       );
       run.controller.signal.throwIfAborted();
       await this.tools.prepareRun(run.snapshot.id);
+      if (persona?.loopStrategy === "code-act") {
+        await this.#runCodeAct({
+          run,
+          input,
+          execution,
+          workspaceRoot: workspace?.rootPath,
+          messages,
+          providerId,
+          modelId,
+        });
+        return;
+      }
       for (let turn = 0; turn < 8; turn += 1) {
         run.controller.signal.throwIfAborted();
         await this.#waitAtSafePoint(run);
@@ -675,6 +711,145 @@ export class LoopManager {
         run.toolPolicy = undefined;
       }
     }
+  }
+
+  async #runCodeAct(args: {
+    readonly run: LoopRun;
+    readonly input: ResolvedLoopStartInput;
+    readonly execution: ExecutionBinding;
+    readonly workspaceRoot: string | undefined;
+    readonly messages: ModelMessage[];
+    readonly providerId?: string | undefined;
+    readonly modelId?: string | undefined;
+  }): Promise<void> {
+    const { run, input, execution, messages } = args;
+    let { providerId, modelId } = args;
+    if (!args.workspaceRoot) {
+      throw new Error("CodeAct requires a session workspace");
+    }
+    if (!this.sandboxes) {
+      throw new Error("Sandbox factory is unavailable");
+    }
+    const sandboxes = this.sandboxes;
+    const workspaceRoot = args.workspaceRoot;
+    if (messages[0]?.role === "system") {
+      messages[0] = {
+        role: "system",
+        content: `${messages[0].content}\n\n${CODEACT_INSTRUCTION}`,
+      };
+    } else {
+      messages.unshift({ role: "system", content: CODEACT_INSTRUCTION });
+    }
+    for (let turn = 0; turn < 8; turn += 1) {
+      run.controller.signal.throwIfAborted();
+      await this.#waitAtSafePoint(run);
+      this.#update(run, { status: "running" });
+      this.#emit({
+        type: "model_start",
+        runId: run.snapshot.id,
+        providerId,
+        modelId,
+      });
+      let streamed = false;
+      const completion = await this.models.complete(
+        {
+          ownerPluginId: run.ownerPluginId,
+          feature: "loop",
+          runId: run.snapshot.id,
+        },
+        {
+          executionId: execution.id,
+          operationKey: modelOperationKeySchema.parse(
+            `${input.security.operationPrefix}/model/${turn}`,
+          ),
+          providerId,
+          modelId,
+          messages,
+          tools: [],
+        },
+        run.controller.signal,
+        {
+          onPolicyWait: (interactionId) => {
+            run.activePolicyInteractionId = interactionId;
+            if (!this.#announcedInteractionIds.has(interactionId)) {
+              this.#announcedInteractionIds.add(interactionId);
+              this.#update(run, { status: "waiting" });
+              this.#emit({
+                type: "interaction_wait",
+                runId: run.snapshot.id,
+                interactionId,
+                kind: "classification",
+              });
+            }
+          },
+          onApprovedToken: async (token) => {
+            streamed = true;
+            this.#emit({
+              type: "model_token",
+              runId: run.snapshot.id,
+              token,
+            });
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, APPROVED_TOKEN_REPLAY_INTERVAL_MS);
+            });
+          },
+        },
+      );
+      if (run.activePolicyInteractionId) {
+        this.#announcedInteractionIds.delete(run.activePolicyInteractionId);
+        run.activePolicyInteractionId = undefined;
+      }
+      providerId = completion.providerId;
+      modelId = completion.modelId;
+      await this.#waitAtSafePoint(run);
+      if (completion.content && !streamed) {
+        this.#emit({
+          type: "model_token",
+          runId: run.snapshot.id,
+          token: completion.content,
+        });
+      }
+      this.#emit({
+        type: "model_end",
+        runId: run.snapshot.id,
+        providerId,
+        modelId,
+      });
+      this.#refreshUsage(run, completion.providerId, completion.modelId);
+      const fence = parseCodeFence(completion.content ?? "");
+      if (fence) {
+        const result = await sandboxes.run({
+          kind: fence.language === "python" ? "uv" : "node",
+          root: workspaceRoot,
+          source: fence.source,
+          signal: run.controller.signal,
+        });
+        messages.push({
+          role: "assistant",
+          content: completion.content ?? "",
+        });
+        messages.push({
+          role: "user",
+          content: `Sandbox exit ${result.exitCode}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+        });
+        continue;
+      }
+      if (completion.content !== undefined) {
+        await this.#closeOwnedExecution(run, "completed");
+        this.#update(run, {
+          status: "completed",
+          output: completion.content,
+        });
+        this.#emit({
+          type: "final",
+          runId: run.snapshot.id,
+          output: completion.content,
+        });
+        return;
+      }
+      throw new Error("Model returned empty CodeAct content");
+    }
+    throw new Error("CodeAct loop exceeded its eight-turn budget");
   }
 
   async #closeOwnedExecution(

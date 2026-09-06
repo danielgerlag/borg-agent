@@ -558,7 +558,8 @@ export const bundledMainPlugins: readonly PluginSource[] = [
       "main": "@borg/plugin-tools-core/main",
       "permissions": [
         "fs:sessionWorkspace",
-        "tools.register"
+        "tools.register",
+        "sandbox.run"
       ],
       "contributes": {
         "kinds": [

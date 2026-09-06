@@ -36,6 +36,14 @@ export {
 export { LoopManager } from "./loop-manager";
 export { MemoryFacade } from "./memory-facade";
 export {
+  SandboxFactory,
+  type SandboxFactoryOptions,
+  type SandboxKind,
+  type SandboxProcessRunner,
+  type SandboxRunInput,
+  type SandboxRunResult,
+} from "./sandbox-factory";
+export {
   DurableModelCallJournal,
   IndeterminateModelCallError,
   ModelGateway,
