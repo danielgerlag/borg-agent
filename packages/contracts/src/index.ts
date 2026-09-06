@@ -743,6 +743,8 @@ export const loopRunStatusSchema = z.enum([
   "cancelled",
 ]);
 
+export type LoopRunStatus = z.infer<typeof loopRunStatusSchema>;
+
 export const loopSecurityInputSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -2162,3 +2164,121 @@ export interface DynamicToolDefinition {
   readonly modelVisible?: boolean | undefined;
   readonly security?: ToolSecurityMetadata | undefined;
 }
+
+export const webSearchHitSchema = z
+  .object({
+    title: z.string().min(1),
+    url: z.string().url(),
+    snippet: z.string(),
+  })
+  .strict();
+
+export type WebSearchHit = z.infer<typeof webSearchHitSchema>;
+
+export const webSearchInputSchema = z
+  .object({
+    query: z.string().min(1).max(2_000),
+    maxResults: z.number().int().min(1).max(10).optional(),
+  })
+  .strict();
+
+export type WebSearchInput = z.input<typeof webSearchInputSchema>;
+
+export const webSearchOutputSchema = z
+  .object({
+    query: z.string(),
+    hits: z.array(webSearchHitSchema),
+  })
+  .strict();
+
+export type WebSearchOutput = z.infer<typeof webSearchOutputSchema>;
+
+export const searchProviderStatusSchema = z
+  .object({
+    hasKey: z.boolean(),
+    enabled: z.boolean(),
+    connected: z.boolean(),
+  })
+  .strict();
+
+export type SearchProviderStatus = z.infer<typeof searchProviderStatusSchema>;
+
+export const tavilyGetStatus = defineCommand({
+  id: "borg.search.tavily.getStatus",
+  input: z.object({}).strict(),
+  output: searchProviderStatusSchema,
+});
+
+export const tavilyConnect = defineCommand({
+  id: "borg.search.tavily.connect",
+  input: z.object({}).strict(),
+  output: searchProviderStatusSchema,
+});
+
+export const tavilyDisconnect = defineCommand({
+  id: "borg.search.tavily.disconnect",
+  input: z.object({}).strict(),
+  output: searchProviderStatusSchema,
+});
+
+export const braveGetStatus = defineCommand({
+  id: "borg.search.brave.getStatus",
+  input: z.object({}).strict(),
+  output: searchProviderStatusSchema,
+});
+
+export const braveConnect = defineCommand({
+  id: "borg.search.brave.connect",
+  input: z.object({}).strict(),
+  output: searchProviderStatusSchema,
+});
+
+export const braveDisconnect = defineCommand({
+  id: "borg.search.brave.disconnect",
+  input: z.object({}).strict(),
+  output: searchProviderStatusSchema,
+});
+
+export const a2aConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    port: z.number().int().min(1).max(65_535).default(8_733),
+    personaId: z.string().min(1).optional(),
+  })
+  .strict();
+
+export type A2AConfig = z.infer<typeof a2aConfigSchema>;
+
+export const a2aStatusSchema = z
+  .object({
+    enabled: z.boolean(),
+    listening: z.boolean(),
+    port: z.number().int().min(1).max(65_535),
+    personaId: z.string().min(1).optional(),
+  })
+  .strict();
+
+export type A2AStatus = z.infer<typeof a2aStatusSchema>;
+
+export const a2aGetStatus = defineCommand({
+  id: "borg.a2a.getStatus",
+  input: z.object({}).strict(),
+  output: a2aStatusSchema,
+});
+
+export const imapChannelInject = defineCommand({
+  id: "borg.channel.imap.inject",
+  input: z
+    .object({
+      destinationId: z.string().min(1).max(256).optional(),
+      externalId: z.string().min(1).max(256).optional(),
+      text: z.string().max(65_536),
+      sender: z.string().min(1).max(256).optional(),
+      classification: dataClassificationSchema.optional(),
+    })
+    .strict(),
+  output: z
+    .object({ accepted: z.literal(true), externalId: z.string() })
+    .strict(),
+});
+

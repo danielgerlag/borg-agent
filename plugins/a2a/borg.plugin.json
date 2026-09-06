@@ -1,0 +1,26 @@
+{
+  "id": "borg.a2a",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-a2a/main",
+  "ui": "@borg/plugin-a2a/ui",
+  "permissions": [
+    "loops.start",
+    "personas.read",
+    "tools.invoke",
+    "ui.flightDeck",
+    "ui.settings",
+    "workspace.manage"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.a2a.getStatus"
+    ],
+    "kinds": [
+      "flightDeckWidget",
+      "settingsPage"
+    ]
+  }
+}
