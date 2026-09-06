@@ -22,6 +22,7 @@
     "@borg/plugin-mcp-apps": "workspace:*",
     "@borg/plugin-memory-knowledge": "workspace:*",
     "@borg/plugin-mock-llm": "workspace:*",
+    "@borg/plugin-openai": "workspace:*",
     "@borg/plugin-sdk": "workspace:*",
     "@borg/plugin-secrets-dev": "workspace:*",
     "@borg/plugin-search-brave": "workspace:*",
