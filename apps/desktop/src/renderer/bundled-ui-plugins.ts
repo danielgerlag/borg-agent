@@ -18,6 +18,7 @@ export const bundledUiPlugins: Readonly<Record<string, UiPluginLoader>> = {
   "borg.mcp": async () => import("@borg/plugin-mcp/ui"),
   "borg.mcp-apps": async () => import("@borg/plugin-mcp-apps/ui"),
   "borg.mock-llm": async () => import("@borg/plugin-mock-llm/ui"),
+  "borg.openai": async () => import("@borg/plugin-openai/ui"),
   "borg.search.brave": async () => import("@borg/plugin-search-brave/ui"),
   "borg.search.tavily": async () => import("@borg/plugin-search-tavily/ui"),
   "borg.secrets.dev": async () => import("@borg/plugin-secrets-dev/ui"),

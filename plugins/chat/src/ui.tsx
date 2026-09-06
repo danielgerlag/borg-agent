@@ -121,6 +121,15 @@ function displayModelName(model: ModelDescriptor): string {
   if (model.modelId === "claude-opus-5") {
     return "Claude Opus 5";
   }
+  if (model.modelId === "gpt-5-mini") {
+    return "GPT-5 Mini";
+  }
+  if (model.modelId === "gpt-5-nano") {
+    return "GPT-5 Nano";
+  }
+  if (model.modelId === "gpt-5") {
+    return "GPT-5";
+  }
   return model.modelId
     .replace(/^[^:]+:/, "")
     .replace(/[-_]+/g, " ")

@@ -528,6 +528,39 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.openai",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-openai/main",
+      "ui": "@borg/plugin-openai/ui",
+      "permissions": [
+        "models.register",
+        "network:api.openai.com",
+        "secrets:read",
+        "secrets:write",
+        "ui.settings",
+        "ui.wizard"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.openai.connect",
+          "borg.openai.disconnect",
+          "borg.openai.getStatus"
+        ],
+        "kinds": [
+          "llmProvider",
+          "settingsPage",
+          "wizardStep"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-openai/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.search.brave",
       "version": "0.1.0",
       "engines": {

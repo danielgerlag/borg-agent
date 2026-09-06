@@ -45,11 +45,20 @@ async function completeSetup(page) {
   }
   await page.getByTestId("setup-continue").click();
 
+  const openaiStep = page.getByTestId("openai-setup-step");
   const anthropicStep = page.getByTestId("anthropic-setup-step");
   const personaStep = page.getByTestId("wizard-persona-step");
-  await anthropicStep.or(personaStep).waitFor();
-  if (await anthropicStep.isVisible()) {
-    await page.getByTestId("setup-continue").click();
+  for (let remaining = 2; remaining > 0; remaining -= 1) {
+    await openaiStep.or(anthropicStep).or(personaStep).waitFor();
+    if (await openaiStep.isVisible()) {
+      await page.getByTestId("setup-continue").click();
+      continue;
+    }
+    if (await anthropicStep.isVisible()) {
+      await page.getByTestId("setup-continue").click();
+      continue;
+    }
+    break;
   }
 
   await personaStep.waitFor();
