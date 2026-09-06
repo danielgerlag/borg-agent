@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This is the implementation architecture through Slice 9. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
+This is the implementation architecture through Slice 10. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
 
 The architecture is deliberately a microkernel:
 
@@ -119,8 +119,8 @@ Later bundled plugins get one directory each under `plugins/`. A plugin package 
 | `SchedulerCore` | monotonic timers, cron wakeups, cancellation, run hooks | scheduling UX and feature job definitions |
 | `WorkspaceService` | session/run workspace allocation and scoped handles | chat file browser |
 | `SandboxFactory` | OS, uv, and Node sandbox construction | shell/filesystem tools |
-| `PromptAssembler` | deterministic prompt slots and budgets | memory/context-map construction |
-| `MemoryFacade` | graph and semantic interfaces, provider selection | concrete knowledge database |
+| `PromptAssembler` | deterministic prompt slots and budgets; injects `kernel.memory` | memory/context-map construction |
+| `MemoryFacade` | semantic write/retrieve and one `memoryProvider` | concrete knowledge database; graph entity APIs |
 | `CostLedger` | process-session token/cost projection and queries | provider-specific pricing/auth or model-call ownership |
 | `AuditService` | structured security and lifecycle audit records | product transcript |
 | `NotificationService` | OS notifications and renderer toast events | feature-specific notification rules |
@@ -925,7 +925,7 @@ A prompt slot declares ID, phase, priority, maximum budget, cache key, source cl
 
 Plugins cannot mutate a shared prompt string or insert after final policy instructions.
 
-`MemoryFacade` exposes graph entity/edge operations and semantic write/retrieve operations. `borg.memory.knowledge` implements them. Retrieval always receives persona/run/classification scope and returns classified records plus provenance.
+`MemoryFacade` exposes semantic write/retrieve operations and selects one `memoryProvider`. Graph entity/edge APIs remain future work. `borg.memory.knowledge` implements semantic persistence through `ctx.store`. Retrieval always receives persona/session/classification scope and returns classified records plus provenance. The kernel injects recall as `kernel.memory`; the knowledge plugin does not register a prompt slot.
 
 Chat, bots, graph agent steps, and A2A call the same memory facade. `borg.context-map` uses workspace handles and contributes a prompt slot. An advanced map that needs tool use starts a kernel loop; it does not run a private hidden tool executor.
 
@@ -1211,3 +1211,11 @@ All model paths now use `ModelGateway`. The gateway scans canonical input, check
 `borg.security.prompt-injection` contributes deterministic bounded patterns for instruction replacement, prompt disclosure, encoded role markers, secret exfiltration, and tool takeover. It covers user input, inbound messages, external tool results, model output, and outbound messages. Review findings enter the default kernel classification UI; block findings never reach a plugin transport or model.
 
 `borg.channel.discord` pins REST calls to `https://discord.com/api/v10`, stores the bot token only through `SecretFacade`, requires explicit channel allowlists, validates snowflakes, ignores every bot-authored message, and declares both the pinned REST host and `network:websocket`. Its realtime Gateway driver discovers Discord's allowlisted gateway host, handles Hello, jittered heartbeats, ACK watchdogs, Identify, sequence tracking, resumable sessions, Reconnect, Invalid Session, fatal close codes, bounded exponential backoff, session-start limits, and Discord's 120-frame-per-60-second send window. Each connection cycle has an abort controller and generation; deactivation cancels timers, disposes callbacks, closes sockets, and prevents stale reconnects. There is no polling fallback.
+
+## Slice 10 implementation record
+
+Slice 10 adds semantic memory recall without graph entity APIs. `MemoryFacade` selects one `memoryProvider`. `ctx.memory` registers that provider (`memory.provide`) and exposes `write` / `retrieve` (`memory.write`, `memory.read`). `PromptAssembler.assemble` is async. It injects kernel section `kernel.memory` (order 200) by calling `MemoryFacade.retrieve`, using the current user prompt when present and otherwise the session id. `borg.memory.knowledge` persists records through `context.store` and does not register a prompt slot. Retrieve ranking is case-insensitive substring and token overlap over stored texts; there is no sqlite-vec.
+
+`borg.context-map` contributes prompt slot `borg.context-map.workspace` (order 300). Loop assembly binds the loop owner's `listFiles` onto `PromptSlotContext.workspace`. The slot omits when that handle is missing. `WorkspaceService.listFiles` stays owner-scoped.
+
+`borg.chat` writes accepted user text through `ctx.memory.write` after `loops.start` so the current assemble cannot recall that same turn. A failed or missing memory write is logged and does not fail the chat turn. Host permissions are `memory.read`, `memory.write`, and `memory.provide`.

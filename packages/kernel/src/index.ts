@@ -34,6 +34,7 @@ export {
   type SafetyInteractionRequest,
 } from "./interaction-service";
 export { LoopManager } from "./loop-manager";
+export { MemoryFacade } from "./memory-facade";
 export {
   DurableModelCallJournal,
   IndeterminateModelCallError,

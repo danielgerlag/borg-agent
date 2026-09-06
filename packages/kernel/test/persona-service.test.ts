@@ -78,7 +78,7 @@ describe("PersonaService", () => {
     });
     expect(Object.isFrozen(personas.getDefault())).toBe(true);
     expect(
-      new PromptAssembler(personas).assemble({
+      await new PromptAssembler(personas).assemble({
         personaId: DEFAULT_PERSONA_ID,
       }),
     ).toMatchObject({
@@ -146,7 +146,7 @@ describe("PersonaService", () => {
       prompts,
     );
 
-    const run = loops.start(
+    const run = await loops.start(
       {
         prompt: "hello",
         security: {
@@ -194,7 +194,7 @@ describe("PersonaService", () => {
       instructions: "Custom reviewer instruction marker.",
       preferredModels: ["borg.mock-llm:mock:scripted"],
     });
-    const personaRun = loops.start(
+    const personaRun = await loops.start(
       {
         prompt: "review",
         personaId: reviewer.id,
@@ -249,7 +249,7 @@ describe("PersonaService", () => {
       egress: TEST_PROVIDER_EGRESS,
       complete: alternateComplete,
     });
-    const override = loops.start(
+    const override = await loops.start(
       {
         prompt: "use the override",
         modelId: "alternate",

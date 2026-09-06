@@ -6,13 +6,19 @@ import {
   defineTool,
   z,
   type LlmProviderContribution,
+  type MemoryProviderContribution,
+  type MemoryRecord,
   type ProviderEgress,
 } from "@borg/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   CostLedger,
+  DEFAULT_PERSONA_ID,
   ExecutionSecurityService,
   LoopManager,
+  MemoryFacade,
+  PersonaService,
+  PromptAssembler,
   type ModelGateway,
 } from "../src";
 import { createSecurityRuntime } from "./security-runtime";
@@ -173,17 +179,17 @@ function createRuntime() {
 }
 
 describe("LoopManager", () => {
-  it("rejects a loop without explicit execution security", () => {
+  it("rejects a loop without explicit execution security", async () => {
     const { loops } = createLoopRuntime();
 
-    expect(() =>
-      Reflect.apply(loops.start, loops, [{ prompt: "unsecured" }]),
-    ).toThrow(/security/i);
+    await expect(
+      loops.start({ prompt: "unsecured" } as LoopStartInput),
+    ).rejects.toThrow(/security/i);
   });
 
   it("runs a model-tool-model flow through approval and records usage", async () => {
     const { interactions, costs, loops } = createRuntime();
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("model-tool-model-flow", {
         prompt: "use echo",
         providerId: "borg.mock-llm",
@@ -241,7 +247,7 @@ describe("LoopManager", () => {
 
   it("fails the run when the user denies a tool", async () => {
     const { interactions, loops, executeEcho } = createRuntime();
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("denied-tool", {
         prompt: "use echo",
         allowedTools: ["tools.echo"],
@@ -293,7 +299,7 @@ describe("LoopManager", () => {
     });
 
     const live: string[] = [];
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("denied-model-output", { prompt: "hello" }),
     );
     loops.subscribeRun(run.id, "kernel.loop", (event) => {
@@ -344,7 +350,7 @@ describe("LoopManager", () => {
 
     const tokens: string[] = [];
     const events: string[] = [];
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("reviewed-model-output", { prompt: "hello" }),
     );
     loops.subscribeRun(run.id, "kernel.loop", (event) => {
@@ -371,7 +377,7 @@ describe("LoopManager", () => {
 
   it("cancels a pending approval when its run ends", async () => {
     const { interactions, loops, executeEcho } = createRuntime();
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("cancel-pending-approval", {
         prompt: "use echo",
         allowedTools: ["tools.echo"],
@@ -409,7 +415,7 @@ describe("LoopManager", () => {
     if (input.security.kind !== "root") {
       throw new Error("Test loop security must be a root");
     }
-    const run = loops.start(input);
+    const run = await loops.start(input);
 
     expect(loops.cancel(run.id)).toBe(true);
     releaseBinding();
@@ -439,7 +445,7 @@ describe("LoopManager", () => {
 
   it("drains terminal event subscribers when cancelling owned runs", async () => {
     const { interactions, loops } = createRuntime();
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("drain-cancelled-subscribers", {
         prompt: "use echo",
         allowedTools: ["tools.echo"],
@@ -489,7 +495,7 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("unavailable-feedback-tool", { prompt: "ask" }),
     );
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("failed"));
@@ -561,7 +567,7 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("human-feedback", {
         prompt: "ask for feedback",
         allowedTools: ["feedback.ask"],
@@ -596,7 +602,7 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("pause-and-resume", { prompt: "pause me" }),
     );
     await vi.waitFor(() => expect(finishModel).toBeDefined());
@@ -627,7 +633,7 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("late-provider-cancellation", { prompt: "cancel me" }),
     );
     await vi.waitFor(() => expect(finishModel).toBeDefined());
@@ -664,11 +670,11 @@ describe("LoopManager", () => {
       },
     });
 
-    const chat = loops.start(
+    const chat = await loops.start(
       loopStartInput("owned-chat-run", { prompt: "chat turn" }),
       "borg.chat",
     );
-    const bot = loops.start(
+    const bot = await loops.start(
       loopStartInput("owned-bot-run", { prompt: "bot turn" }),
       "borg.bots",
     );
@@ -718,7 +724,7 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("unprivileged-tool-run", { prompt: "try a tool" }),
       "borg.unprivileged",
     );
@@ -754,7 +760,7 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("explicit-model-routing", {
         prompt: "route me",
         modelId: "second:model",
@@ -1032,7 +1038,7 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("prepared-tool-catalog", { prompt: "list tools" }),
     );
     await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("completed"));
@@ -1079,7 +1085,7 @@ describe("LoopManager", () => {
       complete,
     });
 
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("cancel-tool-catalog-prepare", {
         prompt: "cancel during prepare",
       }),
@@ -1131,7 +1137,7 @@ describe("LoopManager", () => {
       },
     });
 
-    const run = loops.start(
+    const run = await loops.start(
       loopStartInput("degraded-tool-catalog", {
         prompt: "survive a provider failure",
       }),
@@ -1140,6 +1146,74 @@ describe("LoopManager", () => {
     expect(advertised).toEqual(["mcp.demo.echo"]);
     expect(loops.get(run.id)?.error).toBeUndefined();
     consoleError.mockRestore();
+  });
+
+  it("injects recalled memory into the model system prompt", async () => {
+    const runtime = createSecurityRuntime();
+    const personas = new PersonaService(runtime.store);
+    await personas.initialize();
+    const memory = new MemoryFacade();
+    const stored: MemoryRecord[] = [];
+    const provider: MemoryProviderContribution = {
+      id: "test.memory",
+      write: async (record) => {
+        stored.push(record);
+      },
+      retrieve: async () => stored,
+    };
+    memory.registerProvider("test.memory", provider);
+    await memory.write("borg.chat", {
+      text: "The user's favorite color is cerulean.",
+      personaId: DEFAULT_PERSONA_ID,
+    });
+    const prompts = new PromptAssembler(personas, memory);
+    const complete: LlmProviderContribution["complete"] = vi.fn(
+      async (_request, permit) => {
+        await permit.commit();
+        return {
+          content: "done",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    );
+    registerModelProvider(runtime.models, "borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      egress: TEST_PROVIDER_EGRESS,
+      complete,
+    });
+    const loops = new LoopManager(
+      runtime.models,
+      runtime.executions,
+      runtime.tools,
+      runtime.costs,
+      () => false,
+      personas,
+      prompts,
+    );
+    const run = await loops.start(
+      loopStartInput("memory-recall", {
+        prompt: "What is my favorite color?",
+      }),
+      "borg.chat",
+    );
+    await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("completed"));
+    expect(complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringContaining(
+              "The user's favorite color is cerulean.",
+            ),
+          }),
+        ]),
+      }),
+      expect.objectContaining({ commit: expect.any(Function) }),
+      expect.any(AbortSignal),
+      expect.any(Function),
+      expect.any(Function),
+    );
   });
 });
 

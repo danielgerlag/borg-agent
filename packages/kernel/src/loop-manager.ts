@@ -141,12 +141,12 @@ export class LoopManager {
     });
   }
 
-  start(
+  async start(
     candidate: LoopStartInput,
     ownerPluginId = "kernel.loop",
     ownerSignal?: AbortSignal,
     toolInvocationAllowed = this.canInvokeTools(ownerPluginId),
-  ): LoopRunSnapshot {
+  ): Promise<LoopRunSnapshot> {
     ownerSignal?.throwIfAborted();
     const parsedInput = loopStartInputSchema.parse(candidate);
     const persona = this.personas
@@ -181,14 +181,30 @@ export class LoopManager {
       preferredModel && separator > 0
         ? preferredModel.slice(separator + 1)
         : preferredModel;
-    const workspace = parsedInput.sessionId
-      ? this.workspaces?.get(ownerPluginId, parsedInput.sessionId)
+    const sessionId = parsedInput.sessionId;
+    const workspaces = this.workspaces;
+    const workspace = sessionId
+      ? workspaces?.get(ownerPluginId, sessionId)
       : undefined;
-    if (parsedInput.sessionId && !workspace) {
-      throw new Error(
-        `Workspace for session ${parsedInput.sessionId} is unavailable`,
-      );
+    if (sessionId && !workspace) {
+      throw new Error(`Workspace for session ${sessionId} is unavailable`);
     }
+    const assembled =
+      persona && this.prompts
+        ? await this.prompts.assemble({
+            personaId: persona.id,
+            sessionId,
+            feature: ownerPluginId,
+            prompt: parsedInput.prompt,
+            workspace:
+              workspace && sessionId && workspaces
+                ? {
+                    listFiles: () =>
+                      workspaces.listFiles(ownerPluginId, sessionId),
+                  }
+                : undefined,
+          })
+        : undefined;
     const input: ResolvedLoopStartInput = {
       ...parsedInput,
       personaId: persona?.id ?? parsedInput.personaId,
@@ -207,14 +223,7 @@ export class LoopManager {
         persona && parsedInput.allowedTools
           ? parsedInput.allowedTools
           : undefined,
-      systemPrompt:
-        persona && this.prompts
-          ? this.prompts.assemble({
-              personaId: persona.id,
-              sessionId: parsedInput.sessionId,
-              feature: ownerPluginId,
-            }).system
-          : undefined,
+      systemPrompt: assembled?.system,
     };
     const now = new Date().toISOString();
     const controller = new AbortController();

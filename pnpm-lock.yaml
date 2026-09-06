@@ -157,6 +157,9 @@ importers:
       '@borg/plugin-config-sqlite':
         specifier: workspace:*
         version: link:../../plugins/config-sqlite
+      '@borg/plugin-context-map':
+        specifier: workspace:*
+        version: link:../../plugins/context-map
       '@borg/plugin-feedback':
         specifier: workspace:*
         version: link:../../plugins/feedback
@@ -172,6 +175,9 @@ importers:
       '@borg/plugin-mcp-apps':
         specifier: workspace:*
         version: link:../../plugins/mcp-apps
+      '@borg/plugin-memory-knowledge':
+        specifier: workspace:*
+        version: link:../../plugins/memory-knowledge
       '@borg/plugin-mock-llm':
         specifier: workspace:*
         version: link:../../plugins/mock-llm
@@ -351,6 +357,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  plugins/context-map:
+    dependencies:
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+
   plugins/feedback:
     dependencies:
       '@borg/contracts':
@@ -437,6 +449,12 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+
+  plugins/memory-knowledge:
+    dependencies:
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
 
   plugins/mock-llm:
     dependencies:

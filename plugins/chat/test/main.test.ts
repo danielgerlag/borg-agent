@@ -27,6 +27,9 @@ import {
   type ConfigStoreProvider,
   type Disposable,
   type JsonValue,
+  type MemoryQuery,
+  type MemoryRecord,
+  type MemoryWriteInput,
   type PluginBus,
   type PluginContext,
   type PluginExecutions,
@@ -35,6 +38,7 @@ import {
 } from "@borg/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { ExecutionSecurityService } from "../../../packages/kernel/src/execution-security";
+import { MemoryFacade } from "../../../packages/kernel/src/memory-facade";
 import {
   PersistenceRegistry,
   StoreFacade,
@@ -452,6 +456,11 @@ function createChatHarnessContext(
     prompts: {
       registerSlot: () => unavailable("prompts.registerSlot"),
     },
+    memory: {
+      registerProvider: () => unavailable("memory.registerProvider"),
+      write: async () => unavailable("memory.write"),
+      retrieve: async () => unavailable("memory.retrieve"),
+    },
     scanners: {
       register: () => unavailable("scanners.register"),
     },
@@ -569,6 +578,8 @@ describe("borg.chat harness", () => {
   it("declares execution security access", () => {
     expect(chatPlugin.permissions).toContain("executions.manage");
     expect(manifest.permissions).toContain("executions.manage");
+    expect(chatPlugin.permissions).toContain("memory.write");
+    expect(manifest.permissions).toContain("memory.write");
   });
 
   it("persists the first user message atomically with a new chat", async () => {
@@ -1004,5 +1015,51 @@ describe("borg.chat harness", () => {
       ),
     ).toBe(true);
     await restoredHarness.deactivate();
+  });
+
+  it("writes the first user turn after loop start so the next assemble can recall it", async () => {
+    const memory = new MemoryFacade();
+    const stored: MemoryRecord[] = [];
+    memory.registerProvider("test.memory", {
+      id: "test.memory",
+      write: async (record) => {
+        stored.push(record);
+      },
+      retrieve: async () => stored,
+    });
+    const fixture = createChatHarnessContext();
+    const recalled: string[] = [];
+    const originalStart = fixture.start.getMockImplementation();
+    if (!originalStart) {
+      throw new Error("Chat harness loop start mock is missing");
+    }
+    fixture.start.mockImplementation(async (input: LoopStartInput) => {
+      const hits = await memory.retrieve({
+        personaId: input.personaId ?? "system/general",
+        sessionId: input.sessionId,
+        text: input.prompt,
+      });
+      recalled.push(hits.map((record) => record.text).join("\n"));
+      return originalStart(input);
+    });
+    fixture.context.memory.write = (input: MemoryWriteInput) =>
+      memory.write("borg.chat", input);
+    fixture.context.memory.retrieve = (query: MemoryQuery) =>
+      memory.retrieve(query);
+
+    const harness = await createTestHarness(chatPlugin, fixture.context);
+    const created = await fixture.invoke(chatCreateSession, {});
+    const first = await fixture.invoke(chatSendMessage, {
+      sessionId: created.sessionId,
+      text: "The user's favorite color is cerulean.",
+    });
+    expect(recalled[0]).not.toContain("cerulean");
+    await fixture.finish(first.runId, "noted");
+    await fixture.invoke(chatSendMessage, {
+      sessionId: created.sessionId,
+      text: "What is my favorite color?",
+    });
+    expect(recalled[1]).toContain("The user's favorite color is cerulean.");
+    await harness.deactivate();
   });
 });

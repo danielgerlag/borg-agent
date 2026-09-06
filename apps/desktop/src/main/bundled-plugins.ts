@@ -152,6 +152,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
       "permissions": [
         "executions.manage",
         "loops.start",
+        "memory.write",
         "models.read",
         "personas.read",
         "personas.write",
@@ -211,6 +212,26 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-config-sqlite/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.context-map",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-context-map/main",
+      "permissions": [
+        "prompts.register"
+      ],
+      "contributes": {
+        "kinds": [
+          "promptSlot"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-context-map/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {
@@ -405,6 +426,26 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-mcp-apps/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.memory.knowledge",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-memory-knowledge/main",
+      "permissions": [
+        "memory.provide"
+      ],
+      "contributes": {
+        "kinds": [
+          "memoryProvider"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-memory-knowledge/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {

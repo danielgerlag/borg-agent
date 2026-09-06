@@ -25,6 +25,7 @@ import { PluginLoadError } from "./errors";
 import type { GraphContributionRegistry } from "./graph-contribution-registry";
 import type { InteractionService } from "./interaction-service";
 import type { LoopManager } from "./loop-manager";
+import type { MemoryFacade } from "./memory-facade";
 import type { ModelGateway } from "./model-gateway";
 import type { NotificationService } from "./notification-service";
 import type { PersonaService } from "./persona-service";
@@ -87,6 +88,7 @@ export interface PluginManagerOptions {
   readonly costs?: CostLedger;
   readonly personas?: PersonaService;
   readonly prompts?: PromptAssembler;
+  readonly memory?: MemoryFacade;
   readonly workspaces?: WorkspaceService;
   readonly graphContributions?: GraphContributionRegistry;
   readonly scheduler?: SchedulerCore;
@@ -450,6 +452,14 @@ export class PluginManager {
           throw new Error("Prompt assembler is unavailable");
         }
         return this.#options.prompts;
+      };
+      const requireMemory = (): MemoryFacade => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.memory) {
+          throw new Error("Memory facade is unavailable");
+        }
+        return this.#options.memory;
       };
       const requireTools = (): ToolService => {
         assertContextActive();
@@ -1086,6 +1096,23 @@ export class PluginManager {
             return stage(() => requirePrompts().registerSlot(slot));
           },
         },
+        memory: {
+          registerProvider: (provider) => {
+            assertPermission("memory.provide");
+            assertContribution("memoryProvider");
+            return stage(() =>
+              requireMemory().registerProvider(manifest.id, provider),
+            );
+          },
+          write: (input) => {
+            assertPermission("memory.write");
+            return requireMemory().write(manifest.id, input);
+          },
+          retrieve: (query) => {
+            assertPermission("memory.read");
+            return requireMemory().retrieve(query);
+          },
+        },
         scanners: {
           register: (scanner) => {
             assertPermission("scanners.register");
@@ -1526,6 +1553,7 @@ export class PluginManager {
       this.#options.tools?.removePlugin(manifest.id);
       this.#options.models?.removePlugin(manifest.id);
       this.#options.prompts?.removePlugin(manifest.id);
+      this.#options.memory?.removePlugin(manifest.id);
       this.#options.http?.abortOwned(manifest.id);
       this.#options.scanners?.removePlugin(manifest.id);
       this.#options.channels?.removePlugin(manifest.id);
@@ -1588,6 +1616,7 @@ export class PluginManager {
     this.#options.tools?.removePlugin(pluginId);
     this.#options.models?.removePlugin(pluginId);
     this.#options.prompts?.removePlugin(pluginId);
+    this.#options.memory?.removePlugin(pluginId);
     this.#options.scanners?.removePlugin(pluginId);
     this.#options.channels?.removePlugin(pluginId);
     this.#options.graphContributions?.removePlugin(pluginId);

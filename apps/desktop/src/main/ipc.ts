@@ -592,7 +592,7 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
             request.args.capability,
             "loops.start",
           );
-          return success(options.loops.start(request.args.input, pluginId));
+          return success(await options.loops.start(request.args.input, pluginId));
         }
         case "loops.get": {
           const pluginId = resolveUiPlugin(

@@ -1,0 +1,16 @@
+{
+  "id": "borg.memory.knowledge",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-memory-knowledge/main",
+  "permissions": [
+    "memory.provide"
+  ],
+  "contributes": {
+    "kinds": [
+      "memoryProvider"
+    ]
+  }
+}

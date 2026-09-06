@@ -20,6 +20,9 @@ describe("WorkspaceService", () => {
       { path: "note.txt", size: 5 },
     ]);
     expect(workspaces.get("borg.other", sessionId)).toBeUndefined();
+    await expect(
+      workspaces.listFiles("borg.context-map", sessionId),
+    ).rejects.toThrow(/unavailable/);
     await workspaces.release("borg.chat", sessionId);
     expect(workspaces.get("borg.chat", sessionId)).toBeUndefined();
   });

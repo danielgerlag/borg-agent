@@ -133,6 +133,7 @@ export default definePlugin({
   permissions: [
     "executions.manage",
     "loops.start",
+    "memory.write",
     "models.read",
     "personas.read",
     "personas.write",
@@ -668,6 +669,19 @@ export default definePlugin({
           }),
         );
         throw error;
+      }
+      try {
+        // Write after start so this turn's assemble cannot recall the same user text.
+        await context.memory.write({
+          text,
+          personaId: current.document.session.personaId,
+          sessionId,
+        });
+      } catch (error) {
+        context.logger.warn("Memory write failed", {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
       const runningSecurity = chatSecurityStateSchema.parse({
         ...preparedSecurity,
