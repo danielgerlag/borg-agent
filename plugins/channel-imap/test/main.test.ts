@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { imapChannelInject, type CommandDefinition } from "@borg/contracts";
 import type {
   ChannelAdapter,
@@ -7,6 +8,10 @@ import type {
 } from "@borg/plugin-sdk";
 import { createTestHarness } from "@borg/plugin-sdk";
 import { describe, expect, it } from "vitest";
+import {
+  describeImapConfigError,
+  parseImapChannelConfig,
+} from "../src/config";
 import plugin, {
   IMAP_CHANNEL_ADAPTER_ID,
   IMAP_DEFAULT_MAILBOX,
@@ -157,6 +162,48 @@ describe("ImapFakeTransport", () => {
 });
 
 describe("borg.channel.imap", () => {
+  it("agrees with its static manifest", async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL("../borg.plugin.json", import.meta.url), "utf8"),
+    ) as Record<string, unknown>;
+    expect(plugin).toMatchObject({
+      id: manifest.id,
+      version: manifest.version,
+      permissions: manifest.permissions,
+      contributes: manifest.contributes,
+    });
+    expect(manifest.permissions).toEqual([
+      "channels.register",
+      "secrets:read",
+      "secrets:write",
+      "ui.settings",
+    ]);
+    expect(manifest).toMatchObject({
+      ui: "@borg/plugin-channel-imap/ui",
+    });
+  });
+
+  it("fills IMAP config defaults", () => {
+    expect(parseImapChannelConfig({})).toEqual({
+      enabled: false,
+      host: "",
+      port: 993,
+      username: "",
+      mailbox: IMAP_DEFAULT_MAILBOX,
+    });
+  });
+
+  it("describes config errors without exposing secrets", () => {
+    expect(describeImapConfigError(new Error("boom"))).toBe("boom");
+    expect(describeImapConfigError("nope")).toBe("IMAP settings are invalid");
+    try {
+      parseImapChannelConfig({ port: 0 });
+      throw new Error("expected parse to fail");
+    } catch (error) {
+      expect(describeImapConfigError(error).length).toBeGreaterThan(0);
+    }
+  });
+
   it("stays unregistered until enabled with host, username, and password", async () => {
     const fixture = createImapFixture();
     const harness = await createTestHarness(plugin, fixture.context);
@@ -238,4 +285,20 @@ describe("borg.channel.imap", () => {
     expect(drafts[0]?.destinationId).toBe("Archive");
     await harness.deactivate();
   });
+
+  it("unregisters when the password is deleted and config is saved", async () => {
+    const fixture = createImapFixture({
+      enabled: true,
+      host: "imap.example.com",
+      username: "borg@example.com",
+      password: "secret",
+    });
+    const harness = await createTestHarness(plugin, fixture.context);
+    expect(fixture.adapter()?.id).toBe(IMAP_CHANNEL_ADAPTER_ID);
+    await fixture.context.secrets.delete(IMAP_PASSWORD_SECRET_KEY);
+    await fixture.context.config.update({});
+    expect(fixture.adapter()).toBeUndefined();
+    await harness.deactivate();
+  });
 });
+

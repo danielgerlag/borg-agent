@@ -368,6 +368,15 @@ importers:
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
 
   plugins/channel-mock:
     dependencies:

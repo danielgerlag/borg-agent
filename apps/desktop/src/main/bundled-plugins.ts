@@ -153,16 +153,20 @@ export const bundledMainPlugins: readonly PluginSource[] = [
         "borg": "^0.1.0"
       },
       "main": "@borg/plugin-channel-imap/main",
+      "ui": "@borg/plugin-channel-imap/ui",
       "permissions": [
         "channels.register",
-        "secrets:read"
+        "secrets:read",
+        "secrets:write",
+        "ui.settings"
       ],
       "contributes": {
         "commands": [
           "borg.channel.imap.inject"
         ],
         "kinds": [
-          "channel"
+          "channel",
+          "settingsPage"
         ]
       }
     },
