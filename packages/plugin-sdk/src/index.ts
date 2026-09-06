@@ -471,6 +471,27 @@ export interface PluginMemory {
   retrieve(query: MemoryQuery): Promise<readonly MemoryRecord[]>;
 }
 
+export type SandboxKind = "os" | "uv" | "node";
+
+export interface SandboxRunInput {
+  readonly kind: SandboxKind;
+  readonly root: string;
+  readonly source?: string | undefined;
+  readonly argv?: readonly string[] | undefined;
+  readonly timeoutMs?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface SandboxRunResult {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export interface PluginSandbox {
+  run(input: SandboxRunInput): Promise<SandboxRunResult>;
+}
+
 export interface PromptScanContext {
   readonly stage: PromptScanStage;
   readonly text: string;
@@ -725,6 +746,7 @@ export interface PluginContext {
   readonly workspace: PluginWorkspace;
   readonly prompts: PluginPrompts;
   readonly memory: PluginMemory;
+  readonly sandbox: PluginSandbox;
   readonly scanners: PluginScanners;
   readonly graphs: PluginGraphs;
   readonly scheduler: PluginScheduler;

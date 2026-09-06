@@ -489,6 +489,11 @@ export function createGraphHarness(
       },
       retrieve: async () => [],
     },
+    sandbox: {
+      run: async () => {
+        throw new Error("Sandbox runs are unavailable in the graphs harness");
+      },
+    },
     graphs: {
       registerStep: () => ({ dispose: () => undefined }),
       registerTrigger: () => ({ dispose: () => undefined }),

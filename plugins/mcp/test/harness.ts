@@ -159,6 +159,11 @@ export function createMcpHarness(options?: {
       },
       retrieve: async () => [],
     },
+    sandbox: {
+      run: async () => {
+        throw new Error("Sandbox runs are unused");
+      },
+    },
     graphs: {},
     scheduler: {},
     runtime: {},

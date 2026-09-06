@@ -40,6 +40,7 @@ import type {
 } from "./persistence";
 import type { NetworkService } from "./network-service";
 import type { ProcessSupervisor } from "./process-supervisor";
+import type { SandboxFactory } from "./sandbox-factory";
 import type { ToolService } from "./tool-service";
 import type { WebSocketService } from "./websocket-service";
 import type { WorkspaceService } from "./workspace-service";
@@ -93,6 +94,7 @@ export interface PluginManagerOptions {
   readonly graphContributions?: GraphContributionRegistry;
   readonly scheduler?: SchedulerCore;
   readonly processes?: ProcessSupervisor;
+  readonly sandbox?: SandboxFactory;
   readonly http?: NetworkService;
   readonly scanners?: ScannerRegistry;
   readonly channels?: CommunicationService;
@@ -460,6 +462,14 @@ export class PluginManager {
           throw new Error("Memory facade is unavailable");
         }
         return this.#options.memory;
+      };
+      const requireSandbox = (): SandboxFactory => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.sandbox) {
+          throw new Error("Sandbox factory is unavailable");
+        }
+        return this.#options.sandbox;
       };
       const requireTools = (): ToolService => {
         assertContextActive();
@@ -1111,6 +1121,12 @@ export class PluginManager {
           retrieve: (query) => {
             assertPermission("memory.read");
             return requireMemory().retrieve(query);
+          },
+        },
+        sandbox: {
+          run: (input) => {
+            assertPermission("sandbox.run");
+            return trackOperation(requireSandbox().run(input));
           },
         },
         scanners: {

@@ -10,6 +10,9 @@ import {
   type MemoryRecord,
   type ProviderEgress,
 } from "@borg/plugin-sdk";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   CostLedger,
@@ -19,6 +22,8 @@ import {
   MemoryFacade,
   PersonaService,
   PromptAssembler,
+  SandboxFactory,
+  WorkspaceService,
   type ModelGateway,
 } from "../src";
 import { createSecurityRuntime } from "./security-runtime";
@@ -1214,6 +1219,68 @@ describe("LoopManager", () => {
       expect.any(Function),
       expect.any(Function),
     );
+  });
+
+  it("runs CodeAct in a node sandbox and keeps writes inside the workspace", async () => {
+    const runtime = createSecurityRuntime();
+    const personas = new PersonaService(runtime.store);
+    await personas.initialize();
+    await personas.create({
+      id: "user/coder",
+      name: "Coder",
+      instructions: "Write files by emitting javascript fences.",
+      preferredModels: ["borg.mock-llm:mock:scripted"],
+      loopStrategy: "code-act",
+    });
+    const root = await mkdtemp(path.join(os.tmpdir(), "borg-codeact-"));
+    const workspaces = new WorkspaceService(root);
+    const sessionId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const workspace = workspaces.allocate("borg.chat", sessionId);
+    let turn = 0;
+    registerModelProvider(runtime.models, "borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
+        turn += 1;
+        if (turn === 1) {
+          return {
+            content:
+              "```javascript\nimport { writeFileSync } from 'node:fs'; writeFileSync('ok.txt', 'done');\n```",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          };
+        }
+        return {
+          content: "wrote ok.txt",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+    const loops = new LoopManager(
+      runtime.models,
+      runtime.executions,
+      runtime.tools,
+      runtime.costs,
+      () => false,
+      personas,
+      undefined,
+      workspaces,
+      new SandboxFactory(),
+    );
+    const run = await loops.start(
+      loopStartInput("code-act-write", {
+        prompt: "Write ok.txt",
+        personaId: "user/coder",
+        sessionId,
+      }),
+      "borg.chat",
+    );
+    await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("completed"));
+    expect(loops.get(run.id)?.output).toBe("wrote ok.txt");
+    await expect(
+      readFile(path.join(workspace.rootPath, "ok.txt"), "utf8"),
+    ).resolves.toBe("done");
   });
 });
 

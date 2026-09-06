@@ -461,6 +461,9 @@ function createChatHarnessContext(
       write: async () => unavailable("memory.write"),
       retrieve: async () => unavailable("memory.retrieve"),
     },
+    sandbox: {
+      run: async () => unavailable("sandbox.run"),
+    },
     scanners: {
       register: () => unavailable("scanners.register"),
     },

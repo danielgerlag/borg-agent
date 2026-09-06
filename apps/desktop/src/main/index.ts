@@ -18,6 +18,7 @@ import {
   PluginManager,
   ProcessSupervisor,
   PromptAssembler,
+  SandboxFactory,
   SchedulerCore,
   ScannerRegistry,
   SecretFacade,
@@ -510,6 +511,7 @@ if (!app.requestSingleInstanceLock()) {
     const graphContributions = new GraphContributionRegistry();
     scheduler = new SchedulerCore();
     processSupervisor = new ProcessSupervisor();
+    const sandboxFactory = new SandboxFactory();
     networkService = new NetworkService();
     communicationService = new CommunicationService(
       bus,
@@ -530,6 +532,7 @@ if (!app.requestSingleInstanceLock()) {
       personaService,
       promptAssembler,
       workspaceService,
+      sandboxFactory,
     );
     pluginManager = new PluginManager(bus, KERNEL_VERSION, {
       config: configFacade,
@@ -550,6 +553,7 @@ if (!app.requestSingleInstanceLock()) {
       graphContributions,
       scheduler,
       processes: processSupervisor,
+      sandbox: sandboxFactory,
       http: networkService,
       scanners,
       channels: communicationService,

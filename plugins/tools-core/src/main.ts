@@ -100,7 +100,7 @@ export default definePlugin({
   engines: {
     borg: "^0.1.0",
   },
-  permissions: ["fs:sessionWorkspace", "tools.register"],
+  permissions: ["fs:sessionWorkspace", "tools.register", "sandbox.run"],
   contributes: {
     kinds: ["tool"],
   },
@@ -199,6 +199,73 @@ export default definePlugin({
             path: path.relative(root, target).split(path.sep).join("/"),
             bytesWritten: Buffer.byteLength(input.content, "utf8"),
           };
+        },
+      }),
+    );
+
+    context.tools.register(
+      defineTool({
+        id: "code.run",
+        description: "Run JavaScript or Python inside the session sandbox",
+        input: z
+          .object({
+            language: z.enum(["javascript", "python"]),
+            source: z.string().min(1),
+          })
+          .strict(),
+        output: z
+          .object({
+            exitCode: z.number().int(),
+            stdout: z.string(),
+            stderr: z.string(),
+          })
+          .strict(),
+        approval: "ask",
+        sideEffect: true,
+        async execute(input, execution) {
+          execution.signal.throwIfAborted();
+          if (!execution.workspaceRoot) {
+            throw new Error("This tool requires a session workspace");
+          }
+          return context.sandbox.run({
+            kind: input.language === "python" ? "uv" : "node",
+            root: execution.workspaceRoot,
+            source: input.source,
+            signal: execution.signal,
+          });
+        },
+      }),
+    );
+
+    context.tools.register(
+      defineTool({
+        id: "shell.exec",
+        description: "Run a command inside the session sandbox",
+        input: z
+          .object({
+            argv: z.array(z.string().min(1)).min(1),
+          })
+          .strict(),
+        output: z
+          .object({
+            exitCode: z.number().int(),
+            stdout: z.string(),
+            stderr: z.string(),
+          })
+          .strict(),
+        approval: "ask",
+        sideEffect: true,
+        async execute(input, execution) {
+          execution.signal.throwIfAborted();
+          if (!execution.workspaceRoot) {
+            throw new Error("This tool requires a session workspace");
+          }
+          return context.sandbox.run({
+            kind: "os",
+            root: execution.workspaceRoot,
+            argv: input.argv,
+            signal: execution.signal,
+          });
         },
       }),
     );
