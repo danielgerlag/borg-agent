@@ -1,0 +1,27 @@
+{
+  "id": "borg.search.tavily",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-search-tavily/main",
+  "ui": "@borg/plugin-search-tavily/ui",
+  "permissions": [
+    "network:dynamic",
+    "secrets:read",
+    "secrets:write",
+    "tools.register",
+    "ui.settings"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.search.tavily.connect",
+      "borg.search.tavily.disconnect",
+      "borg.search.tavily.getStatus"
+    ],
+    "kinds": [
+      "settingsPage",
+      "tool"
+    ]
+  }
+}

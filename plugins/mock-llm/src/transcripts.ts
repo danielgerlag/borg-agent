@@ -107,6 +107,20 @@ export const mockTranscriptFixtures: readonly MockTranscriptFixture[] =
       requiresAdvertisedTool: true,
     },
     {
+      id: "search",
+      prompt: "scenario:search",
+      toolCall: {
+        id: "mock-search-call",
+        name: "tavily.search",
+        input: {
+          query: "borg slice 12",
+        },
+      },
+      finalPrefix: "Search found: ",
+      resultPath: ["hits", "0", "title"],
+      requiresAdvertisedTool: true,
+    },
+    {
       id: "mcp-app",
       prompt: "scenario:mcp-app",
       toolCall: {
