@@ -719,8 +719,8 @@ export class LoopManager {
     readonly execution: ExecutionBinding;
     readonly workspaceRoot: string | undefined;
     readonly messages: ModelMessage[];
-    providerId?: string;
-    modelId?: string;
+    readonly providerId?: string | undefined;
+    readonly modelId?: string | undefined;
   }): Promise<void> {
     const { run, input, execution, messages } = args;
     let { providerId, modelId } = args;
