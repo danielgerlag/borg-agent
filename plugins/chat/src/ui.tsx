@@ -48,6 +48,7 @@ import {
   type Component,
 } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
+import { adoptChatDocument } from "./adopt-document";
 import { matchesModelPreference } from "./model-preference";
 
 type ChatDocument = z.infer<typeof chatDocumentSchema>;
@@ -429,7 +430,7 @@ export default defineUiPlugin<Component>({
         ) {
           return;
         }
-        setDocument(next);
+        setDocument((current) => adoptChatDocument({ current, next }));
         setFiles(workspace.files);
         if (next.session.activeRunId) {
           await subscribeRun(next.session.activeRunId);
@@ -458,7 +459,7 @@ export default defineUiPlugin<Component>({
           return;
         }
         setStreaming("");
-        setDocument(next);
+        setDocument((current) => adoptChatDocument({ current, next }));
         setFiles(workspace.files);
         setSubAgentTask("");
         setComposingNew(false);

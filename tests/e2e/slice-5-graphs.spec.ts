@@ -121,7 +121,13 @@ async function expandTranscriptEvent(text: string): Promise<void> {
     .locator('[data-testid="chat-message"][data-role="event"]')
     .filter({ hasText: text });
   await expect(event).toBeVisible();
-  await event.locator("summary").click();
+  const alreadyOpen = await event.evaluate(
+    (node) => node instanceof HTMLDetailsElement && node.open,
+  );
+  if (!alreadyOpen) {
+    await event.locator("summary").click();
+  }
+  await expect(event).toHaveJSProperty("open", true);
   await expect(event.locator("p")).toBeVisible();
   await expect(event.locator("p")).toContainText(text);
 }
@@ -362,9 +368,19 @@ test("launches a graph from Chat and shows its transcript lifecycle", async () =
     "Used graphs.run",
   );
 
+  const startedEvent = page
+    .locator('[data-testid="chat-message"][data-role="event"]')
+    .filter({ hasText: "Graph “Quick start” started." });
   await expandTranscriptEvent("Graph “Quick start” started.");
+  await expect(
+    page
+      .locator('[data-testid="chat-message"][data-role="event"]')
+      .filter({ hasText: "Graph “Quick start” completed." }),
+  ).toBeVisible();
+  await expect(startedEvent.locator("p")).toBeVisible();
   await expandTranscriptEvent("Graph “Quick start” completed.");
   await expect(page.getByTestId("chat-session-status")).toHaveText("Ready");
+  await expect(startedEvent.locator("p")).toBeVisible();
 });
 
 test("keeps a feedback-gate graph pending while Borg is hidden", async () => {
