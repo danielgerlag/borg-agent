@@ -110,7 +110,7 @@ export default defineUiPlugin<Component>({
     return context.ui.registerSettingsPage({
       id: "borg.themes.settings",
       label: "Appearance",
-      order: 8,
+      order: 12,
       component: ThemeSettings,
     });
   },
