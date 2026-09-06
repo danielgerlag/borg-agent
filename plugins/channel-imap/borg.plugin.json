@@ -1,0 +1,20 @@
+{
+  "id": "borg.channel.imap",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-channel-imap/main",
+  "permissions": [
+    "channels.register",
+    "secrets:read"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.channel.imap.inject"
+    ],
+    "kinds": [
+      "channel"
+    ]
+  }
+}
