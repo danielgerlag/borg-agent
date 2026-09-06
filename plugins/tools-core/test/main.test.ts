@@ -2,9 +2,11 @@ import { mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type {
-  PluginContext,
-  ToolContribution,
+import {
+  z,
+  type PluginContext,
+  type SandboxRunInput,
+  type ToolContribution,
 } from "@borg/plugin-sdk";
 import { SandboxFactory } from "../../../packages/kernel/src";
 import {
@@ -95,7 +97,7 @@ describe("core filesystem tools", () => {
           return { dispose: () => undefined };
         },
       },
-      sandbox: { run: (input) => sandbox.run(input) },
+      sandbox: { run: (input: SandboxRunInput) => sandbox.run(input) },
     } as unknown as PluginContext);
     const root = await mkdtemp(path.join(os.tmpdir(), "borg-tool-code-"));
     const outside = path.join(
@@ -116,7 +118,9 @@ describe("core filesystem tools", () => {
         signal: new AbortController().signal,
       },
     );
-    expect(run.output.parse(inside).exitCode).toBe(0);
+    expect(
+      z.object({ exitCode: z.number() }).parse(inside).exitCode,
+    ).toBe(0);
     await expect(readFile(path.join(root, "inside.txt"), "utf8")).resolves.toBe(
       "ok",
     );
@@ -132,7 +136,9 @@ describe("core filesystem tools", () => {
         signal: new AbortController().signal,
       },
     );
-    expect(run.output.parse(escape).exitCode).not.toBe(0);
+    expect(
+      z.object({ exitCode: z.number() }).parse(escape).exitCode,
+    ).not.toBe(0);
     await expect(readFile(outside, "utf8")).rejects.toThrow();
   });
 });
