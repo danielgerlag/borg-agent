@@ -149,10 +149,9 @@ test("enables Tavily in settings then completes a search tool call", async () =>
   await page.getByTestId("chat-composer-input").fill("scenario:search");
   await page.getByTestId("chat-send").click();
   const overlay = page.getByTestId("interaction-overlay");
-  if (await overlay.isVisible()) {
-    await expect(overlay).toContainText("tavily.search");
-    await page.getByTestId("interaction-allow").click();
-  }
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toContainText("tavily.search");
+  await page.getByTestId("interaction-allow").click();
   await expect(
     page
       .locator('[data-testid="chat-message"][data-role="assistant"]')
