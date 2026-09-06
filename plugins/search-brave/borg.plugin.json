@@ -1,0 +1,27 @@
+{
+  "id": "borg.search.brave",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-search-brave/main",
+  "ui": "@borg/plugin-search-brave/ui",
+  "permissions": [
+    "network:dynamic",
+    "secrets:read",
+    "secrets:write",
+    "tools.register",
+    "ui.settings"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.search.brave.connect",
+      "borg.search.brave.disconnect",
+      "borg.search.brave.getStatus"
+    ],
+    "kinds": [
+      "settingsPage",
+      "tool"
+    ]
+  }
+}

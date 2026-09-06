@@ -139,6 +139,9 @@ importers:
       '@borg/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@borg/plugin-a2a':
+        specifier: workspace:*
+        version: link:../../plugins/a2a
       '@borg/plugin-anthropic':
         specifier: workspace:*
         version: link:../../plugins/anthropic
@@ -148,6 +151,9 @@ importers:
       '@borg/plugin-channel-discord':
         specifier: workspace:*
         version: link:../../plugins/channel-discord
+      '@borg/plugin-channel-imap':
+        specifier: workspace:*
+        version: link:../../plugins/channel-imap
       '@borg/plugin-channel-mock':
         specifier: workspace:*
         version: link:../../plugins/channel-mock
@@ -184,6 +190,12 @@ importers:
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+      '@borg/plugin-search-brave':
+        specifier: workspace:*
+        version: link:../../plugins/search-brave
+      '@borg/plugin-search-tavily':
+        specifier: workspace:*
+        version: link:../../plugins/search-tavily
       '@borg/plugin-secrets-dev':
         specifier: workspace:*
         version: link:../../plugins/secrets-dev
@@ -193,6 +205,9 @@ importers:
       '@borg/plugin-security-prompt-injection':
         specifier: workspace:*
         version: link:../../plugins/security-prompt-injection
+      '@borg/plugin-themes':
+        specifier: workspace:*
+        version: link:../../plugins/themes
       '@borg/plugin-tools-core':
         specifier: workspace:*
         version: link:../../plugins/tools-core
@@ -270,6 +285,24 @@ importers:
         specifier: ^3.6.0
         version: 3.6.0
 
+  plugins/a2a:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
   plugins/anthropic:
     dependencies:
       '@borg/contracts':
@@ -323,6 +356,15 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+
+  plugins/channel-imap:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
 
   plugins/channel-mock:
     dependencies:
@@ -474,6 +516,42 @@ importers:
         specifier: ^1.9.15
         version: 1.9.15
 
+  plugins/search-brave:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
+  plugins/search-tavily:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
   plugins/secrets-dev:
     dependencies:
       '@borg/plugin-sdk':
@@ -512,6 +590,21 @@ importers:
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+
+  plugins/themes:
+    dependencies:
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
 
   plugins/tools-core:
     dependencies:

@@ -1,0 +1,27 @@
+{
+  "name": "@borg/plugin-themes",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
+  "exports": {
+    "./main": "./dist/main.js",
+    "./ui": "./src/ui.tsx"
+  },
+  "borg": {
+    "id": "borg.themes",
+    "manifest": "borg.plugin.json",
+    "main": "/main",
+    "ui": "/ui"
+  },
+  "dependencies": {
+    "@borg/plugin-sdk": "workspace:*",
+    "@borg/ui-kit": "workspace:*",
+    "lucide-solid": "^1.34.0",
+    "solid-js": "^1.9.15"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.main.json",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.ui.json --noEmit"
+  }
+}

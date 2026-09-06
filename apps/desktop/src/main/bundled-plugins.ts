@@ -5,6 +5,36 @@ import type { PluginDefinition } from "@borg/plugin-sdk";
 export const bundledMainPlugins: readonly PluginSource[] = [
   {
     manifest: {
+      "id": "borg.a2a",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-a2a/main",
+      "ui": "@borg/plugin-a2a/ui",
+      "permissions": [
+        "loops.start",
+        "personas.read",
+        "tools.invoke",
+        "ui.flightDeck",
+        "ui.settings",
+        "workspace.manage"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.a2a.getStatus"
+        ],
+        "kinds": [
+          "flightDeckWidget",
+          "settingsPage"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-a2a/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.anthropic",
       "version": "0.1.0",
       "engines": {
@@ -114,6 +144,30 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-channel-discord/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.channel.imap",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-channel-imap/main",
+      "permissions": [
+        "channels.register",
+        "secrets:read"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.channel.imap.inject"
+        ],
+        "kinds": [
+          "channel"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-channel-imap/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {
@@ -474,6 +528,68 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.search.brave",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-search-brave/main",
+      "ui": "@borg/plugin-search-brave/ui",
+      "permissions": [
+        "network:dynamic",
+        "secrets:read",
+        "secrets:write",
+        "tools.register",
+        "ui.settings"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.search.brave.connect",
+          "borg.search.brave.disconnect",
+          "borg.search.brave.getStatus"
+        ],
+        "kinds": [
+          "settingsPage",
+          "tool"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-search-brave/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.search.tavily",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-search-tavily/main",
+      "ui": "@borg/plugin-search-tavily/ui",
+      "permissions": [
+        "network:dynamic",
+        "secrets:read",
+        "secrets:write",
+        "tools.register",
+        "ui.settings"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.search.tavily.connect",
+          "borg.search.tavily.disconnect",
+          "borg.search.tavily.getStatus"
+        ],
+        "kinds": [
+          "settingsPage",
+          "tool"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-search-tavily/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.secrets.dev",
       "version": "0.1.0",
       "engines": {
@@ -547,6 +663,27 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-security-prompt-injection/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.themes",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-themes/main",
+      "ui": "@borg/plugin-themes/ui",
+      "permissions": [
+        "ui.settings"
+      ],
+      "contributes": {
+        "kinds": [
+          "settingsPage"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-themes/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {

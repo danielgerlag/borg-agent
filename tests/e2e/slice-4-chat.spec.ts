@@ -258,6 +258,7 @@ test("answers feedback in the shared interaction UI and finishes in thread", asy
 
 test("creates an assistant and uses it for new chats", async () => {
   await page.getByTestId("nav-settings").click();
+  await page.getByTestId("settings-section-borg.chat.personas").click();
   await expect(page.getByTestId("wizard-persona-step")).toBeVisible();
   await page.getByText("Create a custom assistant").click();
   await page.getByTestId("settings-persona-name").fill("Code reviewer");

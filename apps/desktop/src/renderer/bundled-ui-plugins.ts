@@ -7,6 +7,7 @@ export type UiPluginLoader = () => Promise<{
 }>;
 
 export const bundledUiPlugins: Readonly<Record<string, UiPluginLoader>> = {
+  "borg.a2a": async () => import("@borg/plugin-a2a/ui"),
   "borg.anthropic": async () => import("@borg/plugin-anthropic/ui"),
   "borg.bots": async () => import("@borg/plugin-bots/ui"),
   "borg.channel.discord": async () => import("@borg/plugin-channel-discord/ui"),
@@ -17,7 +18,10 @@ export const bundledUiPlugins: Readonly<Record<string, UiPluginLoader>> = {
   "borg.mcp": async () => import("@borg/plugin-mcp/ui"),
   "borg.mcp-apps": async () => import("@borg/plugin-mcp-apps/ui"),
   "borg.mock-llm": async () => import("@borg/plugin-mock-llm/ui"),
+  "borg.search.brave": async () => import("@borg/plugin-search-brave/ui"),
+  "borg.search.tavily": async () => import("@borg/plugin-search-tavily/ui"),
   "borg.secrets.dev": async () => import("@borg/plugin-secrets-dev/ui"),
   "borg.secrets.os": async () => import("@borg/plugin-secrets-os/ui"),
+  "borg.themes": async () => import("@borg/plugin-themes/ui"),
   "borg.usage": async () => import("@borg/plugin-usage/ui"),
 };

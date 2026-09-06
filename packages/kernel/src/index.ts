@@ -1,3 +1,17 @@
+export {
+  A2AService,
+  A2A_OWNER_PLUGIN_ID,
+  A2A_PROTOCOL_VERSION,
+  type A2ACreateServer,
+  type A2AListenAddress,
+  type A2AServiceOptions,
+  type A2ATask,
+  type A2ATaskState,
+  type JsonRpcError,
+  type JsonRpcId,
+  type JsonRpcRequest,
+  type JsonRpcResponse,
+} from "./a2a-service";
 export { CommandEventBus } from "./command-event-bus";
 export {
   CAPACITY_CEILINGS,

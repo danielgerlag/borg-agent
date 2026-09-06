@@ -24,6 +24,25 @@
   --danger: #ff657a;
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+  background: #f4f6fa;
+  --background: #f4f6fa;
+  --sidebar: #e8ecf3;
+  --panel: #ffffff;
+  --panel-muted: #f3f5f9;
+  --border: #d5dbe6;
+  --border-strong: #b7c0ce;
+  --text: #12151c;
+  --text-muted: #4b5568;
+  --text-subtle: #6b7280;
+  --accent: #0f9f7a;
+  --accent-contrast: #f4fffb;
+  --accent-glow: rgb(15 159 122 / 16%);
+  --success: #15803d;
+  --danger: #dc2626;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -40,7 +59,7 @@ body {
   min-height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at 82% 8%, rgb(115 230 194 / 8%), transparent 28rem),
+    radial-gradient(circle at 82% 8%, var(--accent-glow), transparent 28rem),
     var(--background);
 }
 

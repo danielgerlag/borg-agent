@@ -1,0 +1,17 @@
+{
+  "id": "borg.themes",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-themes/main",
+  "ui": "@borg/plugin-themes/ui",
+  "permissions": [
+    "ui.settings"
+  ],
+  "contributes": {
+    "kinds": [
+      "settingsPage"
+    ]
+  }
+}

@@ -755,6 +755,14 @@ export interface PluginContext {
   readonly http: PluginHttp;
   readonly channels: PluginChannels;
   readonly webSockets: PluginWebSockets;
+  readonly a2a?: {
+    snapshot(): {
+      readonly enabled: boolean;
+      readonly listening: boolean;
+      readonly port: number;
+      readonly personaId?: string | undefined;
+    };
+  };
   readonly window: {
     show(): void;
   };

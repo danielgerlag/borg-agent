@@ -1,4 +1,6 @@
 import {
+  A2AService,
+  A2A_OWNER_PLUGIN_ID,
   CommandEventBus,
   ClassificationService,
   CommunicationService,
@@ -80,6 +82,8 @@ let secretFacade: SecretFacade | undefined;
 let notificationService: NotificationService | undefined;
 let interactionService: InteractionService | undefined;
 let loopManager: LoopManager | undefined;
+let a2aService: A2AService | undefined;
+let a2aConfigWatch: Disposable | undefined;
 let scheduler: SchedulerCore | undefined;
 let processSupervisor: ProcessSupervisor | undefined;
 let networkService: NetworkService | undefined;
@@ -397,6 +401,9 @@ async function requestQuit(): Promise<void> {
     try {
       await pluginManager?.deactivateAll();
     } finally {
+      await a2aConfigWatch?.dispose();
+      a2aConfigWatch = undefined;
+      await a2aService?.close();
       scheduler?.shutdown();
       loopManager?.shutdown();
       interactionService?.cancelAll();
@@ -528,12 +535,19 @@ if (!app.requestSingleInstanceLock()) {
       costs,
       (pluginId) =>
         pluginId === "kernel.loop" ||
+        pluginId === A2A_OWNER_PLUGIN_ID ||
         pluginManager?.hasPermission(pluginId, "tools.invoke") === true,
       personaService,
       promptAssembler,
       workspaceService,
       sandboxFactory,
     );
+    a2aService = new A2AService({
+      loops: loopManager,
+      personas: personaService,
+      workspaces: workspaceService,
+      hostVersion: KERNEL_VERSION,
+    });
     pluginManager = new PluginManager(bus, KERNEL_VERSION, {
       config: configFacade,
       store: storeFacade,
@@ -558,6 +572,7 @@ if (!app.requestSingleInstanceLock()) {
       scanners,
       channels: communicationService,
       webSockets: webSocketService,
+      a2a: a2aService,
       executionResultFlow: (pluginId, subject) =>
         (pluginId === "borg.chat" &&
           (subject.kind === "chat-session" ||
@@ -566,7 +581,8 @@ if (!app.requestSingleInstanceLock()) {
           (subject.kind === "bot" ||
             subject.kind === "bot-attempt")) ||
         (pluginId === "borg.graphs" &&
-          subject.kind === "graph-instance")
+          subject.kind === "graph-instance") ||
+        (pluginId === A2A_OWNER_PLUGIN_ID && subject.kind === "a2a-task")
           ? "detached"
           : "merge_to_parent",
       showWindow: showMainWindow,
@@ -645,6 +661,20 @@ if (!app.requestSingleInstanceLock()) {
           !contributes(source, "secretStore"),
       );
       await pluginManager.activateAll(ordinarySources);
+      if (pluginManager.isActive(A2A_OWNER_PLUGIN_ID) && a2aService) {
+        const service = a2aService;
+        const syncListener = async (config: unknown): Promise<void> => {
+          try {
+            await service.applyConfig(config);
+          } catch (failure) {
+            console.error("[kernel] A2A listener failed", failure);
+          }
+        };
+        a2aConfigWatch = configFacade.watch(A2A_OWNER_PLUGIN_ID, (config) => {
+          void syncListener(config);
+        });
+        await syncListener(await configFacade.get(A2A_OWNER_PLUGIN_ID));
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       startupRecovery = { message };
