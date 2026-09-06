@@ -412,16 +412,63 @@ export interface PromptSlotContext {
   readonly personaId: string;
   readonly sessionId?: string | undefined;
   readonly feature?: string | undefined;
+  readonly prompt?: string | undefined;
+  readonly workspace?:
+    | {
+        listFiles(): Promise<readonly WorkspaceFile[]>;
+      }
+    | undefined;
 }
 
 export interface PromptSlotContribution {
   readonly id: string;
   readonly order: number;
-  render(context: PromptSlotContext): string | undefined;
+  render(
+    context: PromptSlotContext,
+  ): string | undefined | Promise<string | undefined>;
 }
 
 export interface PluginPrompts {
   registerSlot(slot: PromptSlotContribution): Disposable;
+}
+
+export interface MemoryRecord {
+  readonly id: string;
+  readonly kind: "semantic";
+  readonly text: string;
+  readonly personaId: string;
+  readonly sessionId?: string | undefined;
+  readonly classification: DataClassification;
+  readonly provenance: { readonly kind: "plugin"; readonly id: string };
+  readonly createdAt: string;
+}
+
+export interface MemoryWriteInput {
+  readonly text: string;
+  readonly personaId: string;
+  readonly sessionId?: string | undefined;
+  readonly classification?: DataClassification | undefined;
+}
+
+export interface MemoryQuery {
+  readonly personaId: string;
+  readonly sessionId?: string | undefined;
+  readonly text?: string | undefined;
+  readonly limit?: number | undefined;
+}
+
+export interface MemoryProviderContribution {
+  readonly id: string;
+  write(record: MemoryRecord): void | Promise<void>;
+  retrieve(
+    query: MemoryQuery,
+  ): readonly MemoryRecord[] | Promise<readonly MemoryRecord[]>;
+}
+
+export interface PluginMemory {
+  registerProvider(provider: MemoryProviderContribution): Disposable;
+  write(input: MemoryWriteInput): Promise<MemoryRecord>;
+  retrieve(query: MemoryQuery): Promise<readonly MemoryRecord[]>;
 }
 
 export interface PromptScanContext {
@@ -677,6 +724,7 @@ export interface PluginContext {
   readonly personas: PluginPersonas;
   readonly workspace: PluginWorkspace;
   readonly prompts: PluginPrompts;
+  readonly memory: PluginMemory;
   readonly scanners: PluginScanners;
   readonly graphs: PluginGraphs;
   readonly scheduler: PluginScheduler;

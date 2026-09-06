@@ -479,7 +479,16 @@ export function createGraphHarness(
     persistence: {},
     interactions: {},
     cost: {},
-    prompts: {},
+    prompts: {
+      registerSlot: () => ({ dispose: () => undefined }),
+    },
+    memory: {
+      registerProvider: () => ({ dispose: () => undefined }),
+      write: async () => {
+        throw new Error("Memory writes are unavailable in the graphs harness");
+      },
+      retrieve: async () => [],
+    },
     graphs: {
       registerStep: () => ({ dispose: () => undefined }),
       registerTrigger: () => ({ dispose: () => undefined }),

@@ -2,7 +2,7 @@
 
 Borg is a privacy-first local desktop agent platform built as a TypeScript microkernel inside Electron.
 
-The repository currently contains Slice 9: the tray-resident Electron microkernel, chat-first product experience, persona-backed ReAct runtime, persisted graph workflows, background bots, an optional Anthropic provider, persona-owned MCP servers, kernel-owned data classification and prompt scanning, and normalized message channels. `borg.channel.mock` provides deterministic inbound and outbound tests. `borg.channel.discord` receives messages through the realtime Discord Gateway and sends through Discord REST. The scripted `borg.mock-llm` provider remains the default persona and deterministic CI path.
+The repository currently contains Slice 10: the tray-resident Electron microkernel, chat-first product experience, persona-backed ReAct runtime, persisted graph workflows, background bots, an optional Anthropic provider, persona-owned MCP servers, kernel-owned data classification and prompt scanning, normalized message channels, semantic memory recall, and workspace context-map prompt slots. `borg.channel.mock` provides deterministic inbound and outbound tests. `borg.channel.discord` receives messages through the realtime Discord Gateway and sends through Discord REST. The scripted `borg.mock-llm` provider remains the default persona and deterministic CI path.
 
 ## Prerequisites
 

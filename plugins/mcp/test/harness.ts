@@ -152,6 +152,13 @@ export function createMcpHarness(options?: {
     cost: {},
     workspace: {},
     prompts: {},
+    memory: {
+      registerProvider: () => ({ dispose: () => undefined }),
+      write: async () => {
+        throw new Error("Memory writes are unused");
+      },
+      retrieve: async () => [],
+    },
     graphs: {},
     scheduler: {},
     runtime: {},

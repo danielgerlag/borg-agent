@@ -9,6 +9,7 @@ import {
   GraphContributionRegistry,
   InteractionService,
   LoopManager,
+  MemoryFacade,
   ModelGateway,
   NetworkService,
   NotificationService,
@@ -501,7 +502,8 @@ if (!app.requestSingleInstanceLock()) {
       },
     });
     const personaService = new PersonaService(storeFacade);
-    const promptAssembler = new PromptAssembler(personaService);
+    const memoryFacade = new MemoryFacade();
+    const promptAssembler = new PromptAssembler(personaService, memoryFacade);
     const workspaceService = new WorkspaceService(
       path.join(app.getPath("userData"), "workspaces", "sessions"),
     );
@@ -543,6 +545,7 @@ if (!app.requestSingleInstanceLock()) {
       costs,
       personas: personaService,
       prompts: promptAssembler,
+      memory: memoryFacade,
       workspaces: workspaceService,
       graphContributions,
       scheduler,

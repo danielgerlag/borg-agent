@@ -371,6 +371,11 @@ export async function createBotHarness(
     prompts: {
       registerSlot: () => unavailable("Prompt slot registration"),
     },
+    memory: {
+      registerProvider: () => unavailable("Memory provider registration"),
+      write: async () => unavailable("Memory writes"),
+      retrieve: async () => unavailable("Memory retrieve"),
+    },
     scanners: {
       register: () => unavailable("Scanner registration"),
     },

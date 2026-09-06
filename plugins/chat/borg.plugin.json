@@ -9,6 +9,7 @@
   "permissions": [
     "executions.manage",
     "loops.start",
+    "memory.write",
     "models.read",
     "personas.read",
     "personas.write",
