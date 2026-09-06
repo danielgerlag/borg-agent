@@ -1,3 +1,4 @@
+import { a2aConfigSchema } from "@borg/contracts";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import a2aPlugin from "../src/main";
@@ -28,6 +29,21 @@ describe("borg.a2a plugin", () => {
   });
 
   it("clears a saved persona when Default persona is saved", async () => {
+    const current = a2aConfigSchema.parse({
+      enabled: false,
+      port: 8_733,
+      personaId: "user/coder",
+    });
+    expect(current.personaId).toBe("user/coder");
+    const patch = {
+      enabled: false,
+      port: 8_733,
+      personaId: "",
+    };
+    expect(a2aConfigSchema.parse({ ...current, ...patch })).toEqual({
+      enabled: false,
+      port: 8_733,
+    });
     const harness = createA2AHarness();
     const active = await harness.activate();
     await harness.context.config.update({

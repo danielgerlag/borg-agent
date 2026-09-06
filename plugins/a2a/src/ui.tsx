@@ -55,18 +55,17 @@ export default defineUiPlugin<Component>({
         setError(undefined);
         try {
           const parsedPort = Number.parseInt(port(), 10);
-          const next = a2aConfigSchema.parse({
+          await context.config.update({
             enabled: enabled(),
             port: parsedPort,
             personaId: personaId().trim(),
           });
-          await context.config.update(next);
           await refresh();
           const current = status();
           setMessage(
             current.listening
               ? `Listening on 127.0.0.1:${current.port}.`
-              : next.enabled
+              : enabled()
                 ? "Enabled, but the loopback listener is not bound."
                 : "A2A listener is disabled.",
           );
