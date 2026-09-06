@@ -663,12 +663,17 @@ if (!app.requestSingleInstanceLock()) {
       await pluginManager.activateAll(ordinarySources);
       if (pluginManager.isActive(A2A_OWNER_PLUGIN_ID) && a2aService) {
         const service = a2aService;
-        a2aConfigWatch = configFacade.watch(A2A_OWNER_PLUGIN_ID, (config) => {
-          void service.applyConfig(config).catch((failure: unknown) => {
+        const syncListener = async (config: unknown): Promise<void> => {
+          try {
+            await service.applyConfig(config);
+          } catch (failure) {
             console.error("[kernel] A2A listener failed", failure);
-          });
+          }
+        };
+        a2aConfigWatch = configFacade.watch(A2A_OWNER_PLUGIN_ID, (config) => {
+          void syncListener(config);
         });
-        await service.applyConfig(await configFacade.get(A2A_OWNER_PLUGIN_ID));
+        await syncListener(await configFacade.get(A2A_OWNER_PLUGIN_ID));
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

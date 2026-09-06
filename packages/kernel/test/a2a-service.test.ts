@@ -14,6 +14,7 @@ import {
 } from "../src";
 import { createSecurityRuntime } from "./security-runtime";
 import { mkdtemp } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 
@@ -319,5 +320,33 @@ describe("A2AService", () => {
     expect(a2a.address()?.host).toBe("127.0.0.1");
     await a2a.applyConfig({ enabled: false, port: 8_733 });
     expect(a2a.listening()).toBe(false);
+  });
+
+  it("keeps enabled config when the loopback port is already bound", async () => {
+    const blocker = createServer();
+    await new Promise<void>((resolve, reject) => {
+      blocker.once("error", reject);
+      blocker.listen(0, "127.0.0.1", resolve);
+    });
+    const address = blocker.address();
+    if (!address || typeof address === "string") {
+      throw new Error("blocker has no port");
+    }
+    const { a2a } = await createA2ARuntime();
+    try {
+      await expect(
+        a2a.applyConfig({ enabled: true, port: address.port }),
+      ).rejects.toMatchObject({ code: "EADDRINUSE" });
+      expect(a2a.snapshot()).toEqual({
+        enabled: true,
+        listening: false,
+        port: address.port,
+      });
+    } finally {
+      await a2a.close();
+      await new Promise<void>((resolve, reject) => {
+        blocker.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 });

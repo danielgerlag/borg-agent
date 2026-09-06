@@ -962,7 +962,7 @@ Audit records capture security decisions, plugin lifecycle, outbound sends, inte
 
 Borg targets Linux Foundation Agent2Agent Protocol v1.0.
 
-Kernel `A2AService` is the JSON-RPC dispatcher. `dispatch(JsonRpcRequest)` is the product surface. `listen()` is optional, injectable through `createServer`, binds `127.0.0.1` only, and stays off until `borg.a2a` config `enabled` is true. Desktop main constructs the service and watches that plugin config. There is no `ctx.a2a` and no `a2aEndpoint` contribution kind.
+Kernel `A2AService` is the JSON-RPC dispatcher. `dispatch(JsonRpcRequest)` is the product surface. `listen()` is optional, injectable through `createServer`, binds `127.0.0.1` only, and stays off until `borg.a2a` config `enabled` is true. Desktop main constructs the service and watches that plugin config. Bind failures log and leave `listening` false. They do not fail kernel bootstrap. Plugin context exposes read-only `a2a.snapshot()` so `borg.a2a.getStatus` can report live listen state. There is no `a2aEndpoint` contribution kind.
 
 Accepted methods are `message/send` / `SendMessage`, `tasks/get` / `GetTask`, and `tasks/cancel` / `CancelTask`. `message/send` starts a kernel loop owned by `borg.a2a` and returns the working Task immediately. The A2A task id equals `LoopRunSnapshot.id`. Loop status maps as running/paused → working, waiting → input-required, completed, failed, and cancelled → canceled. Listening also serves `GET /.well-known/agent-card.json`.
 
