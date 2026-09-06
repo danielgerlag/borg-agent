@@ -13,7 +13,6 @@ import {
 export const OPENAI_PROVIDER_ID = "borg.openai";
 export const OPENAI_SECRET_KEY = "apiKey";
 
-/** Pinned production URL. Also the advertised egress.destination. */
 export const OPENAI_PRODUCTION_ENDPOINT =
   "https://api.openai.com/v1/chat/completions";
 
