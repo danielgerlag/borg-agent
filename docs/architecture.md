@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This is the implementation architecture through Slice 12. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
+This is the implementation architecture through Slice 13. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
 
 The architecture is deliberately a microkernel:
 
@@ -1233,3 +1233,7 @@ Slice 12 adds remaining HiveMind-parity plugins on the existing kernel. `A2AServ
 `borg.search.tavily` and `borg.search.brave` contribute ask-approved search tools. `borg.a2a` stores enabled/port/personaId and a Flight Deck widget. `borg.channel.imap` copies mock inject plus Discord enable-when-configured. `borg.themes` writes `theme: "dark" | "light"` and the UI plugin sets `document.documentElement.dataset.theme`. Light tokens live on `:root[data-theme="light"]` in the shell stylesheet. Dark remains the default.
 
 The Electron journey enables Tavily in settings, chats `scenario:search`, approves `tavily.search` if asked, and expects the assistant text from the first result title.
+
+## Slice 13 implementation record
+
+Slice 13 adds `borg.openai` as the second production `llmProvider` without changing the kernel, default persona, or mock path. The plugin talks to pinned `https://api.openai.com/v1/chat/completions` with raw `fetch`, Bearer auth, `redirect: "error"`, Chat Completions SSE, and a frozen GPT-5 Mini / Nano / GPT-5 catalog. Connect verifies with a non-billed `GET /v1/models/gpt-5-mini` derived from the completions URL. A saved key restores registration at activation with zero fetches. Wizard and settings order is 26 so Anthropic remains the first optional LLM step (order 25). `BORG_OPENAI_ENDPOINT` is honored only when `BORG_E2E=1` and the host is loopback.
