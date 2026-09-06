@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This is the implementation architecture through Slice 11. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
+This is the implementation architecture through Slice 12. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
 
 The architecture is deliberately a microkernel:
 
@@ -897,7 +897,11 @@ MCP App content runs in an inner `sandbox="allow-scripts"` `srcdoc` inside an op
 
 ### Tools, search, memory, context, scanners, stores, and channels
 
-Each is implemented by its named plugin contribution. A kernel facade or registry selects it. Setup/config UI ships with the owning plugin. Flight Deck data is contributed as widgets rather than hard-coded into a monolithic component.
+Each is implemented by its named plugin contribution. Setup/config UI ships with the owning plugin. Flight Deck data is contributed as widgets rather than hard-coded into a monolithic component.
+
+Web search is two ordinary tool plugins, `borg.search.tavily` and `borg.search.brave`. There is no `SearchFacade` and no `searchProvider` contribution kind. Each plugin registers `tavily.search` or `brave.search` only while `enabled` is true and an API key is stored. HTTP JSON is parsed at the plugin client boundary into `webSearchOutputSchema`. Tool metadata is `approval: "ask"`, `outputProvenance: "external"`, and `channelCapacity: "public"`. Production Tavily is `POST https://api.tavily.com/search`. Production Brave is `GET https://api.search.brave.com/res/v1/web/search` with `X-Subscription-Token`. `BORG_TAVILY_ENDPOINT` and `BORG_BRAVE_ENDPOINT` override those URLs only when `BORG_E2E=1` and the host is loopback.
+
+`borg.channel.imap` is a `private` channel adapter with a fake transport and `borg.channel.imap.inject`. It registers only when enabled with host, username, and a stored password. M365, Google, and a kernel `SocketService` are not in this slice.
 
 ## Prompt assembly and memory
 
@@ -958,17 +962,13 @@ Audit records capture security decisions, plugin lifecycle, outbound sends, inte
 
 Borg targets Linux Foundation Agent2Agent Protocol v1.0.
 
-The kernel uses Node's local HTTP facilities or a future approved adapter to expose:
+Kernel `A2AService` is the JSON-RPC dispatcher. `dispatch(JsonRpcRequest)` is the product surface. `listen()` is optional, injectable through `createServer`, binds `127.0.0.1` only, and stays off until `borg.a2a` config `enabled` is true. Desktop main constructs the service and watches that plugin config. There is no `ctx.a2a` and no `a2aEndpoint` contribution kind.
 
-- `/.well-known/agent-card.json`;
-- the JSON-RPC binding;
-- send message and streamed message;
-- get/list/subscribe/cancel task;
-- SSE task status/artifact updates.
+Accepted methods are `message/send` / `SendMessage`, `tasks/get` / `GetTask`, and `tasks/cancel` / `CancelTask`. `message/send` starts a kernel loop owned by `borg.a2a` and returns the working Task immediately. The A2A task id equals `LoopRunSnapshot.id`. Loop status maps as running/paused → working, waiting → input-required, completed, failed, and cancelled → canceled. Listening also serves `GET /.well-known/agent-card.json`.
 
-An `a2aEndpoint` contribution selects the persona, advertised skills, accepted modalities, and exposure policy. `A2AService` maps an A2A task to a kernel loop run and maps loop lifecycle/interaction states to A2A task states.
+Loop start security is a root bind with subject `{ kind: "a2a-task", id: messageId }`, classification `internal`, provenance plugin `borg.a2a`, and operation prefix `a2a/${messageId}`. `messageId` is a UUID. If a workspace is allocated, `WorkspaceService` uses owner `borg.a2a`.
 
-V1 binds to loopback by default and is disabled until configured. Non-loopback exposure requires authentication plus classification and outbound policy. Push notification/webhook support is deferred; no hosted control plane is introduced.
+Streaming, push notifications, and non-loopback binds are out of this slice.
 
 ## Window, tray, and shutdown
 
@@ -1225,3 +1225,11 @@ Slice 10 adds semantic memory recall without graph entity APIs. `MemoryFacade` s
 Slice 11 adds `SandboxFactory` with kinds `os`, `uv`, and `node`. Runs use `cwd` at a real directory root, a scrubbed environment, and `shell: false`. Node writes source under the root and spawns `process.execPath` with `--permission` filesystem allows limited to that root. uv is injected in tests so CI does not require a host install. `ctx.sandbox.run` requires `sandbox.run`. `borg.tools.core` adds `code.run` and `shell.exec`, which execute inside the factory using the session workspace as the root.
 
 `LoopManager` accepts persona `loopStrategy` `code-act`. That path still uses the same run IDs, pause points, and `ModelGateway`. Each turn either runs a fenced javascript/python block in the sandbox or treats unfenced content as the final answer. LangGraph is not used.
+
+## Slice 12 implementation record
+
+Slice 12 adds remaining HiveMind-parity plugins on the existing kernel. `A2AService` lives in `packages/kernel`. Search, IMAP, and appearance stay plugins. There is no extra `llmProvider`, `SearchFacade`, `HttpServerService`, `ThemeService`, or OAuth.
+
+`borg.search.tavily` and `borg.search.brave` contribute ask-approved search tools. `borg.a2a` stores enabled/port/personaId and a Flight Deck widget. `borg.channel.imap` copies mock inject plus Discord enable-when-configured. `borg.themes` writes `theme: "dark" | "light"` and the UI plugin sets `document.documentElement.dataset.theme`. Light tokens live on `:root[data-theme="light"]` in the shell stylesheet. Dark remains the default.
+
+The Electron journey enables Tavily in settings, chats `scenario:search`, approves `tavily.search` if asked, and expects the assistant text from the first result title.
