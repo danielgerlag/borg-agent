@@ -59,7 +59,7 @@ body {
   min-height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at 82% 8%, rgb(115 230 194 / 8%), transparent 28rem),
+    radial-gradient(circle at 82% 8%, var(--accent-glow), transparent 28rem),
     var(--background);
 }
 

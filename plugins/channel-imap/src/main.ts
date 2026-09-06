@@ -69,6 +69,7 @@ class ImapChannelController {
       return;
     }
     const config = imapChannelConfigSchema.parse(await this.#context.config.get());
+    await this.#teardown();
     const mailbox = config.mailbox.trim() || IMAP_DEFAULT_MAILBOX;
     this.transport.destinations = [mailbox];
     const configured =
@@ -77,10 +78,6 @@ class ImapChannelController {
       config.username.trim().length > 0 &&
       (await this.#context.secrets.has(IMAP_PASSWORD_SECRET_KEY));
     if (!configured) {
-      await this.#teardown();
-      return;
-    }
-    if (this.#registration) {
       return;
     }
     this.#registration = this.#context.channels.register(this.transport);

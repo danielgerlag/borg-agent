@@ -572,6 +572,7 @@ if (!app.requestSingleInstanceLock()) {
       scanners,
       channels: communicationService,
       webSockets: webSocketService,
+      a2a: a2aService,
       executionResultFlow: (pluginId, subject) =>
         (pluginId === "borg.chat" &&
           (subject.kind === "chat-session" ||

@@ -2243,9 +2243,19 @@ export const a2aConfigSchema = z
   .object({
     enabled: z.boolean().default(false),
     port: z.number().int().min(1).max(65_535).default(8_733),
-    personaId: z.string().min(1).optional(),
+    personaId: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .transform((value) => {
+    const personaId = value.personaId?.trim();
+    return {
+      enabled: value.enabled,
+      port: value.port,
+      ...(personaId !== undefined && personaId.length > 0
+        ? { personaId }
+        : {}),
+    };
+  });
 
 export type A2AConfig = z.infer<typeof a2aConfigSchema>;
 

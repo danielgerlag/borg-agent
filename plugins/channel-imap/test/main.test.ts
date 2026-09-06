@@ -215,4 +215,27 @@ describe("borg.channel.imap", () => {
     ]);
     await harness.deactivate();
   });
+
+  it("re-registers destinations when the mailbox changes", async () => {
+    const fixture = createImapFixture({
+      enabled: true,
+      host: "imap.example.com",
+      username: "borg@example.com",
+      password: "secret",
+    });
+    const harness = await createTestHarness(plugin, fixture.context);
+    await fixture.context.config.update({ mailbox: "Archive" });
+    const adapter = fixture.adapter();
+    expect(adapter?.destinations).toEqual(["Archive"]);
+    const drafts: ChannelInboundDraft[] = [];
+    await adapter?.start?.({
+      ingest: (draft) => {
+        drafts.push(draft);
+      },
+      signal: new AbortController().signal,
+    });
+    await fixture.invoke(imapChannelInject, { text: "archived" });
+    expect(drafts[0]?.destinationId).toBe("Archive");
+    await harness.deactivate();
+  });
 });

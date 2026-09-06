@@ -6,11 +6,19 @@ import {
 } from "@borg/contracts";
 import { definePlugin } from "@borg/plugin-sdk";
 
-function asStatus(config: A2AConfig): A2AStatus {
+function asStatus(
+  config: A2AConfig,
+  live:
+    | {
+        readonly listening: boolean;
+        readonly port: number;
+      }
+    | undefined,
+): A2AStatus {
   return {
     enabled: config.enabled,
-    listening: config.enabled,
-    port: config.port,
+    listening: live?.listening ?? false,
+    port: live?.port ?? config.port,
     ...(config.personaId !== undefined ? { personaId: config.personaId } : {}),
   };
 }
@@ -36,7 +44,10 @@ export default definePlugin({
   configSchema: a2aConfigSchema,
   activate(context) {
     context.bus.handle(a2aGetStatus, async () =>
-      asStatus(a2aConfigSchema.parse(await context.config.get())),
+      asStatus(
+        a2aConfigSchema.parse(await context.config.get()),
+        context.a2a?.snapshot(),
+      ),
     );
   },
 });

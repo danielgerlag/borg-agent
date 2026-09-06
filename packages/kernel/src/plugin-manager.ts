@@ -43,6 +43,7 @@ import type { ProcessSupervisor } from "./process-supervisor";
 import type { SandboxFactory } from "./sandbox-factory";
 import type { ToolService } from "./tool-service";
 import type { WebSocketService } from "./websocket-service";
+import type { A2AService } from "./a2a-service";
 import type { WorkspaceService } from "./workspace-service";
 
 export type PluginStatus =
@@ -99,6 +100,7 @@ export interface PluginManagerOptions {
   readonly scanners?: ScannerRegistry;
   readonly channels?: CommunicationService;
   readonly webSockets?: WebSocketService;
+  readonly a2a?: A2AService;
   readonly showWindow?: () => void;
   executionResultFlow?(
     pluginId: string,
@@ -1422,6 +1424,19 @@ export class PluginManager {
                 );
               },
             });
+          },
+        },
+        a2a: {
+          snapshot: () => {
+            const service = this.#options.a2a;
+            if (!service) {
+              return {
+                enabled: false,
+                listening: false,
+                port: 8_733,
+              };
+            }
+            return service.snapshot();
           },
         },
         window: {

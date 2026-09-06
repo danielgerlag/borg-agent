@@ -2,6 +2,7 @@ import {
   a2aConfigSchema,
   modelOperationPrefixSchema,
   type A2AConfig,
+  type A2AStatus,
   type LoopRunSnapshot,
   type LoopRunStatus,
 } from "@borg/contracts";
@@ -225,6 +226,18 @@ export class A2AService {
     return this.#server?.listening === true;
   }
 
+  snapshot(): A2AStatus {
+    const address = this.address();
+    return {
+      enabled: this.#config.enabled,
+      listening: this.listening(),
+      port: address?.port ?? this.#config.port,
+      ...(this.#config.personaId !== undefined
+        ? { personaId: this.#config.personaId }
+        : {}),
+    };
+  }
+
   async applyConfig(candidate: unknown): Promise<void> {
     const config = a2aConfigSchema.parse(candidate ?? {});
     this.#config = config;
@@ -355,10 +368,10 @@ export class A2AService {
       );
     }
     const messageId = isUuid(params.message.messageId)
-      ? params.message.messageId
+      ? params.message.messageId.toLowerCase()
       : randomUUID();
     const contextId = isUuid(params.message.contextId)
-      ? params.message.contextId
+      ? params.message.contextId.toLowerCase()
       : randomUUID();
     const persona = this.#resolvePersona();
     const workspaces = this.#workspaces;
@@ -486,12 +499,25 @@ export class A2AService {
   ): Promise<void> {
     try {
       const path = request.url?.split("?")[0] ?? "/";
+      const host = request.headers.host ?? "";
+      const hostname = host.split(":")[0]?.toLowerCase() ?? "";
+      if (hostname !== "127.0.0.1" && hostname !== "localhost") {
+        response.writeHead(421);
+        response.end();
+        return;
+      }
       if (request.method === "GET" && path === "/.well-known/agent-card.json") {
         this.#writeJson(response, 200, this.agentCard());
         return;
       }
       if (request.method !== "POST") {
         response.writeHead(404);
+        response.end();
+        return;
+      }
+      const contentType = request.headers["content-type"] ?? "";
+      if (!contentType.toLowerCase().startsWith("application/json")) {
+        response.writeHead(415);
         response.end();
         return;
       }

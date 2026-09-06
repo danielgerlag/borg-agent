@@ -164,6 +164,26 @@ describe("A2AService", () => {
     expect(loops.get(taskId, A2A_OWNER_PLUGIN_ID)?.status).toBe("cancelled");
   });
 
+  it("lowercases uppercase UUIDs before the operation prefix", async () => {
+    const { a2a, loops } = await createA2ARuntime();
+    const messageId = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA";
+    const response = await a2a.dispatch({
+      jsonrpc: "2.0",
+      id: "upper",
+      method: "message/send",
+      params: {
+        message: {
+          messageId,
+          parts: [{ kind: "text", text: "upper id" }],
+        },
+      },
+    });
+    const task = resultOf(response);
+    expect(loops.get(String(task.id), A2A_OWNER_PLUGIN_ID)?.prompt).toBe(
+      "upper id",
+    );
+  });
+
   it("rejects unknown methods and missing tasks", async () => {
     const { a2a } = await createA2ARuntime();
     await expect(
