@@ -50,7 +50,7 @@ Electron application
 │  ├─ tool registry and invocation pipeline
 │  ├─ interactions, notifications, audit, cost
 │  ├─ config/store/secret facades
-│  ├─ communication, scheduling, workspace, sandbox, A2A services
+│  ├─ communication, scheduling, workspace, sandbox, A2A, OAuth services
 │  └─ active plugin main modules
 │
 ├─ preload: fixed, typed kernel bridge
@@ -125,6 +125,7 @@ Later bundled plugins get one directory each under `plugins/`. A plugin package 
 | `AuditService` | structured security and lifecycle audit records | product transcript |
 | `NotificationService` | OS notifications and renderer toast events | feature-specific notification rules |
 | `A2AService` | Agent2Agent server plumbing and task-to-loop mapping | persona/agent product UI |
+| `OAuthService` | PKCE loopback grants, refresh, and RFC 7009 revocation for plugins | Graph/Gmail protocol or mailbox identity |
 | `WindowTrayService` | window visibility, tray menu/counts, application quit | product feature state |
 
 Generic graph support in the kernel is limited to `GraphContributionRegistry`, `RunRegistry`, `WorkspaceService`, `SchedulerCore`, bus events, interactions, and store hooks. Definition validation, step scheduling, graph persistence shape, triggers, and designer behavior live in `borg.graphs`.
@@ -795,6 +796,8 @@ feature/tool
 
 `TlsService` is the only plugin path to outbound TLS. It is a sibling of `NetworkService` and `WebSocketService`, not an extension of either. A plugin that declared `network:tls` calls `ctx.tls.connect({ host, port })` and receives a disposable Web Streams duplex of `Uint8Array` after a TLS 1.2+ handshake. The kernel owns DNS, TCP, SNI, system-CA verification, the per-plugin socket cap, and `abortOwned` teardown. Connect options carry no credentials, no `rejectUnauthorized`, and no listen/STARTTLS/plaintext TCP API.
 
+`OAuthService` is the only plugin path to OAuth authorization-code grants. It is a sibling of `TlsService`, `NetworkService`, and `WebSocketService`. A plugin that declared `oauth.connect` calls `ctx.oauth.connect({ clientId, authorizationEndpoint, tokenEndpoint, scopes })`, then `snapshot` / `accessToken` / `disconnect`. The kernel owns PKCE S256, an ephemeral `127.0.0.1:0` loopback listener advertised as `http://{loopbackHost}:{port}/`, Host-header matching, one-shot code capture, token HTTPS (`redirect: "error"`), single-flight refresh with 120s skew, and vault storage under `SecretFacade` namespace `system.oauth` keyed by plugin id. There is one grant per plugin. Connect fails closed without a refresh token. `abortOwned` cancels an in-flight connect and does not delete a grant that already landed. Disconnect best-effort RFC 7009 revokes, then deletes the vault. Audit records origins and outcomes, never tokens. Plugins learn mailbox identity from Graph or Gmail `/me`; the kernel snapshot has `connected` and optional `expiresAt` only.
+
 ## Graphs plugin
 
 `borg.graphs` is a first-class bundled plugin. It contributes a graph engine, workspace/settings/designer views, management tools, commands/events, and Flight Deck state. It also defines the graph-step and graph-trigger extension points.
@@ -903,7 +906,9 @@ Each is implemented by its named plugin contribution. Setup/config UI ships with
 
 Web search is two ordinary tool plugins, `borg.search.tavily` and `borg.search.brave`. There is no `SearchFacade` and no `searchProvider` contribution kind. Each plugin registers `tavily.search` or `brave.search` only while `enabled` is true and an API key is stored. HTTP JSON is parsed at the plugin client boundary into `webSearchOutputSchema`. Tool metadata is `approval: "ask"`, `outputProvenance: "external"`, and `channelCapacity: "public"`. Production Tavily is `POST https://api.tavily.com/search`. Production Brave is `GET https://api.search.brave.com/res/v1/web/search` with `X-Subscription-Token`. `BORG_TAVILY_ENDPOINT` and `BORG_BRAVE_ENDPOINT` override those URLs only when `BORG_E2E=1` and the host is loopback.
 
-`borg.channel.imap` is a `private` channel adapter. It registers when enabled with host, username, and a stored password. `start()` always installs ingest so `borg.channel.imap.inject` works without a mailbox. When `ctx.tls` is available the plugin also opens implicit TLS (port 993 by default) and speaks LOGIN, SELECT, IDLE or CHECK, FETCH, and APPEND on that duplex. A failed TLS connect is logged; the adapter stays registered; inject remains. M365, Google, OAuth, STARTTLS on 143, and a generic `SocketService` are not in this slice.
+`borg.channel.imap` is a `private` channel adapter. It registers when enabled with host, username, and a stored password. `start()` always installs ingest so `borg.channel.imap.inject` works without a mailbox. When `ctx.tls` is available the plugin also opens implicit TLS (port 993 by default) and speaks LOGIN, SELECT, IDLE or CHECK, FETCH, and APPEND on that duplex. A failed TLS connect is logged; the adapter stays registered; inject remains. STARTTLS on 143 and a generic `SocketService` are not in this slice.
+
+`borg.channel.m365` and `borg.channel.google` are `private` mail channel adapters on kernel `OAuthService`. Each registers when enabled with a public native/desktop client id so inject works without a mailbox. Live inbox polling starts only while `snapshot().connected`. `send` throws if disconnected; there is no fake receipt. Destinations are the connected mailbox plus `allowedRecipients` (max 64). Graph is pinned to `https://graph.microsoft.com`; Gmail is pinned to `https://gmail.googleapis.com`. Auth endpoints are plugin constants. Settings order is Microsoft 365 47 and Google 48. STARTTLS, IMAP XOAUTH2, SMTP, calendar, and drive are out of scope.
 
 ## Prompt assembly and memory
 
@@ -1230,7 +1235,7 @@ Slice 11 adds `SandboxFactory` with kinds `os`, `uv`, and `node`. Runs use `cwd`
 
 ## Slice 12 implementation record
 
-Slice 12 adds remaining HiveMind-parity plugins on the existing kernel. `A2AService` lives in `packages/kernel`. Search, IMAP, and appearance stay plugins. There is no extra `llmProvider`, `SearchFacade`, `HttpServerService`, `ThemeService`, or OAuth.
+Slice 12 adds remaining HiveMind-parity plugins on the existing kernel. `A2AService` lives in `packages/kernel`. Search, IMAP, and appearance stay plugins. There is no extra `llmProvider`, `SearchFacade`, `HttpServerService`, or `ThemeService`. Slice 12 shipped without OAuth; kernel `OAuthService` plus `borg.channel.m365` and `borg.channel.google` are a follow-on.
 
 `borg.search.tavily` and `borg.search.brave` contribute ask-approved search tools. `borg.a2a` stores enabled/port/personaId and a Flight Deck widget. `borg.channel.imap` copies mock inject plus Discord enable-when-configured, and can speak IMAP over kernel `TlsService` implicit TLS while inject stays for tests. `borg.themes` writes `theme: "dark" | "light"` and the UI plugin sets `document.documentElement.dataset.theme`. Light tokens live on `:root[data-theme="light"]` in the shell stylesheet. Dark remains the default.
 
