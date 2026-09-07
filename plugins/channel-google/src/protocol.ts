@@ -1,6 +1,7 @@
 export const GOOGLE_ADAPTER_ID = "borg.channel.google";
 export const GMAIL_API_BASE = "https://gmail.googleapis.com";
 export const GOOGLE_APIS_BASE = "https://www.googleapis.com";
+export const PEOPLE_API_BASE = "https://people.googleapis.com";
 export const GOOGLE_AUTHORIZATION_ENDPOINT =
   "https://accounts.google.com/o/oauth2/v2/auth";
 export const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
@@ -11,6 +12,7 @@ export const GOOGLE_SCOPES = Object.freeze([
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/drive.readonly",
+  "https://www.googleapis.com/auth/contacts.readonly",
 ]);
 export const GOOGLE_LOOPBACK_HOST = "127.0.0.1" as const;
 
@@ -29,8 +31,10 @@ export const MAX_MESSAGE_ID_LENGTH = 256;
 export const MAX_DRIVE_SEARCH_QUERY = 200;
 export const MAX_DRIVE_ITEM_ID_LENGTH = 256;
 export const MAX_DRIVE_TEXT_CHARS = 8_000;
+export const MAX_CONTACTS_QUERY = 200;
 export const CALENDAR_DEFAULT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const CALENDAR_DEFAULT_MAX_RESULTS = 10;
+export const CONTACTS_DEFAULT_MAX_RESULTS = 10;
 export const DRIVE_ITEM_ID_PATTERN = /^[A-Za-z0-9._~!=-]+$/;
 
 export const EMAIL_PATTERN =
@@ -78,6 +82,15 @@ export function isAllowedGoogleApisPath(path: string, method = "GET"): boolean {
   const normalized = method.toUpperCase();
   return GOOGLE_APIS_PATH_RULES.some(
     (rule) => rule.pattern.test(path) && rule.methods.has(normalized),
+  );
+}
+
+export function isAllowedPeoplePath(path: string, method = "GET"): boolean {
+  if (method.toUpperCase() !== "GET") {
+    return false;
+  }
+  return (
+    path === "/v1/people/me/connections" || path === "/v1/people:searchContacts"
   );
 }
 

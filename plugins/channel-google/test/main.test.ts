@@ -13,7 +13,9 @@ import plugin, { GMAIL_API_BASE, GOOGLE_ADAPTER_ID } from "../src/main";
 import {
   GOOGLE_APIS_BASE,
   GOOGLE_SCOPES,
+  PEOPLE_API_BASE,
   isAllowedGoogleApisPath,
+  isAllowedPeoplePath,
 } from "../src/protocol";
 import {
   createGoogleHarness,
@@ -96,6 +98,48 @@ function gmailRoutes(
         mimeType: "text/plain",
       });
     }
+    if (url.pathname === "/v1/people:searchContacts") {
+      return jsonResponse(200, {
+        results: [
+          {
+            person: {
+              resourceName: "people/c1",
+              names: [{ displayName: "Ada Lovelace" }],
+              emailAddresses: [{ value: "ada@gmail.com" }],
+            },
+          },
+          {
+            person: {
+              resourceName: "people/skip",
+              names: [],
+              emailAddresses: [],
+            },
+          },
+          {
+            person: {
+              resourceName: "people/c2",
+              names: [{ givenName: "Grace", familyName: "Hopper" }],
+              emailAddresses: [{ value: "grace@gmail.com" }],
+            },
+          },
+        ],
+      });
+    }
+    if (url.pathname === "/v1/people/me/connections") {
+      return jsonResponse(200, {
+        connections: [
+          {
+            resourceName: "people/c1",
+            names: [{ displayName: "Ada Lovelace" }],
+            emailAddresses: [{ value: "ada@gmail.com" }],
+          },
+          {
+            resourceName: "people/c3",
+            emailAddresses: [{ value: "nameless@gmail.com" }],
+          },
+        ],
+      });
+    }
     return jsonResponse(404, { message: "unexpected" });
   };
 }
@@ -105,6 +149,7 @@ const CONNECTOR_TOOL_IDS = [
   "google.calendar.create",
   "google.drive.search",
   "google.drive.read",
+  "google.contacts.search",
 ] as const;
 
 function recordedText(harness: {
@@ -304,14 +349,14 @@ describe("borg.channel.google plugin", () => {
     expect(harness.oauth.disconnects).toBe(1);
   });
 
-  it("does not register calendar or Drive tools until connected", async () => {
+  it("does not register calendar, Drive, or contacts tools until connected", async () => {
     const harness = await activate({
       config: { enabled: true, clientId: CLIENT_ID },
     });
     expect(harness.tools).toEqual([]);
   });
 
-  it("registers four tools after a fake OAuth connect", async () => {
+  it("registers five tools after a fake OAuth connect", async () => {
     const harness = await activate({
       config: { enabled: true, clientId: CLIENT_ID },
     });
@@ -488,6 +533,73 @@ describe("borg.channel.google plugin", () => {
     );
   });
 
+  it("searches contacts on the pinned People API origin", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+    });
+    await harness.invoke(googleChannelConnect, {});
+    const found = await executeTool(harness.tools, "google.contacts.search", {
+      query: "Ada",
+      maxResults: 5,
+    });
+    expect(found).toEqual({
+      contacts: [
+        {
+          id: "people/c1",
+          name: "Ada Lovelace",
+          emails: ["ada@gmail.com"],
+        },
+        {
+          id: "people/c2",
+          name: "Grace Hopper",
+          emails: ["grace@gmail.com"],
+        },
+      ],
+    });
+    const searchRequest = harness.requests.find((request) => {
+      const url = new URL(request.url);
+      return url.pathname === "/v1/people:searchContacts";
+    });
+    expect(searchRequest?.method).toBe("GET");
+    const searchUrl = new URL(searchRequest?.url ?? "https://invalid.example/");
+    expect(searchUrl.origin).toBe(PEOPLE_API_BASE);
+    expect(searchUrl.pathname).toBe("/v1/people:searchContacts");
+    expect(searchUrl.searchParams.get("query")).toBe("Ada");
+    expect(searchUrl.searchParams.get("pageSize")).toBe("5");
+    expect(searchUrl.searchParams.get("readMask")).toBe(
+      "names,emailAddresses",
+    );
+
+    const listed = await executeTool(harness.tools, "google.contacts.search", {});
+    expect(listed).toEqual({
+      contacts: [
+        {
+          id: "people/c1",
+          name: "Ada Lovelace",
+          emails: ["ada@gmail.com"],
+        },
+        {
+          id: "people/c3",
+          name: "nameless@gmail.com",
+          emails: ["nameless@gmail.com"],
+        },
+      ],
+    });
+    const listRequest = harness.requests.find((request) => {
+      const url = new URL(request.url);
+      return url.pathname === "/v1/people/me/connections";
+    });
+    expect(listRequest?.method).toBe("GET");
+    const listUrl = new URL(listRequest?.url ?? "https://invalid.example/");
+    expect(listUrl.origin).toBe(PEOPLE_API_BASE);
+    expect(listUrl.searchParams.get("personFields")).toBe(
+      "names,emailAddresses",
+    );
+    expect(listUrl.searchParams.get("pageSize")).toBe("10");
+    expect(recordedText(harness)).not.toContain("google-access-token");
+  });
+
   it("forbids Google APIs paths outside calendar events and Drive files", () => {
     expect(
       isAllowedGoogleApisPath("/calendar/v3/calendars/primary/events", "GET"),
@@ -502,5 +614,20 @@ describe("borg.channel.google plugin", () => {
       isAllowedGoogleApisPath("/calendar/v3/users/me/calendarList", "GET"),
     ).toBe(false);
     expect(isAllowedGoogleApisPath("/drive/v3/files", "POST")).toBe(false);
+    expect(isAllowedGoogleApisPath("/v1/people:searchContacts", "GET")).toBe(
+      false,
+    );
+  });
+
+  it("forbids People API paths outside connections and searchContacts", () => {
+    expect(isAllowedPeoplePath("/v1/people/me/connections", "GET")).toBe(true);
+    expect(isAllowedPeoplePath("/v1/people:searchContacts", "GET")).toBe(true);
+    expect(isAllowedPeoplePath("/v1/people:searchContacts", "POST")).toBe(false);
+    expect(isAllowedPeoplePath("/v1/people/me", "GET")).toBe(false);
+    expect(isAllowedPeoplePath("/v1/people/me/connections/foo", "GET")).toBe(
+      false,
+    );
+    expect(isAllowedPeoplePath("/v1/otherContacts:search", "GET")).toBe(false);
+    expect(isAllowedPeoplePath("/v1/people:createContact", "POST")).toBe(false);
   });
 });

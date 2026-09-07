@@ -73,6 +73,7 @@ describe("channel-google package boundaries", () => {
         expect(source).not.toContain("https://accounts.google.com");
         expect(source).not.toContain("https://oauth2.googleapis.com");
         expect(source).not.toContain("https://www.googleapis.com");
+        expect(source).not.toContain("https://people.googleapis.com");
       }
     }
   });

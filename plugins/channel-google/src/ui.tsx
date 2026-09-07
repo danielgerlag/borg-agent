@@ -109,8 +109,9 @@ export default defineUiPlugin<Component>({
                 Register a public native/desktop app in Google Cloud with
                 loopback redirect <code>http://127.0.0.1</code> (any port).
                 Paste the client id below. Borg opens the system browser to
-                grant Gmail, calendar, and Drive. If you already connected,
-                disconnect first so Google can show the new consent screen.
+                grant Gmail, calendar, Drive, and contacts. If you already
+                connected, disconnect first so Google can show the new consent
+                screen.
               </p>
 
               <label
