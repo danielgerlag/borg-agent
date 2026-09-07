@@ -43,6 +43,7 @@ import type { ProcessSupervisor } from "./process-supervisor";
 import type { SandboxFactory } from "./sandbox-factory";
 import type { ToolService } from "./tool-service";
 import type { TlsService } from "./tls-service";
+import type { OAuthService } from "./oauth-service";
 import type { WebSocketService } from "./websocket-service";
 import type { A2AService } from "./a2a-service";
 import type { WorkspaceService } from "./workspace-service";
@@ -102,6 +103,7 @@ export interface PluginManagerOptions {
   readonly channels?: CommunicationService;
   readonly webSockets?: WebSocketService;
   readonly tls?: TlsService;
+  readonly oauth?: OAuthService;
   readonly a2a?: A2AService;
   readonly showWindow?: () => void;
   executionResultFlow?(
@@ -578,6 +580,14 @@ export class PluginManager {
           throw new Error("TLS service is unavailable");
         }
         return this.#options.tls;
+      };
+      const requireOauth = (): OAuthService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.oauth) {
+          throw new Error("OAuth service is unavailable");
+        }
+        return this.#options.oauth;
       };
 
       if (
@@ -1422,6 +1432,45 @@ export class PluginManager {
             );
           },
         },
+        oauth: {
+          connect: (request, signal) => {
+            assertPermission("oauth.connect");
+            const operation = this.#operationContext.getStore();
+            return trackOperation(
+              requireOauth().connect(
+                manifest.id,
+                request,
+                AbortSignal.any([
+                  ...(signal ? [signal] : []),
+                  ...(operation ? [operation.signal] : []),
+                  controller.signal,
+                ]),
+              ),
+            );
+          },
+          snapshot: () => {
+            assertPermission("oauth.connect");
+            return requireOauth().snapshot(manifest.id);
+          },
+          accessToken: (signal) => {
+            assertPermission("oauth.connect");
+            const operation = this.#operationContext.getStore();
+            return trackOperation(
+              requireOauth().accessToken(
+                manifest.id,
+                AbortSignal.any([
+                  ...(signal ? [signal] : []),
+                  ...(operation ? [operation.signal] : []),
+                  controller.signal,
+                ]),
+              ),
+            );
+          },
+          disconnect: () => {
+            assertPermission("oauth.connect");
+            return trackOperation(requireOauth().disconnect(manifest.id));
+          },
+        },
         runtime: {
           spawn: (task) => {
             assertOrdinaryContext();
@@ -1616,6 +1665,7 @@ export class PluginManager {
       this.#options.channels?.removePlugin(manifest.id);
       this.#options.webSockets?.abortOwned(manifest.id);
       this.#options.tls?.abortOwned(manifest.id);
+      this.#options.oauth?.abortOwned(manifest.id);
       await this.#options.processes?.abortOwned(manifest.id);
       await this.#disposeAll(disposables);
       this.bus.removePlugin(manifest.id);
@@ -1682,6 +1732,7 @@ export class PluginManager {
     this.#options.http?.abortOwned(pluginId);
     this.#options.webSockets?.abortOwned(pluginId);
     this.#options.tls?.abortOwned(pluginId);
+    this.#options.oauth?.abortOwned(pluginId);
     if (this.#options.processes) {
       try {
         await withTimeout(

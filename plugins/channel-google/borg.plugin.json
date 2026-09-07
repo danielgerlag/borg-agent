@@ -1,0 +1,28 @@
+{
+  "id": "borg.channel.google",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-channel-google/main",
+  "ui": "@borg/plugin-channel-google/ui",
+  "permissions": [
+    "channels.register",
+    "oauth.connect",
+    "network:dynamic",
+    "runtime.background",
+    "ui.settings"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.channel.google.connect",
+      "borg.channel.google.disconnect",
+      "borg.channel.google.getStatus",
+      "borg.channel.google.inject"
+    ],
+    "kinds": [
+      "channel",
+      "settingsPage"
+    ]
+  }
+}

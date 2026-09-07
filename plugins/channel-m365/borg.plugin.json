@@ -1,0 +1,28 @@
+{
+  "id": "borg.channel.m365",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-channel-m365/main",
+  "ui": "@borg/plugin-channel-m365/ui",
+  "permissions": [
+    "channels.register",
+    "oauth.connect",
+    "network:dynamic",
+    "runtime.background",
+    "ui.settings"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.channel.m365.connect",
+      "borg.channel.m365.disconnect",
+      "borg.channel.m365.getStatus",
+      "borg.channel.m365.inject"
+    ],
+    "kinds": [
+      "channel",
+      "settingsPage"
+    ]
+  }
+}

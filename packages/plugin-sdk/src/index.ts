@@ -625,6 +625,36 @@ export interface PluginTls {
   connect(options: PluginTlsConnectOptions): Promise<PluginTlsSocket>;
 }
 
+export type OAuthLoopbackHost = "127.0.0.1" | "localhost";
+export type OAuthErrorCode = "invalid" | "unavailable" | "denied" | "failed";
+
+export interface PluginOAuthConnectRequest {
+  readonly clientId: string;
+  readonly authorizationEndpoint: string;
+  readonly tokenEndpoint: string;
+  readonly revocationEndpoint?: string | undefined;
+  readonly scopes: readonly string[];
+  readonly loopbackHost?: OAuthLoopbackHost | undefined;
+  readonly extraAuthorizationParams?: Readonly<Record<string, string>> | undefined;
+  readonly extraTokenParams?: Readonly<Record<string, string>> | undefined;
+}
+
+export interface OAuthSessionSnapshot {
+  readonly connected: boolean;
+  readonly accountLabel?: string | undefined;
+  readonly expiresAt?: string | undefined;
+}
+
+export interface PluginOAuth {
+  connect(
+    request: PluginOAuthConnectRequest,
+    signal?: AbortSignal,
+  ): Promise<OAuthSessionSnapshot>;
+  snapshot(): Promise<OAuthSessionSnapshot>;
+  accessToken(signal?: AbortSignal): Promise<string>;
+  disconnect(): Promise<void>;
+}
+
 export interface GraphStepExecutionContext {
   readonly instanceId: string;
   readonly nodeId: string;
@@ -778,6 +808,7 @@ export interface PluginContext {
   readonly channels: PluginChannels;
   readonly webSockets: PluginWebSockets;
   readonly tls: PluginTls;
+  readonly oauth: PluginOAuth;
   readonly a2a?: {
     snapshot(): {
       readonly enabled: boolean;

@@ -145,6 +145,21 @@ export {
   type TlsTransport,
 } from "./tls-service";
 export {
+  OAUTH_ACCESS_TOKEN_SKEW_MS,
+  OAUTH_VAULT_NAMESPACE,
+  OAuthError,
+  OAuthService,
+  type OAuthAuditFailure,
+  type OAuthAuditOutcome,
+  type OAuthAuditRecord,
+  type OAuthListen,
+  type OAuthLoopbackRequest,
+  type OAuthLoopbackResponse,
+  type OAuthLoopbackServer,
+  type OAuthOpenExternal,
+  type OAuthServiceOptions,
+} from "./oauth-service";
+export {
   WebSocketError,
   WebSocketService,
   type WebSocketAuditRecord,
