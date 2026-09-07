@@ -480,6 +480,9 @@ describe("borg.channel.google plugin", () => {
       harness.requests.some((request) => request.url.includes("alt=media")),
     ).toBe(false);
     expect(() => driveReadInputSchema.parse({ id: "has/slash" })).toThrow();
+    expect(driveReadInputSchema.parse({ id: "01ABC!file=" })).toEqual({
+      id: "01ABC!file=",
+    });
     expect(isAllowedGoogleApisPath("/drive/v3/files/has/slash", "GET")).toBe(
       false,
     );

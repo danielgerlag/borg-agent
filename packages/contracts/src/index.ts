@@ -2411,7 +2411,7 @@ export const googleChannelInject = defineCommand({
     .strict(),
 });
 
-export const DRIVE_ITEM_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+export const DRIVE_ITEM_ID_PATTERN = /^[A-Za-z0-9._~!=-]+$/;
 export const MAX_DRIVE_TEXT_CHARS = 8_000;
 
 export const calendarEventSchema = z

@@ -470,6 +470,9 @@ describe("borg.channel.m365 plugin", () => {
       harness.requests.some((request) => request.url.includes("/content")),
     ).toBe(false);
     expect(() => driveReadInputSchema.parse({ id: "has/slash" })).toThrow();
+    expect(driveReadInputSchema.parse({ id: "01ABC!file=" })).toEqual({
+      id: "01ABC!file=",
+    });
     expect(isAllowedGraphPath("/v1.0/me/drive/items/has/slash", "GET")).toBe(
       false,
     );
