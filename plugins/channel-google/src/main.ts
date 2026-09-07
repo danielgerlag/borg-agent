@@ -13,7 +13,7 @@ export {
   parseGoogleChannelConfig,
   type GoogleChannelConfig,
 } from "./config";
-export { GOOGLE_ADAPTER_ID, GMAIL_API_BASE } from "./protocol";
+export { GOOGLE_ADAPTER_ID, GMAIL_API_BASE, GOOGLE_APIS_BASE } from "./protocol";
 export { GmailClient, GmailError } from "./gmail";
 export {
   GoogleChannelController,
@@ -31,6 +31,7 @@ export default definePlugin({
     "oauth.connect",
     "network:dynamic",
     "runtime.background",
+    "tools.register",
     "ui.settings",
   ],
   contributes: {
@@ -40,7 +41,7 @@ export default definePlugin({
       googleChannelGetStatus.id,
       googleChannelInject.id,
     ],
-    kinds: ["channel", "settingsPage"],
+    kinds: ["channel", "settingsPage", "tool"],
   },
   configSchema: googleChannelConfigSchema,
   async activate(context) {

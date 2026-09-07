@@ -1,14 +1,20 @@
 import {
+  driveReadInputSchema,
   googleChannelConnect,
   googleChannelDisconnect,
   googleChannelGetStatus,
   googleChannelInject,
   type GoogleChannelStatus,
 } from "@borg/contracts";
-import { createTestHarness } from "@borg/plugin-sdk";
+import { createTestHarness, type ToolContribution } from "@borg/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin, { GMAIL_API_BASE, GOOGLE_ADAPTER_ID } from "../src/main";
+import {
+  GOOGLE_APIS_BASE,
+  GOOGLE_SCOPES,
+  isAllowedGoogleApisPath,
+} from "../src/protocol";
 import {
   createGoogleHarness,
   jsonResponse,
@@ -40,8 +46,88 @@ function gmailRoutes(
     if (request.url.includes("/gmail/v1/users/me/messages")) {
       return jsonResponse(200, { messages: [] });
     }
+    const url = new URL(request.url);
+    if (url.pathname === "/calendar/v3/calendars/primary/events") {
+      if (request.method === "POST") {
+        const payload = JSON.parse(request.body ?? "{}") as {
+          readonly summary?: string;
+          readonly start?: { readonly dateTime?: string };
+          readonly end?: { readonly dateTime?: string };
+        };
+        return jsonResponse(200, {
+          id: "evt-new",
+          summary: payload.summary,
+          start: payload.start,
+          end: payload.end,
+        });
+      }
+      return jsonResponse(200, {
+        items: [
+          {
+            id: "evt-1",
+            summary: "Standup",
+            start: { dateTime: "2026-01-01T10:00:00.000Z" },
+            end: { dateTime: "2026-01-01T10:30:00.000Z" },
+            location: "Room A",
+          },
+        ],
+      });
+    }
+    if (url.pathname === "/drive/v3/files") {
+      return jsonResponse(200, {
+        files: [
+          { id: "file-1", name: "notes.txt", mimeType: "text/plain" },
+        ],
+      });
+    }
+    if (
+      url.pathname.startsWith("/drive/v3/files/") &&
+      url.searchParams.get("alt") === "media"
+    ) {
+      return new Response("hello from drive", {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      });
+    }
+    if (url.pathname.startsWith("/drive/v3/files/")) {
+      return jsonResponse(200, {
+        id: "file-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+      });
+    }
     return jsonResponse(404, { message: "unexpected" });
   };
+}
+
+const CONNECTOR_TOOL_IDS = [
+  "google.calendar.list",
+  "google.calendar.create",
+  "google.drive.search",
+  "google.drive.read",
+] as const;
+
+function recordedText(harness: {
+  readonly requests: readonly RecordedRequest[];
+}): string {
+  return harness.requests
+    .map((request) => `${request.url}\n${request.body ?? ""}`)
+    .join("\n");
+}
+
+async function executeTool(
+  tools: readonly ToolContribution[],
+  id: string,
+  input: unknown,
+): Promise<unknown> {
+  const tool = tools.find((candidate) => candidate.id === id);
+  if (!tool) {
+    throw new Error(`Missing tool ${id}`);
+  }
+  return tool.execute(input, {
+    toolCallId: "call-1",
+    signal: new AbortController().signal,
+  });
 }
 
 describe("borg.channel.google plugin", () => {
@@ -81,8 +167,12 @@ describe("borg.channel.google plugin", () => {
       "oauth.connect",
       "network:dynamic",
       "runtime.background",
+      "tools.register",
       "ui.settings",
     ]);
+    expect(manifest.contributes).toMatchObject({
+      kinds: ["channel", "settingsPage", "tool"],
+    });
   });
 
   it("stays unregistered until enabled with a client id", async () => {
@@ -212,5 +302,202 @@ describe("borg.channel.google plugin", () => {
     expect(status.connected).toBe(false);
     expect(status.mailbox).toBeUndefined();
     expect(harness.oauth.disconnects).toBe(1);
+  });
+
+  it("does not register calendar or Drive tools until connected", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+    });
+    expect(harness.tools).toEqual([]);
+  });
+
+  it("registers four tools after a fake OAuth connect", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+    });
+    await harness.invoke(googleChannelConnect, {});
+    expect(harness.tools.map((tool) => tool.id)).toEqual([...CONNECTOR_TOOL_IDS]);
+    expect(
+      harness.tools.map((tool) => ({
+        id: tool.id,
+        approval: tool.approval,
+        sideEffect: tool.sideEffect,
+        security: tool.security,
+      })),
+    ).toEqual(
+      CONNECTOR_TOOL_IDS.map((id) => ({
+        id,
+        approval: "ask",
+        sideEffect: id === "google.calendar.create",
+        security: {
+          outputClassification: "confidential",
+          outputProvenance: "external",
+          channelCapacity: "private",
+        },
+      })),
+    );
+    expect(harness.oauth.requests[0]?.extraAuthorizationParams).toMatchObject({
+      prompt: "consent",
+    });
+    expect(harness.oauth.requests[0]?.scopes).toEqual([...GOOGLE_SCOPES]);
+    await harness.invoke(googleChannelDisconnect, {});
+    expect(harness.tools).toEqual([]);
+  });
+
+  it("lists and creates calendar events on pinned Google URLs", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+    });
+    await harness.invoke(googleChannelConnect, {});
+    const listed = await executeTool(harness.tools, "google.calendar.list", {
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-01-08T00:00:00.000Z",
+      maxResults: 5,
+    });
+    expect(listed).toEqual({
+      events: [
+        {
+          id: "evt-1",
+          title: "Standup",
+          start: "2026-01-01T10:00:00.000Z",
+          end: "2026-01-01T10:30:00.000Z",
+          location: "Room A",
+        },
+      ],
+    });
+    const listRequest = harness.requests.find((request) =>
+      request.url.includes("/calendar/v3/calendars/primary/events?"),
+    );
+    expect(listRequest?.method).toBe("GET");
+    const listUrl = new URL(listRequest?.url ?? "https://invalid.example/");
+    expect(listUrl.origin).toBe(GOOGLE_APIS_BASE);
+    expect(listUrl.pathname).toBe("/calendar/v3/calendars/primary/events");
+    expect(listUrl.searchParams.get("timeMin")).toBe("2026-01-01T00:00:00.000Z");
+    expect(listUrl.searchParams.get("timeMax")).toBe("2026-01-08T00:00:00.000Z");
+
+    const created = await executeTool(harness.tools, "google.calendar.create", {
+      title: "Ship review",
+      start: "2026-01-02T15:00:00.000Z",
+      end: "2026-01-02T16:00:00.000Z",
+    });
+    expect(created).toEqual({
+      id: "evt-new",
+      title: "Ship review",
+      start: "2026-01-02T15:00:00.000Z",
+      end: "2026-01-02T16:00:00.000Z",
+    });
+    const createRequest = harness.requests.find(
+      (request) =>
+        request.method === "POST" &&
+        request.url === `${GOOGLE_APIS_BASE}/calendar/v3/calendars/primary/events`,
+    );
+    expect(createRequest).toBeDefined();
+    expect(recordedText(harness)).not.toContain("google-access-token");
+  });
+
+  it("defaults the calendar list window to the next seven days", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+    });
+    await harness.invoke(googleChannelConnect, {});
+    await executeTool(harness.tools, "google.calendar.list", {});
+    const listRequest = harness.requests.find((request) =>
+      request.url.includes("/calendar/v3/calendars/primary/events?"),
+    );
+    const listUrl = new URL(listRequest?.url ?? "https://invalid.example/");
+    const start = Date.parse(listUrl.searchParams.get("timeMin") ?? "");
+    const end = Date.parse(listUrl.searchParams.get("timeMax") ?? "");
+    expect(end - start).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  it("searches and reads Drive files on pinned Google URLs", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+    });
+    await harness.invoke(googleChannelConnect, {});
+    const found = await executeTool(harness.tools, "google.drive.search", {
+      query: "notes",
+    });
+    expect(found).toEqual({
+      files: [{ id: "file-1", name: "notes.txt", mimeType: "text/plain" }],
+    });
+    const searchRequest = harness.requests.find((request) => {
+      const url = new URL(request.url);
+      return url.pathname === "/drive/v3/files" && url.searchParams.has("q");
+    });
+    expect(searchRequest?.method).toBe("GET");
+    const searchUrl = new URL(searchRequest?.url ?? "https://invalid.example/");
+    expect(searchUrl.origin).toBe(GOOGLE_APIS_BASE);
+    expect(searchUrl.searchParams.get("q")).toBe("notes");
+
+    const read = await executeTool(harness.tools, "google.drive.read", {
+      id: "file-1",
+    });
+    expect(read).toEqual({
+      id: "file-1",
+      name: "notes.txt",
+      mimeType: "text/plain",
+      text: "hello from drive",
+    });
+    expect(
+      harness.requests.some((request) => {
+        const url = new URL(request.url);
+        return (
+          url.origin === GOOGLE_APIS_BASE &&
+          url.pathname === "/drive/v3/files/file-1" &&
+          url.searchParams.get("alt") === "media"
+        );
+      }),
+    ).toBe(true);
+    expect(recordedText(harness)).not.toContain("google-access-token");
+  });
+
+  it("omits Drive text for binary files and rejects unsafe ids", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+      fetch: gmailRoutes({
+        "/drive/v3/files/bin-1": () =>
+          jsonResponse(200, {
+            id: "bin-1",
+            name: "deck.pdf",
+            mimeType: "application/pdf",
+          }),
+      }),
+    });
+    await harness.invoke(googleChannelConnect, {});
+    await expect(
+      executeTool(harness.tools, "google.drive.read", { id: "bin-1" }),
+    ).resolves.toEqual({
+      id: "bin-1",
+      name: "deck.pdf",
+      mimeType: "application/pdf",
+    });
+    expect(
+      harness.requests.some((request) => request.url.includes("alt=media")),
+    ).toBe(false);
+    expect(() => driveReadInputSchema.parse({ id: "has/slash" })).toThrow();
+    expect(isAllowedGoogleApisPath("/drive/v3/files/has/slash", "GET")).toBe(
+      false,
+    );
+  });
+
+  it("forbids Google APIs paths outside calendar events and Drive files", () => {
+    expect(
+      isAllowedGoogleApisPath("/calendar/v3/calendars/primary/events", "GET"),
+    ).toBe(true);
+    expect(
+      isAllowedGoogleApisPath("/calendar/v3/calendars/primary/events", "POST"),
+    ).toBe(true);
+    expect(isAllowedGoogleApisPath("/drive/v3/files", "GET")).toBe(true);
+    expect(isAllowedGoogleApisPath("/drive/v3/files/file-1", "GET")).toBe(true);
+    expect(isAllowedGoogleApisPath("/drive/v3/about", "GET")).toBe(false);
+    expect(
+      isAllowedGoogleApisPath("/calendar/v3/users/me/calendarList", "GET"),
+    ).toBe(false);
+    expect(isAllowedGoogleApisPath("/drive/v3/files", "POST")).toBe(false);
   });
 });

@@ -7,9 +7,11 @@ import type {
   PluginContext,
   PluginHttp,
   PluginOAuth,
+  PluginOAuthConnectRequest,
   OAuthSessionSnapshot,
   StoreEntry,
   StoreTransactionOperation,
+  ToolContribution,
 } from "@borg/plugin-sdk";
 import { googleChannelConfigSchema } from "../src/config";
 
@@ -74,11 +76,13 @@ export function createFakeOauth(options: FakeOauthOptions = {}): {
   connected: boolean;
   connects: number;
   disconnects: number;
+  readonly requests: PluginOAuthConnectRequest[];
 } {
   const state = {
     connected: options.connected === true,
     connects: 0,
     disconnects: 0,
+    requests: [] as PluginOAuthConnectRequest[],
     oauth: {} as PluginOAuth,
   };
   const snapshot = (): OAuthSessionSnapshot => ({
@@ -88,8 +92,9 @@ export function createFakeOauth(options: FakeOauthOptions = {}): {
       : {}),
   });
   state.oauth = {
-    connect: async () => {
+    connect: async (request) => {
       state.connects += 1;
+      state.requests.push(request);
       state.connected = true;
       return snapshot();
     },
@@ -118,6 +123,7 @@ export function createGoogleHarness(options: GoogleHarnessOptions = {}) {
   >();
   const store = new Map<string, JsonValue>();
   const registrations: RegisteredChannel[] = [];
+  const tools: ToolContribution[] = [];
   const watchers = new Set<
     (config: Readonly<Record<string, unknown>>) => void | Promise<void>
   >();
@@ -215,6 +221,19 @@ export function createGoogleHarness(options: GoogleHarnessOptions = {}) {
     },
     http,
     oauth: oauthState.oauth,
+    tools: {
+      register: (tool: ToolContribution): Disposable => {
+        tools.push(tool);
+        return {
+          dispose: () => {
+            const index = tools.indexOf(tool);
+            if (index >= 0) {
+              tools.splice(index, 1);
+            }
+          },
+        };
+      },
+    },
     channels: {
       register: (adapter: ChannelAdapter): Disposable => {
         const registration: RegisteredChannel = {
@@ -271,6 +290,7 @@ export function createGoogleHarness(options: GoogleHarnessOptions = {}) {
     context,
     requests,
     registrations,
+    tools,
     oauth: oauthState,
     invoke: async <T>(command: { readonly id: string }, input: unknown) =>
       bus.invoke(command as never, input as never) as Promise<T>,

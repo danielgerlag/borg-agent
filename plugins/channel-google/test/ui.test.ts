@@ -18,6 +18,8 @@ describe("Google settings UI contract", () => {
     expect(source).toContain('data-testid="google-connect"');
     expect(source).toContain('data-testid="google-disconnect"');
     expect(source).toContain("http://127.0.0.1");
+    expect(source).toContain("calendar");
+    expect(source).toContain("Drive");
     expect(source).toContain("context.config.update");
     expect(source).not.toMatch(/secrets\.get\s*\(/);
     expect(source).not.toMatch(/refresh_token/);

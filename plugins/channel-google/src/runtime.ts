@@ -14,7 +14,10 @@ import {
   parseGoogleChannelConfig,
   type GoogleChannelConfig,
 } from "./config";
+import { GoogleCalendarClient } from "./calendar";
+import { GoogleDriveClient } from "./drive";
 import { GmailClient, GmailError } from "./gmail";
+import { GoogleApisError } from "./googleapis";
 import {
   FALLBACK_DESTINATION,
   GOOGLE_ADAPTER_ID,
@@ -29,6 +32,7 @@ import {
   boundDiagnostic,
   emailKey,
 } from "./protocol";
+import { registerGoogleTools } from "./tools";
 
 export interface GoogleChannelInjectInput {
   readonly text: string;
@@ -53,8 +57,11 @@ export class GoogleChannelNotStartedError extends Error {
 export class GoogleChannelController {
   readonly #context: PluginContext;
   readonly #gmail: GmailClient;
+  readonly #calendar: GoogleCalendarClient;
+  readonly #drive: GoogleDriveClient;
   #config: GoogleChannelConfig;
   #registration: Disposable | undefined;
+  #tools: Disposable | undefined;
   #task: Disposable | undefined;
   #configWatch: Disposable | undefined;
   #ingest: ((draft: ChannelInboundDraft) => void | Promise<void>) | undefined;
@@ -69,17 +76,20 @@ export class GoogleChannelController {
   constructor(context: PluginContext) {
     this.#context = context;
     this.#config = parseGoogleChannelConfig({});
-    this.#gmail = new GmailClient({
+    const tokenOptions = {
       http: context.http,
-      readToken: (signal) => context.oauth.accessToken(signal),
-    });
+      readToken: (signal?: AbortSignal) => context.oauth.accessToken(signal),
+    };
+    this.#gmail = new GmailClient(tokenOptions);
+    this.#calendar = new GoogleCalendarClient(tokenOptions);
+    this.#drive = new GoogleDriveClient(tokenOptions);
   }
 
   async initialize(): Promise<void> {
     this.#config = this.#read(await this.#context.config.get());
-    this.#configWatch = this.#context.config.watch((next) => {
-      void this.#onConfigChanged(next);
-    });
+    this.#configWatch = this.#context.config.watch((next) =>
+      this.#onConfigChanged(next),
+    );
     await this.#sync();
   }
 
@@ -118,6 +128,7 @@ export class GoogleChannelController {
     );
     const me = await this.#gmail.getProfile(signal);
     await this.#context.config.update({ mailbox: me.mailbox });
+    await this.#sync();
     return this.status();
   }
 
@@ -125,6 +136,7 @@ export class GoogleChannelController {
     await this.#context.oauth.disconnect();
     await this.#context.config.update({ mailbox: "" });
     this.#error = undefined;
+    await this.#sync();
     return this.status();
   }
 
@@ -226,6 +238,14 @@ export class GoogleChannelController {
       start: ({ ingest, signal }) => this.#start(ingest, signal),
       send: (request) => this.send(request),
     });
+    const snapshot = await this.#context.oauth.snapshot();
+    if (snapshot.connected) {
+      this.#tools = registerGoogleTools(
+        this.#context,
+        this.#calendar,
+        this.#drive,
+      );
+    }
   }
 
   #start(
@@ -368,6 +388,17 @@ export class GoogleChannelController {
   }
 
   async #teardown(): Promise<void> {
+    const tools = this.#tools;
+    this.#tools = undefined;
+    if (tools) {
+      try {
+        await tools.dispose();
+      } catch (error) {
+        this.#context.logger.warn("Google tool teardown failed", {
+          reason: describeError(error),
+        });
+      }
+    }
     const registration = this.#registration;
     this.#registration = undefined;
     this.#task?.dispose();
@@ -386,7 +417,7 @@ export class GoogleChannelController {
 }
 
 function describeError(error: unknown): string {
-  if (error instanceof GmailError) {
+  if (error instanceof GmailError || error instanceof GoogleApisError) {
     return boundDiagnostic(error.message);
   }
   return error instanceof Error && error.message.length > 0
