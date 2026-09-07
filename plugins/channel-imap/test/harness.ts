@@ -27,13 +27,11 @@ function bindSocket(
       try {
         await writable.abort();
       } catch {
-        // already closed
       }
     }
     try {
       await readable.cancel();
     } catch {
-      // already cancelled
     }
     resolveClosed();
     return closed;
@@ -158,7 +156,6 @@ export class ScriptedImapServer {
     try {
       await this.expectDone();
     } catch {
-      // peer closed the duplex
     }
   }
 

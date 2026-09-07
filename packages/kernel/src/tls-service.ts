@@ -462,7 +462,7 @@ class BrokeredTlsSocket implements PluginTlsSocket, OwnedTls {
         try {
           await self.#writer.close();
         } catch {
-          // The transport may already be destroyed by teardown.
+          return;
         }
       },
       abort(reason) {
@@ -507,7 +507,7 @@ class BrokeredTlsSocket implements PluginTlsSocket, OwnedTls {
         new TlsError("closed", `TLS socket was ${reason}`),
       );
     } catch {
-      // destroy is best-effort
+      return;
     }
     void this.#reader.cancel().catch(() => undefined);
     void this.#writer.abort().catch(() => undefined);
@@ -643,8 +643,6 @@ export class TlsService {
       );
     }
 
-    // In-flight handshakes occupy an owned slot so abortOwned and the cap
-    // apply before the socket exists.
     const pending = new PendingHandshake();
     this.#addOwned(pluginId, pending);
 
@@ -693,7 +691,6 @@ export class TlsService {
       try {
         transport.destroy();
       } catch {
-        // already gone
       }
       this.#release(pluginId, pending);
       const failure = this.#shutdown.signal.aborted

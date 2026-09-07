@@ -454,7 +454,6 @@ export class ImapCodec {
       try {
         await ingest(draft);
       } catch {
-        // A single draft must not tear down the mailbox session.
       }
     }
     this.#fetchedUpTo = to;
