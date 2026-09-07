@@ -793,6 +793,8 @@ feature/tool
 
 `WebSocketService` is the only plugin WebSocket path. It checks `network:websocket`, accepts only credential-free `ws:` or `wss:` URLs, binds every connection to plugin deactivation, limits concurrent connections, outbound queue depth, and frame size, and emits redacted lifecycle audit records. It normalizes host callbacks behind a generation-safe disposable connection so stale transport events cannot outlive plugin ownership.
 
+`TlsService` is the only plugin path to outbound TLS. It is a sibling of `NetworkService` and `WebSocketService`, not an extension of either. A plugin that declared `network:tls` calls `ctx.tls.connect({ host, port })` and receives a disposable Web Streams duplex of `Uint8Array` after a TLS 1.2+ handshake. The kernel owns DNS, TCP, SNI, system-CA verification, the per-plugin socket cap, and `abortOwned` teardown. Connect options carry no credentials, no `rejectUnauthorized`, and no listen/STARTTLS/plaintext TCP API.
+
 ## Graphs plugin
 
 `borg.graphs` is a first-class bundled plugin. It contributes a graph engine, workspace/settings/designer views, management tools, commands/events, and Flight Deck state. It also defines the graph-step and graph-trigger extension points.
@@ -901,7 +903,7 @@ Each is implemented by its named plugin contribution. Setup/config UI ships with
 
 Web search is two ordinary tool plugins, `borg.search.tavily` and `borg.search.brave`. There is no `SearchFacade` and no `searchProvider` contribution kind. Each plugin registers `tavily.search` or `brave.search` only while `enabled` is true and an API key is stored. HTTP JSON is parsed at the plugin client boundary into `webSearchOutputSchema`. Tool metadata is `approval: "ask"`, `outputProvenance: "external"`, and `channelCapacity: "public"`. Production Tavily is `POST https://api.tavily.com/search`. Production Brave is `GET https://api.search.brave.com/res/v1/web/search` with `X-Subscription-Token`. `BORG_TAVILY_ENDPOINT` and `BORG_BRAVE_ENDPOINT` override those URLs only when `BORG_E2E=1` and the host is loopback.
 
-`borg.channel.imap` is a `private` channel adapter with a fake transport and `borg.channel.imap.inject`. It registers only when enabled with host, username, and a stored password. M365, Google, and a kernel `SocketService` are not in this slice.
+`borg.channel.imap` is a `private` channel adapter. It registers when enabled with host, username, and a stored password. `start()` always installs ingest so `borg.channel.imap.inject` works without a mailbox. When `ctx.tls` is available the plugin also opens implicit TLS (port 993 by default) and speaks LOGIN, SELECT, IDLE or CHECK, FETCH, and APPEND on that duplex. A failed TLS connect is logged; the adapter stays registered; inject remains. M365, Google, OAuth, STARTTLS on 143, and a generic `SocketService` are not in this slice.
 
 ## Prompt assembly and memory
 
@@ -1230,7 +1232,7 @@ Slice 11 adds `SandboxFactory` with kinds `os`, `uv`, and `node`. Runs use `cwd`
 
 Slice 12 adds remaining HiveMind-parity plugins on the existing kernel. `A2AService` lives in `packages/kernel`. Search, IMAP, and appearance stay plugins. There is no extra `llmProvider`, `SearchFacade`, `HttpServerService`, `ThemeService`, or OAuth.
 
-`borg.search.tavily` and `borg.search.brave` contribute ask-approved search tools. `borg.a2a` stores enabled/port/personaId and a Flight Deck widget. `borg.channel.imap` copies mock inject plus Discord enable-when-configured. `borg.themes` writes `theme: "dark" | "light"` and the UI plugin sets `document.documentElement.dataset.theme`. Light tokens live on `:root[data-theme="light"]` in the shell stylesheet. Dark remains the default.
+`borg.search.tavily` and `borg.search.brave` contribute ask-approved search tools. `borg.a2a` stores enabled/port/personaId and a Flight Deck widget. `borg.channel.imap` copies mock inject plus Discord enable-when-configured, and can speak IMAP over kernel `TlsService` implicit TLS while inject stays for tests. `borg.themes` writes `theme: "dark" | "light"` and the UI plugin sets `document.documentElement.dataset.theme`. Light tokens live on `:root[data-theme="light"]` in the shell stylesheet. Dark remains the default.
 
 The Electron journey enables Tavily in settings, chats `scenario:search`, approves `tavily.search` if asked, and expects the assistant text from the first result title.
 

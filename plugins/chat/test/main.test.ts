@@ -494,6 +494,9 @@ function createChatHarnessContext(
     webSockets: {
       connect: async () => unavailable("webSockets.connect"),
     },
+    tls: {
+      connect: async () => unavailable("tls.connect"),
+    },
     window: { show: () => unavailable("window.show") },
     dataDir: "/virtual/borg-chat-test",
     notify: () => unavailable("notify"),

@@ -135,6 +135,16 @@ export {
   type ClassificationCommitment,
 } from "./trust-authorizer";
 export {
+  TlsError,
+  TlsService,
+  parseTlsAuthority,
+  type TlsAuditFailure,
+  type TlsAuditRecord,
+  type TlsConnectFactory,
+  type TlsServiceOptions,
+  type TlsTransport,
+} from "./tls-service";
+export {
   WebSocketError,
   WebSocketService,
   type WebSocketAuditRecord,

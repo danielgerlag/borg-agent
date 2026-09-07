@@ -42,6 +42,7 @@ import type { NetworkService } from "./network-service";
 import type { ProcessSupervisor } from "./process-supervisor";
 import type { SandboxFactory } from "./sandbox-factory";
 import type { ToolService } from "./tool-service";
+import type { TlsService } from "./tls-service";
 import type { WebSocketService } from "./websocket-service";
 import type { A2AService } from "./a2a-service";
 import type { WorkspaceService } from "./workspace-service";
@@ -100,6 +101,7 @@ export interface PluginManagerOptions {
   readonly scanners?: ScannerRegistry;
   readonly channels?: CommunicationService;
   readonly webSockets?: WebSocketService;
+  readonly tls?: TlsService;
   readonly a2a?: A2AService;
   readonly showWindow?: () => void;
   executionResultFlow?(
@@ -568,6 +570,14 @@ export class PluginManager {
           throw new Error("WebSocket service is unavailable");
         }
         return this.#options.webSockets;
+      };
+      const requireTls = (): TlsService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.tls) {
+          throw new Error("TLS service is unavailable");
+        }
+        return this.#options.tls;
       };
 
       if (
@@ -1396,6 +1406,22 @@ export class PluginManager {
             );
           },
         },
+        tls: {
+          connect: (connectOptions) => {
+            assertPermission("network:tls");
+            const operation = this.#operationContext.getStore();
+            return trackOperation(
+              requireTls().connect(manifest.id, {
+                ...connectOptions,
+                signal: AbortSignal.any([
+                  ...(connectOptions?.signal ? [connectOptions.signal] : []),
+                  ...(operation ? [operation.signal] : []),
+                  controller.signal,
+                ]),
+              }),
+            );
+          },
+        },
         runtime: {
           spawn: (task) => {
             assertOrdinaryContext();
@@ -1589,6 +1615,7 @@ export class PluginManager {
       this.#options.scanners?.removePlugin(manifest.id);
       this.#options.channels?.removePlugin(manifest.id);
       this.#options.webSockets?.abortOwned(manifest.id);
+      this.#options.tls?.abortOwned(manifest.id);
       await this.#options.processes?.abortOwned(manifest.id);
       await this.#disposeAll(disposables);
       this.bus.removePlugin(manifest.id);
@@ -1654,6 +1681,7 @@ export class PluginManager {
     this.#options.scheduler?.cancelOwned(pluginId);
     this.#options.http?.abortOwned(pluginId);
     this.#options.webSockets?.abortOwned(pluginId);
+    this.#options.tls?.abortOwned(pluginId);
     if (this.#options.processes) {
       try {
         await withTimeout(

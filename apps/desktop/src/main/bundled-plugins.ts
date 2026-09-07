@@ -156,6 +156,8 @@ export const bundledMainPlugins: readonly PluginSource[] = [
       "ui": "@borg/plugin-channel-imap/ui",
       "permissions": [
         "channels.register",
+        "network:tls",
+        "runtime.background",
         "secrets:read",
         "secrets:write",
         "ui.settings"

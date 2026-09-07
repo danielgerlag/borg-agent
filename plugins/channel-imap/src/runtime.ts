@@ -5,7 +5,11 @@ import type {
   ChannelSendRequest,
   DataClassification,
   Disposable,
+  PluginLogger,
+  PluginRuntime,
+  PluginTls,
 } from "@borg/plugin-sdk";
+import { ImapSession } from "./imap-session";
 
 export const IMAP_CHANNEL_ADAPTER_ID = "borg.channel.imap";
 export const IMAP_PASSWORD_SECRET_KEY = "password";
@@ -46,16 +50,49 @@ export class ImapChannelNotStartedError extends Error {
   }
 }
 
+export interface ImapTransportLiveOptions {
+  readonly tls?: PluginTls | undefined;
+  readonly runtime?: PluginRuntime | undefined;
+  readonly logger?: PluginLogger | undefined;
+  readonly readPassword?: (() => Promise<string | undefined>) | undefined;
+}
+
 export class ImapFakeTransport implements ChannelAdapter {
   readonly id = IMAP_CHANNEL_ADAPTER_ID;
   readonly capacity = "private" as const;
   destinations: readonly string[] = [IMAP_DEFAULT_MAILBOX];
 
+  readonly #tls: PluginTls | undefined;
+  readonly #runtime: PluginRuntime | undefined;
+  readonly #logger: PluginLogger | undefined;
+  readonly #readPassword: (() => Promise<string | undefined>) | undefined;
+  #host = "";
+  #port = 993;
+  #username = "";
+  #session: ImapSession | undefined;
+  #task: Disposable | undefined;
   #disposed = false;
   #ingest: ((draft: ChannelInboundDraft) => void | Promise<void>) | undefined;
   readonly #outbound = new Map<string, ImapOutboundRecord>();
   readonly #pending = new Map<string, Promise<ChannelAdapterReceipt>>();
   #inboundSequence = 0;
+
+  constructor(options: ImapTransportLiveOptions = {}) {
+    this.#tls = options.tls;
+    this.#runtime = options.runtime;
+    this.#logger = options.logger;
+    this.#readPassword = options.readPassword;
+  }
+
+  configureEndpoint(options: {
+    readonly host: string;
+    readonly port: number;
+    readonly username: string;
+  }): void {
+    this.#host = options.host;
+    this.#port = options.port;
+    this.#username = options.username;
+  }
 
   get disposed(): boolean {
     return this.#disposed;
@@ -73,14 +110,18 @@ export class ImapFakeTransport implements ChannelAdapter {
   }): Disposable {
     this.#assertLive();
     options.signal.throwIfAborted();
+    void this.#stopSession();
     this.#ingest = options.ingest;
     const onAbort = (): void => {
       this.#clearIngest();
+      void this.#stopSession();
     };
     options.signal.addEventListener("abort", onAbort, { once: true });
+    this.#startSession(options.ingest, options.signal);
     return {
-      dispose: () => {
+      dispose: async () => {
         options.signal.removeEventListener("abort", onAbort);
+        await this.#stopSession();
         this.#clearIngest();
       },
     };
@@ -97,7 +138,7 @@ export class ImapFakeTransport implements ChannelAdapter {
     if (pending) {
       return pending;
     }
-    const created = Promise.resolve(this.#commitSend(request));
+    const created = this.#dispatchSend(request);
     this.#pending.set(request.idempotencyKey, created);
     try {
       return await created;
@@ -138,8 +179,75 @@ export class ImapFakeTransport implements ChannelAdapter {
 
   dispose(): void {
     this.#disposed = true;
+    void this.#stopSession();
     this.#clearIngest();
     this.#pending.clear();
+  }
+
+  #startSession(
+    ingest: (draft: ChannelInboundDraft) => void | Promise<void>,
+    signal: AbortSignal,
+  ): void {
+    const tls = this.#tls;
+    const readPassword = this.#readPassword;
+    if (!tls || !readPassword || this.#host.length === 0 || this.#username.length === 0) {
+      return;
+    }
+    const session = new ImapSession({
+      tls,
+      readPassword,
+      host: this.#host,
+      port: this.#port,
+      username: this.#username,
+      mailbox: this.destinations[0] ?? IMAP_DEFAULT_MAILBOX,
+      ingest,
+    });
+    this.#session = session;
+    const run = (taskSignal: AbortSignal): Promise<void> =>
+      session.run(AbortSignal.any([taskSignal, signal])).catch((error: unknown) => {
+        this.#logger?.error("IMAP TLS session failed", {
+          reason: error instanceof Error ? error.message : "failed",
+        });
+      });
+    try {
+      if (!this.#runtime) {
+        throw new Error("IMAP background runtime is unavailable");
+      }
+      this.#task = this.#runtime.spawn(run);
+    } catch {
+      void run(signal);
+    }
+  }
+
+  async #stopSession(): Promise<void> {
+    const task = this.#task;
+    const session = this.#session;
+    this.#task = undefined;
+    this.#session = undefined;
+    task?.dispose();
+    await session?.dispose();
+  }
+
+  async #dispatchSend(request: ChannelSendRequest): Promise<ChannelAdapterReceipt> {
+    const session = this.#session;
+    if (session?.connected) {
+      const receipt = await session.append(request.text, request.signal);
+      this.#outbound.set(
+        request.idempotencyKey,
+        Object.freeze({
+          idempotencyKey: request.idempotencyKey,
+          destinationId: request.destinationId,
+          text: request.text,
+          externalId: receipt.externalId,
+          sentAt: receipt.sentAt,
+        }),
+      );
+      return Object.freeze({
+        externalId: receipt.externalId,
+        sentAt: receipt.sentAt,
+      });
+    }
+    return this.#commitSend(request);
   }
 
   #commitSend(request: ChannelSendRequest): ChannelAdapterReceipt {
