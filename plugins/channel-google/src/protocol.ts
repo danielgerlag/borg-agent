@@ -31,7 +31,7 @@ export const MAX_DRIVE_ITEM_ID_LENGTH = 256;
 export const MAX_DRIVE_TEXT_CHARS = 8_000;
 export const CALENDAR_DEFAULT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const CALENDAR_DEFAULT_MAX_RESULTS = 10;
-export const DRIVE_ITEM_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+export const DRIVE_ITEM_ID_PATTERN = /^[A-Za-z0-9._~!=-]+$/;
 
 export const EMAIL_PATTERN =
   /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
@@ -50,7 +50,7 @@ const GOOGLE_APIS_PATH_RULES: ReadonlyArray<{
   },
   { pattern: /^\/drive\/v3\/files$/, methods: new Set(["GET"]) },
   {
-    pattern: /^\/drive\/v3\/files\/[A-Za-z0-9._-]+$/,
+    pattern: /^\/drive\/v3\/files\/[A-Za-z0-9._~!=-]+$/,
     methods: new Set(["GET"]),
   },
 ];

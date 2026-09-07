@@ -33,7 +33,7 @@ export const CALENDAR_DEFAULT_MAX_RESULTS = 10;
 export const EMAIL_PATTERN =
   /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 export const TENANT_PATTERN = /^[A-Za-z0-9._-]+$/;
-export const DRIVE_ITEM_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+export const DRIVE_ITEM_ID_PATTERN = /^[A-Za-z0-9._~!=-]+$/;
 
 const GRAPH_PATH_RULES: ReadonlyArray<{
   readonly pattern: RegExp;
@@ -49,7 +49,7 @@ const GRAPH_PATH_RULES: ReadonlyArray<{
   { pattern: /^\/v1\.0\/me\/events$/, methods: new Set(["POST"]) },
   { pattern: /^\/v1\.0\/me\/drive\/root\/search$/, methods: new Set(["GET"]) },
   {
-    pattern: /^\/v1\.0\/me\/drive\/items\/[A-Za-z0-9._-]+(?:\/content)?$/,
+    pattern: /^\/v1\.0\/me\/drive\/items\/[A-Za-z0-9._~!=-]+(?:\/content)?$/,
     methods: new Set(["GET"]),
   },
 ];
