@@ -3,6 +3,8 @@ import {
   calendarCreateOutputSchema,
   calendarListInputSchema,
   calendarListOutputSchema,
+  contactsSearchInputSchema,
+  contactsSearchOutputSchema,
   driveReadInputSchema,
   driveReadOutputSchema,
   driveSearchInputSchema,
@@ -14,6 +16,7 @@ import {
   type PluginContext,
 } from "@borg/plugin-sdk";
 import type { GraphCalendarClient } from "./calendar";
+import type { GraphContactsClient } from "./contacts";
 import type { GraphDriveClient } from "./drive";
 
 const TOOL_SECURITY = {
@@ -26,6 +29,7 @@ export function registerM365Tools(
   context: PluginContext,
   calendar: GraphCalendarClient,
   drive: GraphDriveClient,
+  contacts: GraphContactsClient,
 ): Disposable {
   const handles = [
     context.tools.register(
@@ -74,6 +78,18 @@ export function registerM365Tools(
         sideEffect: false,
         security: TOOL_SECURITY,
         execute: (input, execution) => drive.read(input, execution.signal),
+      }),
+    ),
+    context.tools.register(
+      defineTool({
+        id: "m365.contacts.search",
+        description: "Search Microsoft 365 contacts by name",
+        input: contactsSearchInputSchema,
+        output: contactsSearchOutputSchema,
+        approval: "ask",
+        sideEffect: false,
+        security: TOOL_SECURITY,
+        execute: (input, execution) => contacts.search(input, execution.signal),
       }),
     ),
   ];
