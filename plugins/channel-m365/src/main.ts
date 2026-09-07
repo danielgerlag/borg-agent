@@ -28,6 +28,7 @@ export default definePlugin({
     "oauth.connect",
     "network:dynamic",
     "runtime.background",
+    "tools.register",
     "ui.settings",
   ],
   contributes: {
@@ -37,7 +38,7 @@ export default definePlugin({
       m365ChannelGetStatus.id,
       m365ChannelInject.id,
     ],
-    kinds: ["channel", "settingsPage"],
+    kinds: ["channel", "settingsPage", "tool"],
   },
   configSchema: m365ChannelConfigSchema,
   async activate(context) {

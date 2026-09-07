@@ -11,6 +11,7 @@
     "oauth.connect",
     "network:dynamic",
     "runtime.background",
+    "tools.register",
     "ui.settings"
   ],
   "contributes": {
@@ -22,7 +23,8 @@
     ],
     "kinds": [
       "channel",
-      "settingsPage"
+      "settingsPage",
+      "tool"
     ]
   }
 }

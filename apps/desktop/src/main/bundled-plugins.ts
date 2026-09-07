@@ -159,6 +159,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
         "oauth.connect",
         "network:dynamic",
         "runtime.background",
+        "tools.register",
         "ui.settings"
       ],
       "contributes": {
@@ -170,7 +171,8 @@ export const bundledMainPlugins: readonly PluginSource[] = [
         ],
         "kinds": [
           "channel",
-          "settingsPage"
+          "settingsPage",
+          "tool"
         ]
       }
     },
@@ -221,6 +223,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
         "oauth.connect",
         "network:dynamic",
         "runtime.background",
+        "tools.register",
         "ui.settings"
       ],
       "contributes": {
@@ -232,7 +235,8 @@ export const bundledMainPlugins: readonly PluginSource[] = [
         ],
         "kinds": [
           "channel",
-          "settingsPage"
+          "settingsPage",
+          "tool"
         ]
       }
     },

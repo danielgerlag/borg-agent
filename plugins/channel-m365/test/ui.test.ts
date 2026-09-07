@@ -19,6 +19,8 @@ describe("Microsoft 365 settings UI contract", () => {
     expect(source).toContain('data-testid="m365-connect"');
     expect(source).toContain('data-testid="m365-disconnect"');
     expect(source).toContain("http://localhost");
+    expect(source).toContain("calendar");
+    expect(source).toContain("Drive");
     expect(source).toContain("context.config.update");
     expect(source).not.toMatch(/secrets\.get\s*\(/);
     expect(source).not.toMatch(/refresh_token/);
