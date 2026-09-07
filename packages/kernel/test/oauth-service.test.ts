@@ -244,6 +244,44 @@ describe("OAuthService", () => {
     service.shutdown();
   });
 
+  it("ignores a host-mismatched GET and still completes the real callback", async () => {
+    const { secrets } = createSecrets();
+    const { listen, loopback } = createLoopback();
+    const opened: string[] = [];
+    const service = new OAuthService({
+      secrets,
+      allowLoopbackHttp: true,
+      listen,
+      openExternal: async (url) => {
+        opened.push(url);
+      },
+      fetch: async () =>
+        jsonResponse({
+          access_token: ACCESS,
+          refresh_token: REFRESH,
+          expires_in: 3_600,
+        }),
+    });
+
+    const pending = service.connect(PLUGIN_ID, baseRequest());
+    await vi.waitFor(() => expect(opened.length).toBeGreaterThan(0));
+    const authorizeUrl = opened[0];
+    if (!authorizeUrl) {
+      throw new Error("Authorization URL was not opened");
+    }
+    const probe = dispatch(
+      loopback,
+      callbackRequest(loopback, authorizeUrl, { host: "evil.example:80" }),
+    );
+    expect(probe.status).toBe(400);
+    dispatch(loopback, callbackRequest(loopback, authorizeUrl));
+    await pending;
+    await expect(service.snapshot(PLUGIN_ID)).resolves.toMatchObject({
+      connected: true,
+    });
+    service.shutdown();
+  });
+
   it("fails closed when the token JSON has no refresh_token", async () => {
     const { secrets, store } = createSecrets();
     const { listen, loopback } = createLoopback();
@@ -386,10 +424,6 @@ describe("OAuthService", () => {
       PLUGIN_ID,
       baseRequest({ loopbackHost: "localhost" }),
     );
-    const expected = expect(pending).rejects.toMatchObject({
-      name: "OAuthError",
-      code: "invalid",
-    });
     await vi.waitFor(() => expect(opened.length).toBeGreaterThan(0));
     const authorizeUrl = opened[0];
     if (!authorizeUrl) {
@@ -398,12 +432,18 @@ describe("OAuthService", () => {
     expect(new URL(authorizeUrl).searchParams.get("redirect_uri")).toBe(
       `http://localhost:${loopback.port}/`,
     );
-    dispatch(
+    const probe = dispatch(
       loopback,
       callbackRequest(loopback, authorizeUrl, {
         host: `127.0.0.1:${loopback.port}`,
       }),
     );
+    expect(probe.status).toBe(400);
+    const expected = expect(pending).rejects.toMatchObject({
+      name: "OAuthError",
+      code: "unavailable",
+    });
+    service.abortOwned(PLUGIN_ID);
     await expected;
     expect(store.values.size).toBe(0);
     service.shutdown();

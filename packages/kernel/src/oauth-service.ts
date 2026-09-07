@@ -826,18 +826,17 @@ export class OAuthService {
           htmlResponse(response, 400, FAILURE_PAGE);
           return;
         }
-        consumed = true;
         if (queryByteLength(request.url) > MAX_QUERY_BYTES) {
           htmlResponse(response, 400, FAILURE_PAGE);
           finishCallback(
             new OAuthError("invalid", "OAuth callback query is too large"),
           );
+          consumed = true;
           return;
         }
         const hostHeader = request.headers.host;
         if (typeof hostHeader !== "string" || !this.#hostMatches(hostHeader, parsed.loopbackHost, bound.port)) {
           htmlResponse(response, 400, FAILURE_PAGE);
-          finishCallback(new OAuthError("invalid", "OAuth callback host is invalid"));
           return;
         }
         let callbackUrl: URL;
@@ -845,16 +844,17 @@ export class OAuthService {
           callbackUrl = new URL(request.url, `http://${parsed.loopbackHost}/`);
         } catch {
           htmlResponse(response, 400, FAILURE_PAGE);
-          finishCallback(new OAuthError("invalid", "OAuth callback is invalid"));
           return;
         }
         const errorCode = callbackUrl.searchParams.get("error");
         if (errorCode === "access_denied") {
+          consumed = true;
           htmlResponse(response, 400, FAILURE_PAGE);
           finishCallback(new OAuthError("denied", "The user denied the authorization request"));
           return;
         }
         if (errorCode) {
+          consumed = true;
           htmlResponse(response, 400, FAILURE_PAGE);
           finishCallback(new OAuthError("failed", "Authorization endpoint returned an error"));
           return;
@@ -863,14 +863,15 @@ export class OAuthService {
         const code = callbackUrl.searchParams.get("code");
         if (returnedState !== state) {
           htmlResponse(response, 400, FAILURE_PAGE);
-          finishCallback(new OAuthError("invalid", "OAuth callback state is invalid"));
           return;
         }
         if (typeof code !== "string" || code.length === 0) {
+          consumed = true;
           htmlResponse(response, 400, FAILURE_PAGE);
           finishCallback(new OAuthError("invalid", "OAuth callback code is missing"));
           return;
         }
+        consumed = true;
         htmlResponse(response, 200, SUCCESS_PAGE);
         finishCallback(undefined, { code });
       },
@@ -956,9 +957,6 @@ export class OAuthService {
         pluginId,
         JSON.stringify(grant),
       );
-      if (signal.aborted) {
-        throw abortError(signal, this.#shutdown.signal.aborted);
-      }
       return {
         connected: true,
         expiresAt: grant.expiresAt,
