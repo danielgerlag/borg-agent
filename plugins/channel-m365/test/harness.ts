@@ -272,8 +272,8 @@ export function createM365Harness(options: M365HarnessOptions = {}) {
     requests,
     registrations,
     oauth: oauthState,
-    invoke: <T>(command: { readonly id: string }, input: unknown): Promise<T> =>
-      bus.invoke(command, input) as Promise<T>,
+    invoke: async <T>(command: { readonly id: string }, input: unknown) =>
+      bus.invoke(command as never, input as never) as Promise<T>,
     get activeRegistration(): RegisteredChannel {
       const current = registrations[registrations.length - 1];
       if (!current) {

@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type {
-  OAuthLoopbackRequest,
-  OAuthLoopbackResponse,
   PluginOAuthConnectRequest,
   SecretStoreProvider,
 } from "@borg/plugin-sdk";
@@ -13,6 +11,8 @@ import {
   OAuthError,
   OAuthService,
   type OAuthListen,
+  type OAuthLoopbackRequest,
+  type OAuthLoopbackResponse,
   type OAuthLoopbackServer,
 } from "../src/oauth-service";
 
