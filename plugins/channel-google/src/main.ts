@@ -13,7 +13,12 @@ export {
   parseGoogleChannelConfig,
   type GoogleChannelConfig,
 } from "./config";
-export { GOOGLE_ADAPTER_ID, GMAIL_API_BASE, GOOGLE_APIS_BASE } from "./protocol";
+export {
+  GOOGLE_ADAPTER_ID,
+  GMAIL_API_BASE,
+  GOOGLE_APIS_BASE,
+  PEOPLE_API_BASE,
+} from "./protocol";
 export { GmailClient, GmailError } from "./gmail";
 export {
   GoogleChannelController,

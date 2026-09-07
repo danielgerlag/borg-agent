@@ -9,6 +9,7 @@ export const M365_SCOPES = Object.freeze([
   "Mail.Send",
   "Calendars.ReadWrite",
   "Files.Read",
+  "Contacts.Read",
 ]);
 export const M365_LOOPBACK_HOST = "localhost" as const;
 
@@ -27,8 +28,10 @@ export const MAX_TENANT_LENGTH = 253;
 export const MAX_DRIVE_SEARCH_QUERY = 200;
 export const MAX_DRIVE_ITEM_ID_LENGTH = 256;
 export const MAX_DRIVE_TEXT_CHARS = 8_000;
+export const MAX_CONTACTS_QUERY = 200;
 export const CALENDAR_DEFAULT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const CALENDAR_DEFAULT_MAX_RESULTS = 10;
+export const CONTACTS_DEFAULT_MAX_RESULTS = 10;
 
 export const EMAIL_PATTERN =
   /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
@@ -52,6 +55,7 @@ const GRAPH_PATH_RULES: ReadonlyArray<{
     pattern: /^\/v1\.0\/me\/drive\/items\/[A-Za-z0-9._~!=-]+(?:\/content)?$/,
     methods: new Set(["GET"]),
   },
+  { pattern: /^\/v1\.0\/me\/contacts$/, methods: new Set(["GET"]) },
 ];
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

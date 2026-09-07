@@ -15,6 +15,7 @@ import {
   type M365ChannelConfig,
 } from "./config";
 import { GraphCalendarClient } from "./calendar";
+import { GraphContactsClient } from "./contacts";
 import { GraphDriveClient } from "./drive";
 import { GraphClient, GraphError } from "./graph";
 import {
@@ -57,6 +58,7 @@ export class M365ChannelController {
   readonly #graph: GraphClient;
   readonly #calendar: GraphCalendarClient;
   readonly #drive: GraphDriveClient;
+  readonly #contacts: GraphContactsClient;
   #config: M365ChannelConfig;
   #registration: Disposable | undefined;
   #tools: Disposable | undefined;
@@ -81,6 +83,7 @@ export class M365ChannelController {
     this.#graph = new GraphClient(graphOptions);
     this.#calendar = new GraphCalendarClient(graphOptions);
     this.#drive = new GraphDriveClient(graphOptions);
+    this.#contacts = new GraphContactsClient(graphOptions);
   }
 
   async initialize(): Promise<void> {
@@ -240,6 +243,7 @@ export class M365ChannelController {
         this.#context,
         this.#calendar,
         this.#drive,
+        this.#contacts,
       );
     }
   }

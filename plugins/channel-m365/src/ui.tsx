@@ -113,8 +113,8 @@ export default defineUiPlugin<Component>({
                 Register a public native/desktop app in Entra ID with loopback
                 redirect <code>http://localhost</code> (any port). Paste the
                 client id below. Borg opens the system browser to grant mail,
-                calendar, and Drive. If you already connected, disconnect first
-                so Microsoft can show the new consent screen.
+                calendar, Drive, and contacts. If you already connected,
+                disconnect first so Microsoft can show the new consent screen.
               </p>
 
               <label

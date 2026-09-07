@@ -3,6 +3,8 @@ import {
   calendarCreateOutputSchema,
   calendarListInputSchema,
   calendarListOutputSchema,
+  contactsSearchInputSchema,
+  contactsSearchOutputSchema,
   driveReadInputSchema,
   driveReadOutputSchema,
   driveSearchInputSchema,
@@ -14,6 +16,7 @@ import {
   type PluginContext,
 } from "@borg/plugin-sdk";
 import type { GoogleCalendarClient } from "./calendar";
+import type { GoogleContactsClient } from "./contacts";
 import type { GoogleDriveClient } from "./drive";
 
 const TOOL_SECURITY = {
@@ -26,6 +29,7 @@ export function registerGoogleTools(
   context: PluginContext,
   calendar: GoogleCalendarClient,
   drive: GoogleDriveClient,
+  contacts: GoogleContactsClient,
 ): Disposable {
   const handles = [
     context.tools.register(
@@ -74,6 +78,18 @@ export function registerGoogleTools(
         sideEffect: false,
         security: TOOL_SECURITY,
         execute: (input, execution) => drive.read(input, execution.signal),
+      }),
+    ),
+    context.tools.register(
+      defineTool({
+        id: "google.contacts.search",
+        description: "Search Google contacts by name",
+        input: contactsSearchInputSchema,
+        output: contactsSearchOutputSchema,
+        approval: "ask",
+        sideEffect: false,
+        security: TOOL_SECURITY,
+        execute: (input, execution) => contacts.search(input, execution.signal),
       }),
     ),
   ];

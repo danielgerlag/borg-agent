@@ -15,6 +15,7 @@ import {
   type GoogleChannelConfig,
 } from "./config";
 import { GoogleCalendarClient } from "./calendar";
+import { GoogleContactsClient } from "./contacts";
 import { GoogleDriveClient } from "./drive";
 import { GmailClient, GmailError } from "./gmail";
 import { GoogleApisError } from "./googleapis";
@@ -59,6 +60,7 @@ export class GoogleChannelController {
   readonly #gmail: GmailClient;
   readonly #calendar: GoogleCalendarClient;
   readonly #drive: GoogleDriveClient;
+  readonly #contacts: GoogleContactsClient;
   #config: GoogleChannelConfig;
   #registration: Disposable | undefined;
   #tools: Disposable | undefined;
@@ -83,6 +85,7 @@ export class GoogleChannelController {
     this.#gmail = new GmailClient(tokenOptions);
     this.#calendar = new GoogleCalendarClient(tokenOptions);
     this.#drive = new GoogleDriveClient(tokenOptions);
+    this.#contacts = new GoogleContactsClient(tokenOptions);
   }
 
   async initialize(): Promise<void> {
@@ -244,6 +247,7 @@ export class GoogleChannelController {
         this.#context,
         this.#calendar,
         this.#drive,
+        this.#contacts,
       );
     }
   }

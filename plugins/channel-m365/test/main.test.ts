@@ -92,6 +92,26 @@ function graphRoutes(
         file: { mimeType: "text/plain" },
       });
     }
+    if (request.url.includes("/v1.0/me/contacts")) {
+      return jsonResponse(200, {
+        value: [
+          {
+            id: "ct-1",
+            displayName: "Ada Lovelace",
+            emailAddresses: [{ address: "ada@contoso.com" }],
+          },
+          {
+            id: "ct-skip",
+            displayName: "",
+            emailAddresses: [],
+          },
+          {
+            id: "ct-2",
+            emailAddresses: [{ address: "nameless@contoso.com" }],
+          },
+        ],
+      });
+    }
     return jsonResponse(404, { message: "unexpected" });
   };
 }
@@ -101,6 +121,7 @@ const CONNECTOR_TOOL_IDS = [
   "m365.calendar.create",
   "m365.drive.search",
   "m365.drive.read",
+  "m365.contacts.search",
 ] as const;
 
 function recordedText(harness: { readonly requests: readonly RecordedRequest[] }): string {
@@ -295,14 +316,14 @@ describe("borg.channel.m365 plugin", () => {
     expect(harness.oauth.disconnects).toBe(1);
   });
 
-  it("does not register calendar or Drive tools until connected", async () => {
+  it("does not register calendar, Drive, or contacts tools until connected", async () => {
     const harness = await activate({
       config: { enabled: true, clientId: CLIENT_ID },
     });
     expect(harness.tools).toEqual([]);
   });
 
-  it("registers four tools after a fake OAuth connect", async () => {
+  it("registers five tools after a fake OAuth connect", async () => {
     const harness = await activate({
       config: { enabled: true, clientId: CLIENT_ID },
     });
@@ -478,15 +499,88 @@ describe("borg.channel.m365 plugin", () => {
     );
   });
 
-  it("forbids Graph paths outside the mail, calendar, and Drive allowlist", () => {
+  it("searches contacts on pinned Graph URLs", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+    });
+    await harness.invoke(m365ChannelConnect, {});
+    const found = await executeTool(harness.tools, "m365.contacts.search", {
+      query: "Ada",
+      maxResults: 5,
+    });
+    expect(found).toEqual({
+      contacts: [
+        {
+          id: "ct-1",
+          name: "Ada Lovelace",
+          emails: ["ada@contoso.com"],
+        },
+        {
+          id: "ct-2",
+          name: "nameless@contoso.com",
+          emails: ["nameless@contoso.com"],
+        },
+      ],
+    });
+    const searchRequest = harness.requests.find((request) =>
+      request.url.includes("/v1.0/me/contacts"),
+    );
+    expect(searchRequest?.method).toBe("GET");
+    const searchUrl = new URL(searchRequest?.url ?? "https://invalid.example/");
+    expect(searchUrl.origin).toBe(GRAPH_API_BASE);
+    expect(searchUrl.pathname).toBe("/v1.0/me/contacts");
+    expect(searchUrl.searchParams.get("$select")).toBe(
+      "id,displayName,emailAddresses",
+    );
+    expect(searchUrl.searchParams.get("$top")).toBe("5");
+    expect(searchUrl.searchParams.get("$filter")).toBe(
+      "startswith(displayName,'Ada')",
+    );
+
+    await executeTool(harness.tools, "m365.contacts.search", {});
+    const listRequest = harness.requests
+      .filter((request) => request.url.includes("/v1.0/me/contacts"))
+      .at(-1);
+    const listUrl = new URL(listRequest?.url ?? "https://invalid.example/");
+    expect(listUrl.origin).toBe(GRAPH_API_BASE);
+    expect(listUrl.pathname).toBe("/v1.0/me/contacts");
+    expect(listUrl.searchParams.get("$filter")).toBeNull();
+    expect(listUrl.searchParams.get("$top")).toBe("10");
+    expect(recordedText(harness)).not.toContain("m365-access-token");
+  });
+
+  it("escapes a quote in the Graph contacts OData filter", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+    });
+    await harness.invoke(m365ChannelConnect, {});
+    await executeTool(harness.tools, "m365.contacts.search", {
+      query: "O'Brien",
+    });
+    const searchRequest = harness.requests.find((request) =>
+      request.url.includes("/v1.0/me/contacts"),
+    );
+    const searchUrl = new URL(searchRequest?.url ?? "https://invalid.example/");
+    expect(searchUrl.searchParams.get("$filter")).toBe(
+      "startswith(displayName,'O''Brien')",
+    );
+    expect(searchRequest?.url).not.toContain("startswith(displayName,'O'Brien')");
+  });
+
+  it("forbids Graph paths outside the mail, calendar, Drive, and contacts allowlist", () => {
     expect(isAllowedGraphPath("/v1.0/me/calendarView", "GET")).toBe(true);
     expect(isAllowedGraphPath("/v1.0/me/events", "POST")).toBe(true);
     expect(isAllowedGraphPath("/v1.0/me/drive/root/search", "GET")).toBe(true);
     expect(isAllowedGraphPath("/v1.0/me/drive/items/file-1/content", "GET")).toBe(
       true,
     );
+    expect(isAllowedGraphPath("/v1.0/me/contacts", "GET")).toBe(true);
     expect(isAllowedGraphPath("/v1.0/me/events", "GET")).toBe(false);
-    expect(isAllowedGraphPath("/v1.0/me/contacts", "GET")).toBe(false);
+    expect(isAllowedGraphPath("/v1.0/me/contacts", "POST")).toBe(false);
+    expect(isAllowedGraphPath("/v1.0/users/foo/contacts", "GET")).toBe(false);
+    expect(isAllowedGraphPath("/v1.0/me/people", "GET")).toBe(false);
     expect(isAllowedGraphPath("/v1.0/users/other/events", "POST")).toBe(false);
     expect(isAllowedGraphPath("/v1.0/me/drive/root/children", "GET")).toBe(false);
   });
