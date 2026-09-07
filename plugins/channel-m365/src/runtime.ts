@@ -14,6 +14,8 @@ import {
   parseM365ChannelConfig,
   type M365ChannelConfig,
 } from "./config";
+import { GraphCalendarClient } from "./calendar";
+import { GraphDriveClient } from "./drive";
 import { GraphClient, GraphError } from "./graph";
 import {
   FALLBACK_DESTINATION,
@@ -28,6 +30,7 @@ import {
   m365AuthorizationEndpoint,
   m365TokenEndpoint,
 } from "./protocol";
+import { registerM365Tools } from "./tools";
 
 export interface M365ChannelInjectInput {
   readonly text: string;
@@ -52,8 +55,11 @@ export class M365ChannelNotStartedError extends Error {
 export class M365ChannelController {
   readonly #context: PluginContext;
   readonly #graph: GraphClient;
+  readonly #calendar: GraphCalendarClient;
+  readonly #drive: GraphDriveClient;
   #config: M365ChannelConfig;
   #registration: Disposable | undefined;
+  #tools: Disposable | undefined;
   #task: Disposable | undefined;
   #configWatch: Disposable | undefined;
   #ingest: ((draft: ChannelInboundDraft) => void | Promise<void>) | undefined;
@@ -68,17 +74,20 @@ export class M365ChannelController {
   constructor(context: PluginContext) {
     this.#context = context;
     this.#config = parseM365ChannelConfig({});
-    this.#graph = new GraphClient({
+    const graphOptions = {
       http: context.http,
-      readToken: (signal) => context.oauth.accessToken(signal),
-    });
+      readToken: (signal?: AbortSignal) => context.oauth.accessToken(signal),
+    };
+    this.#graph = new GraphClient(graphOptions);
+    this.#calendar = new GraphCalendarClient(graphOptions);
+    this.#drive = new GraphDriveClient(graphOptions);
   }
 
   async initialize(): Promise<void> {
     this.#config = this.#read(await this.#context.config.get());
-    this.#configWatch = this.#context.config.watch((next) => {
-      void this.#onConfigChanged(next);
-    });
+    this.#configWatch = this.#context.config.watch((next) =>
+      this.#onConfigChanged(next),
+    );
     await this.#sync();
   }
 
@@ -107,12 +116,13 @@ export class M365ChannelController {
         tokenEndpoint: m365TokenEndpoint(this.#config.tenant),
         scopes: M365_SCOPES,
         loopbackHost: M365_LOOPBACK_HOST,
-        extraAuthorizationParams: { prompt: "select_account" },
+        extraAuthorizationParams: { prompt: "consent" },
       },
       signal,
     );
     const me = await this.#graph.getMe(signal);
     await this.#context.config.update({ mailbox: me.mailbox });
+    await this.#sync();
     return this.status();
   }
 
@@ -120,6 +130,7 @@ export class M365ChannelController {
     await this.#context.oauth.disconnect();
     await this.#context.config.update({ mailbox: "" });
     this.#error = undefined;
+    await this.#sync();
     return this.status();
   }
 
@@ -223,6 +234,14 @@ export class M365ChannelController {
       start: ({ ingest, signal }) => this.#start(ingest, signal),
       send: (request) => this.send(request),
     });
+    const snapshot = await this.#context.oauth.snapshot();
+    if (snapshot.connected) {
+      this.#tools = registerM365Tools(
+        this.#context,
+        this.#calendar,
+        this.#drive,
+      );
+    }
   }
 
   #start(
@@ -360,6 +379,17 @@ export class M365ChannelController {
   }
 
   async #teardown(): Promise<void> {
+    const tools = this.#tools;
+    this.#tools = undefined;
+    if (tools) {
+      try {
+        await tools.dispose();
+      } catch (error) {
+        this.#context.logger.warn("Microsoft 365 tool teardown failed", {
+          reason: describeError(error),
+        });
+      }
+    }
     const registration = this.#registration;
     this.#registration = undefined;
     this.#task?.dispose();

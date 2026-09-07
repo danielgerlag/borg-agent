@@ -1,14 +1,16 @@
 import {
+  driveReadInputSchema,
   m365ChannelConnect,
   m365ChannelDisconnect,
   m365ChannelGetStatus,
   m365ChannelInject,
   type M365ChannelStatus,
 } from "@borg/contracts";
-import { createTestHarness } from "@borg/plugin-sdk";
+import { createTestHarness, type ToolContribution } from "@borg/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin, { GRAPH_API_BASE, M365_ADAPTER_ID } from "../src/main";
+import { isAllowedGraphPath, M365_SCOPES } from "../src/protocol";
 import {
   createM365Harness,
   jsonResponse,
@@ -40,8 +42,86 @@ function graphRoutes(
     if (request.url.endsWith("/v1.0/me/sendMail")) {
       return new Response(null, { status: 202 });
     }
+    if (request.url.includes("/v1.0/me/calendarView")) {
+      return jsonResponse(200, {
+        value: [
+          {
+            id: "evt-1",
+            subject: "Standup",
+            start: { dateTime: "2026-01-01T10:00:00.0000000", timeZone: "UTC" },
+            end: { dateTime: "2026-01-01T10:30:00.0000000", timeZone: "UTC" },
+            location: { displayName: "Room A" },
+          },
+        ],
+      });
+    }
+    if (request.method === "POST" && request.url.endsWith("/v1.0/me/events")) {
+      const payload = JSON.parse(request.body ?? "{}") as {
+        readonly subject?: string;
+        readonly start?: { readonly dateTime?: string };
+        readonly end?: { readonly dateTime?: string };
+      };
+      return jsonResponse(201, {
+        id: "evt-new",
+        subject: payload.subject,
+        start: payload.start,
+        end: payload.end,
+      });
+    }
+    if (request.url.includes("/v1.0/me/drive/root/search")) {
+      return jsonResponse(200, {
+        value: [
+          {
+            id: "file-1",
+            name: "notes.txt",
+            file: { mimeType: "text/plain" },
+          },
+        ],
+      });
+    }
+    if (request.url.includes("/drive/items/") && request.url.includes("/content")) {
+      return new Response("hello from drive", {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      });
+    }
+    if (request.url.includes("/v1.0/me/drive/items/")) {
+      return jsonResponse(200, {
+        id: "file-1",
+        name: "notes.txt",
+        file: { mimeType: "text/plain" },
+      });
+    }
     return jsonResponse(404, { message: "unexpected" });
   };
+}
+
+const CONNECTOR_TOOL_IDS = [
+  "m365.calendar.list",
+  "m365.calendar.create",
+  "m365.drive.search",
+  "m365.drive.read",
+] as const;
+
+function recordedText(harness: { readonly requests: readonly RecordedRequest[] }): string {
+  return harness.requests
+    .map((request) => `${request.url}\n${request.body ?? ""}`)
+    .join("\n");
+}
+
+async function executeTool(
+  tools: readonly ToolContribution[],
+  id: string,
+  input: unknown,
+): Promise<unknown> {
+  const tool = tools.find((candidate) => candidate.id === id);
+  if (!tool) {
+    throw new Error(`Missing tool ${id}`);
+  }
+  return tool.execute(input, {
+    toolCallId: "call-1",
+    signal: new AbortController().signal,
+  });
 }
 
 describe("borg.channel.m365 plugin", () => {
@@ -81,8 +161,12 @@ describe("borg.channel.m365 plugin", () => {
       "oauth.connect",
       "network:dynamic",
       "runtime.background",
+      "tools.register",
       "ui.settings",
     ]);
+    expect(manifest.contributes).toMatchObject({
+      kinds: ["channel", "settingsPage", "tool"],
+    });
   });
 
   it("stays unregistered until enabled with a client id", async () => {
@@ -209,5 +293,198 @@ describe("borg.channel.m365 plugin", () => {
     expect(status.connected).toBe(false);
     expect(status.mailbox).toBeUndefined();
     expect(harness.oauth.disconnects).toBe(1);
+  });
+
+  it("does not register calendar or Drive tools until connected", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+    });
+    expect(harness.tools).toEqual([]);
+  });
+
+  it("registers four tools after a fake OAuth connect", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+    });
+    await harness.invoke(m365ChannelConnect, {});
+    expect(harness.tools.map((tool) => tool.id)).toEqual([...CONNECTOR_TOOL_IDS]);
+    expect(
+      harness.tools.map((tool) => ({
+        id: tool.id,
+        approval: tool.approval,
+        sideEffect: tool.sideEffect,
+        security: tool.security,
+      })),
+    ).toEqual(
+      CONNECTOR_TOOL_IDS.map((id) => ({
+        id,
+        approval: "ask",
+        sideEffect: id === "m365.calendar.create",
+        security: {
+          outputClassification: "confidential",
+          outputProvenance: "external",
+          channelCapacity: "private",
+        },
+      })),
+    );
+    expect(harness.oauth.requests[0]?.extraAuthorizationParams).toEqual({
+      prompt: "consent",
+    });
+    expect(harness.oauth.requests[0]?.scopes).toEqual([...M365_SCOPES]);
+    await harness.invoke(m365ChannelDisconnect, {});
+    expect(harness.tools).toEqual([]);
+  });
+
+  it("lists and creates calendar events on pinned Graph URLs", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+    });
+    await harness.invoke(m365ChannelConnect, {});
+    const listed = await executeTool(harness.tools, "m365.calendar.list", {
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-01-08T00:00:00.000Z",
+      maxResults: 5,
+    });
+    expect(listed).toEqual({
+      events: [
+        {
+          id: "evt-1",
+          title: "Standup",
+          start: "2026-01-01T10:00:00.0000000",
+          end: "2026-01-01T10:30:00.0000000",
+          location: "Room A",
+        },
+      ],
+    });
+    const listRequest = harness.requests.find((request) =>
+      request.url.includes("/v1.0/me/calendarView"),
+    );
+    expect(listRequest?.method).toBe("GET");
+    expect(listRequest?.url.startsWith(`${GRAPH_API_BASE}/v1.0/me/calendarView`)).toBe(
+      true,
+    );
+    const listUrl = new URL(listRequest?.url ?? "https://invalid.example/");
+    expect(listUrl.searchParams.get("startDateTime")).toBe("2026-01-01T00:00:00.000Z");
+    expect(listUrl.searchParams.get("endDateTime")).toBe("2026-01-08T00:00:00.000Z");
+
+    const created = await executeTool(harness.tools, "m365.calendar.create", {
+      title: "Ship review",
+      start: "2026-01-02T15:00:00.000Z",
+      end: "2026-01-02T16:00:00.000Z",
+    });
+    expect(created).toEqual({
+      id: "evt-new",
+      title: "Ship review",
+      start: "2026-01-02T15:00:00.000Z",
+      end: "2026-01-02T16:00:00.000Z",
+    });
+    const createRequest = harness.requests.find((request) =>
+      request.url.endsWith("/v1.0/me/events"),
+    );
+    expect(createRequest).toMatchObject({
+      method: "POST",
+      url: `${GRAPH_API_BASE}/v1.0/me/events`,
+    });
+    expect(recordedText(harness)).not.toContain("m365-access-token");
+  });
+
+  it("defaults the calendar list window to the next seven days", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+    });
+    await harness.invoke(m365ChannelConnect, {});
+    await executeTool(harness.tools, "m365.calendar.list", {});
+    const listRequest = harness.requests.find((request) =>
+      request.url.includes("/v1.0/me/calendarView"),
+    );
+    const listUrl = new URL(listRequest?.url ?? "https://invalid.example/");
+    const start = Date.parse(listUrl.searchParams.get("startDateTime") ?? "");
+    const end = Date.parse(listUrl.searchParams.get("endDateTime") ?? "");
+    expect(end - start).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  it("searches and reads Drive files on pinned Graph URLs", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+    });
+    await harness.invoke(m365ChannelConnect, {});
+    const found = await executeTool(harness.tools, "m365.drive.search", {
+      query: "notes",
+    });
+    expect(found).toEqual({
+      files: [{ id: "file-1", name: "notes.txt", mimeType: "text/plain" }],
+    });
+    const searchRequest = harness.requests.find((request) =>
+      request.url.includes("/v1.0/me/drive/root/search"),
+    );
+    expect(searchRequest?.method).toBe("GET");
+    const searchUrl = new URL(searchRequest?.url ?? "https://invalid.example/");
+    expect(searchUrl.origin).toBe(GRAPH_API_BASE);
+    expect(searchUrl.pathname).toBe("/v1.0/me/drive/root/search");
+    expect(searchUrl.searchParams.get("q")).toBe("notes");
+
+    const read = await executeTool(harness.tools, "m365.drive.read", {
+      id: "file-1",
+    });
+    expect(read).toEqual({
+      id: "file-1",
+      name: "notes.txt",
+      mimeType: "text/plain",
+      text: "hello from drive",
+    });
+    expect(
+      harness.requests.some(
+        (request) =>
+          request.method === "GET" &&
+          request.url.startsWith(`${GRAPH_API_BASE}/v1.0/me/drive/items/file-1`),
+      ),
+    ).toBe(true);
+    expect(recordedText(harness)).not.toContain("m365-access-token");
+  });
+
+  it("omits Drive text for binary files and rejects unsafe ids", async () => {
+    const harness = await activate({
+      config: { enabled: true, clientId: CLIENT_ID },
+      oauth: { connected: true },
+      fetch: graphRoutes({
+        "/v1.0/me/drive/items/bin-1": () =>
+          jsonResponse(200, {
+            id: "bin-1",
+            name: "deck.pdf",
+            file: { mimeType: "application/pdf" },
+          }),
+      }),
+    });
+    await harness.invoke(m365ChannelConnect, {});
+    await expect(
+      executeTool(harness.tools, "m365.drive.read", { id: "bin-1" }),
+    ).resolves.toEqual({
+      id: "bin-1",
+      name: "deck.pdf",
+      mimeType: "application/pdf",
+    });
+    expect(
+      harness.requests.some((request) => request.url.includes("/content")),
+    ).toBe(false);
+    expect(() => driveReadInputSchema.parse({ id: "has/slash" })).toThrow();
+    expect(isAllowedGraphPath("/v1.0/me/drive/items/has/slash", "GET")).toBe(
+      false,
+    );
+  });
+
+  it("forbids Graph paths outside the mail, calendar, and Drive allowlist", () => {
+    expect(isAllowedGraphPath("/v1.0/me/calendarView", "GET")).toBe(true);
+    expect(isAllowedGraphPath("/v1.0/me/events", "POST")).toBe(true);
+    expect(isAllowedGraphPath("/v1.0/me/drive/root/search", "GET")).toBe(true);
+    expect(isAllowedGraphPath("/v1.0/me/drive/items/file-1/content", "GET")).toBe(
+      true,
+    );
+    expect(isAllowedGraphPath("/v1.0/me/events", "GET")).toBe(false);
+    expect(isAllowedGraphPath("/v1.0/me/contacts", "GET")).toBe(false);
+    expect(isAllowedGraphPath("/v1.0/users/other/events", "POST")).toBe(false);
+    expect(isAllowedGraphPath("/v1.0/me/drive/root/children", "GET")).toBe(false);
   });
 });
