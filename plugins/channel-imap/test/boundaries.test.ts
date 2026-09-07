@@ -58,7 +58,9 @@ describe("channel-imap package boundaries", () => {
     for (const filename of await sourceFiles(path.join(pluginRoot, "src"))) {
       const source = await readFile(filename, "utf8");
       expect(source).not.toMatch(/\bnode:net\b/);
+      expect(source).not.toMatch(/\bnode:tls\b/);
       expect(source).not.toMatch(/\bSocketService\b/);
+      expect(source).not.toMatch(/\bTlsService\b/);
       expect(source).not.toMatch(/\boauth\b/i);
     }
   });

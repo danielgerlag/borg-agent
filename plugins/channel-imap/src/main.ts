@@ -24,10 +24,12 @@ export {
   ImapChannelNotStartedError,
   ImapFakeTransport,
 } from "./runtime";
+export { ImapCodec, ImapError } from "./imap-codec";
+export { ImapSession } from "./imap-session";
 
 class ImapChannelController {
   readonly #context: PluginContext;
-  readonly transport = new ImapFakeTransport();
+  readonly transport: ImapFakeTransport;
   #registration: Disposable | undefined;
   #configWatch: Disposable | undefined;
   #queue: Promise<void> = Promise.resolve();
@@ -35,6 +37,12 @@ class ImapChannelController {
 
   constructor(context: PluginContext) {
     this.#context = context;
+    this.transport = new ImapFakeTransport({
+      tls: context.tls,
+      runtime: context.runtime,
+      logger: context.logger,
+      readPassword: () => context.secrets.get(IMAP_PASSWORD_SECRET_KEY),
+    });
   }
 
   async initialize(): Promise<void> {
@@ -65,6 +73,11 @@ class ImapChannelController {
     await this.#teardown();
     const mailbox = config.mailbox.trim() || IMAP_DEFAULT_MAILBOX;
     this.transport.destinations = [mailbox];
+    this.transport.configureEndpoint({
+      host: config.host.trim(),
+      port: config.port,
+      username: config.username.trim(),
+    });
     const configured =
       config.enabled &&
       config.host.trim().length > 0 &&
@@ -91,6 +104,8 @@ export default definePlugin({
   },
   permissions: [
     "channels.register",
+    "network:tls",
+    "runtime.background",
     "secrets:read",
     "secrets:write",
     "ui.settings",

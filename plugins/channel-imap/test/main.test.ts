@@ -5,9 +5,12 @@ import type {
   ChannelInboundDraft,
   PluginBus,
   PluginContext,
+  PluginLogger,
+  PluginRuntime,
+  PluginTls,
 } from "@borg/plugin-sdk";
 import { createTestHarness } from "@borg/plugin-sdk";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   describeImapConfigError,
   parseImapChannelConfig,
@@ -18,6 +21,11 @@ import plugin, {
   IMAP_PASSWORD_SECRET_KEY,
   ImapFakeTransport,
 } from "../src/main";
+import {
+  createBackgroundRuntime,
+  FakeTls,
+  ScriptedImapServer,
+} from "./harness";
 
 type CommandHandler = (
   input: unknown,
@@ -29,6 +37,9 @@ function createImapFixture(options?: {
   readonly host?: string;
   readonly username?: string;
   readonly password?: string;
+  readonly tls?: PluginTls;
+  readonly runtime?: PluginRuntime;
+  readonly logger?: PluginLogger;
 }) {
   const handlers = new Map<string, CommandHandler>();
   let adapter: ChannelAdapter | undefined;
@@ -121,6 +132,9 @@ function createImapFixture(options?: {
         throw new Error("Sandbox runs are unused");
       },
     },
+    ...(options?.tls ? { tls: options.tls } : {}),
+    ...(options?.runtime ? { runtime: options.runtime } : {}),
+    ...(options?.logger ? { logger: options.logger } : {}),
   } as unknown as PluginContext;
   return {
     context,
@@ -174,6 +188,8 @@ describe("borg.channel.imap", () => {
     });
     expect(manifest.permissions).toEqual([
       "channels.register",
+      "network:tls",
+      "runtime.background",
       "secrets:read",
       "secrets:write",
       "ui.settings",
@@ -298,6 +314,59 @@ describe("borg.channel.imap", () => {
     await fixture.context.secrets.delete(IMAP_PASSWORD_SECRET_KEY);
     await fixture.context.config.update({});
     expect(fixture.adapter()).toBeUndefined();
+    await harness.deactivate();
+  });
+
+  it("keeps inject working while a live TLS session is connected", async () => {
+    const fake = new FakeTls();
+    fake.onPeer = async (peer) => {
+      const server = new ScriptedImapServer(peer);
+      await server.greet("* OK IMAP4rev1 ready");
+      await server.expectLogin("borg@example.com", "secret");
+      await server.expectSelect("INBOX");
+      await server.idleUntilAbort();
+    };
+    const fixture = createImapFixture({
+      enabled: true,
+      host: "imap.example.com",
+      username: "borg@example.com",
+      password: "secret",
+      tls: fake,
+      runtime: createBackgroundRuntime(),
+      logger: {
+        debug: () => undefined,
+        info: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      },
+    });
+    const harness = await createTestHarness(plugin, fixture.context);
+    const adapter = fixture.adapter();
+    expect(adapter?.id).toBe(IMAP_CHANNEL_ADAPTER_ID);
+    const drafts: ChannelInboundDraft[] = [];
+    await adapter?.start?.({
+      ingest: (draft) => {
+        drafts.push(draft);
+      },
+      signal: new AbortController().signal,
+    });
+    await vi.waitFor(() => expect(fake.connections).toHaveLength(1));
+    expect(fake.connections[0]).toMatchObject({
+      host: "imap.example.com",
+      port: 993,
+    });
+    expect(JSON.stringify(fake.connections)).not.toContain("secret");
+    const result = await fixture.invoke<{
+      accepted: true;
+      externalId: string;
+    }>(imapChannelInject, { text: "from inject while live" });
+    expect(result.accepted).toBe(true);
+    expect(drafts).toEqual([
+      expect.objectContaining({
+        text: "from inject while live",
+        destinationId: IMAP_DEFAULT_MAILBOX,
+      }),
+    ]);
     await harness.deactivate();
   });
 });
