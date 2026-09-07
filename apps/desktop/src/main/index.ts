@@ -27,6 +27,7 @@ import {
   StoreFacade,
   ToolService,
   TrustAuthorizer,
+  TlsService,
   WebSocketService,
   WorkspaceService,
   satisfiesBorgEngine,
@@ -89,6 +90,7 @@ let processSupervisor: ProcessSupervisor | undefined;
 let networkService: NetworkService | undefined;
 let communicationService: CommunicationService | undefined;
 let webSocketService: WebSocketService | undefined;
+let tlsService: TlsService | undefined;
 let removeEmbeddedContentProtocol: (() => void) | undefined;
 let removeIpcBridge: (() => Promise<void>) | undefined;
 let notificationSubscription: Disposable | undefined;
@@ -409,6 +411,7 @@ async function requestQuit(): Promise<void> {
       interactionService?.cancelAll();
       await processSupervisor?.shutdown();
       communicationService?.shutdown();
+      tlsService?.shutdown();
       webSocketService?.shutdown();
       networkService?.shutdown();
     }
@@ -528,6 +531,7 @@ if (!app.requestSingleInstanceLock()) {
       authorizer,
     );
     webSocketService = new WebSocketService();
+    tlsService = new TlsService();
     loopManager = new LoopManager(
       models,
       executions,
@@ -572,6 +576,7 @@ if (!app.requestSingleInstanceLock()) {
       scanners,
       channels: communicationService,
       webSockets: webSocketService,
+      tls: tlsService,
       a2a: a2aService,
       executionResultFlow: (pluginId, subject) =>
         (pluginId === "borg.chat" &&

@@ -40,6 +40,7 @@ import {
   StoreFacade,
   ToolService,
   TrustAuthorizer,
+  TlsService,
   type PluginSource,
 } from "../src";
 
@@ -1572,6 +1573,73 @@ describe("process and http host APIs", () => {
     expect(() => process.kill(secondPid!, 0)).toThrow();
     await processes.shutdown();
     http.shutdown();
+  });
+});
+
+describe("tls host API", () => {
+  it("requires network:tls and aborts owned sockets on deactivate", async () => {
+    let connectSignal: AbortSignal | undefined;
+    const tls = new TlsService({
+      handshakeTimeoutMs: 30_000,
+      tlsConnect: ({ signal }) =>
+        new Promise((_resolve, reject) => {
+          connectSignal = signal;
+          signal.addEventListener(
+            "abort",
+            () => reject(new Error("aborted")),
+            { once: true },
+          );
+        }),
+    });
+    const bus = new CommandEventBus();
+    const denied = {
+      id: "test.tls-denied",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.tls-denied/main",
+      permissions: [],
+      contributes: {},
+    } as const satisfies BorgPluginManifest;
+    const allowed = {
+      id: "test.tls-allowed",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.tls-allowed/main",
+      permissions: ["network:tls"],
+      contributes: {},
+    } as const satisfies BorgPluginManifest;
+    const manager = new PluginManager(bus, "0.1.0", { tls });
+
+    await expect(
+      manager.activate({
+        manifest: denied,
+        loadMain: async () =>
+          definePlugin({
+            ...denied,
+            activate(context) {
+              void context.tls.connect({ host: "imap.example.com", port: 993 });
+            },
+          }),
+      }),
+    ).rejects.toThrow(/network:tls/);
+
+    await manager.activate({
+      manifest: allowed,
+      loadMain: async () =>
+        definePlugin({
+          ...allowed,
+          activate(context) {
+            void context.tls
+              .connect({ host: "imap.example.com", port: 993 })
+              .catch(() => undefined);
+          },
+        }),
+    });
+    await vi.waitFor(() => expect(connectSignal).toBeDefined());
+    expect(tls.countOwned(allowed.id)).toBe(1);
+    await manager.deactivate(allowed.id);
+    expect(tls.countOwned(allowed.id)).toBe(0);
+    tls.shutdown();
   });
 });
 

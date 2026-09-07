@@ -603,6 +603,28 @@ export interface PluginWebSockets {
   ): Promise<PluginWebSocketConnection>;
 }
 
+export interface PluginTlsConnectOptions {
+  readonly host: string;
+  readonly port: number;
+  readonly servername?: string | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface PluginTlsSocket extends Disposable {
+  readonly readable: ReadableStream<Uint8Array>;
+  readonly writable: WritableStream<Uint8Array>;
+  /**
+   * Settles when the socket is fully torn down. Always fulfills.
+   * Stream errors are the diagnostic; this is the join handle.
+   */
+  readonly closed: Promise<void>;
+  close(): Promise<void>;
+}
+
+export interface PluginTls {
+  connect(options: PluginTlsConnectOptions): Promise<PluginTlsSocket>;
+}
+
 export interface GraphStepExecutionContext {
   readonly instanceId: string;
   readonly nodeId: string;
@@ -755,6 +777,7 @@ export interface PluginContext {
   readonly http: PluginHttp;
   readonly channels: PluginChannels;
   readonly webSockets: PluginWebSockets;
+  readonly tls: PluginTls;
   readonly a2a?: {
     snapshot(): {
       readonly enabled: boolean;

@@ -409,6 +409,9 @@ export async function createBotHarness(
     webSockets: {
       connect: async () => unavailable("WebSockets"),
     },
+    tls: {
+      connect: async () => unavailable("TLS"),
+    },
     window: { show: () => unavailable("Window display") },
     dataDir: ".borg-bots-test",
     notify: () => unavailable("Notifications"),
