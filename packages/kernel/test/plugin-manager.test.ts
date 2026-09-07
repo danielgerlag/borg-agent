@@ -17,6 +17,7 @@ import {
   type PluginContext,
   type PluginProcess,
   type ProviderEgress,
+  type SecretStoreProvider,
   type StoreEntry,
   type StoreTransactionOperation,
   z,
@@ -32,11 +33,13 @@ import {
   LoopManager,
   ModelGateway,
   NetworkService,
+  OAuthService,
   PluginManager,
   PersistenceRegistry,
   ProcessSupervisor,
   ScannerRegistry,
   satisfiesBorgEngine,
+  SecretFacade,
   StoreFacade,
   ToolService,
   TrustAuthorizer,
@@ -1640,6 +1643,96 @@ describe("tls host API", () => {
     await manager.deactivate(allowed.id);
     expect(tls.countOwned(allowed.id)).toBe(0);
     tls.shutdown();
+  });
+});
+
+describe("oauth host API", () => {
+  it("requires oauth.connect and aborts owned grants on deactivate", async () => {
+    class MemorySecretStore implements SecretStoreProvider {
+      readonly kind = "development" as const;
+      readonly values = new Map<string, string>();
+      async get(namespace: string, key: string): Promise<string | undefined> {
+        return this.values.get(`${namespace}:${key}`);
+      }
+      async set(namespace: string, key: string, value: string): Promise<void> {
+        this.values.set(`${namespace}:${key}`, value);
+      }
+      async delete(namespace: string, key: string): Promise<void> {
+        this.values.delete(`${namespace}:${key}`);
+      }
+      async has(namespace: string, key: string): Promise<boolean> {
+        return this.values.has(`${namespace}:${key}`);
+      }
+    }
+    const persistence = new PersistenceRegistry();
+    persistence.registerSecretStore("test.secrets", new MemorySecretStore());
+    const secrets = new SecretFacade(persistence);
+    const oauth = new OAuthService({
+      secrets,
+      openExternal: () => new Promise(() => undefined),
+      listen: async () => ({
+        port: 3_456,
+        close: async () => undefined,
+      }),
+    });
+    const bus = new CommandEventBus();
+    const denied = {
+      id: "test.oauth-denied",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.oauth-denied/main",
+      permissions: [],
+      contributes: {},
+    } as const satisfies BorgPluginManifest;
+    const allowed = {
+      id: "test.oauth-allowed",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.oauth-allowed/main",
+      permissions: ["oauth.connect"],
+      contributes: {},
+    } as const satisfies BorgPluginManifest;
+    const manager = new PluginManager(bus, "0.1.0", { oauth });
+
+    await expect(
+      manager.activate({
+        manifest: denied,
+        loadMain: async () =>
+          definePlugin({
+            ...denied,
+            activate(context) {
+              void context.oauth.connect({
+                clientId: "public-client",
+                authorizationEndpoint: "https://auth.example/authorize",
+                tokenEndpoint: "https://auth.example/token",
+                scopes: ["mail"],
+              });
+            },
+          }),
+      }),
+    ).rejects.toThrow(/oauth.connect/);
+
+    await manager.activate({
+      manifest: allowed,
+      loadMain: async () =>
+        definePlugin({
+          ...allowed,
+          activate(context) {
+            void context.oauth
+              .connect({
+                clientId: "public-client",
+                authorizationEndpoint: "https://auth.example/authorize",
+                tokenEndpoint: "https://auth.example/token",
+                scopes: ["mail"],
+              })
+              .catch(() => undefined);
+          },
+        }),
+    });
+    await vi.waitFor(() => expect(oauth.countOwned(allowed.id)).toBe(1));
+    await manager.deactivate(allowed.id);
+    expect(oauth.countOwned(allowed.id)).toBe(0);
+    oauth.shutdown();
   });
 });
 

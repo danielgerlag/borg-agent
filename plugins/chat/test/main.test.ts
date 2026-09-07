@@ -497,6 +497,12 @@ function createChatHarnessContext(
     tls: {
       connect: async () => unavailable("tls.connect"),
     },
+    oauth: {
+      connect: async () => unavailable("oauth.connect"),
+      snapshot: async () => unavailable("oauth.snapshot"),
+      accessToken: async () => unavailable("oauth.accessToken"),
+      disconnect: async () => unavailable("oauth.disconnect"),
+    },
     window: { show: () => unavailable("window.show") },
     dataDir: "/virtual/borg-chat-test",
     notify: () => unavailable("notify"),

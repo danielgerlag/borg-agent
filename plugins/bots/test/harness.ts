@@ -412,6 +412,12 @@ export async function createBotHarness(
     tls: {
       connect: async () => unavailable("TLS"),
     },
+    oauth: {
+      connect: async () => unavailable("OAuth"),
+      snapshot: async () => unavailable("OAuth"),
+      accessToken: async () => unavailable("OAuth"),
+      disconnect: async () => unavailable("OAuth"),
+    },
     window: { show: () => unavailable("Window display") },
     dataDir: ".borg-bots-test",
     notify: () => unavailable("Notifications"),

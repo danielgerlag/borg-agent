@@ -28,6 +28,7 @@ import {
   ToolService,
   TrustAuthorizer,
   TlsService,
+  OAuthService,
   WebSocketService,
   WorkspaceService,
   satisfiesBorgEngine,
@@ -41,6 +42,7 @@ import {
   nativeImage,
   Notification,
   Tray,
+  shell,
   type MenuItemConstructorOptions,
   type NativeImage,
 } from "electron";
@@ -91,6 +93,7 @@ let networkService: NetworkService | undefined;
 let communicationService: CommunicationService | undefined;
 let webSocketService: WebSocketService | undefined;
 let tlsService: TlsService | undefined;
+let oauthService: OAuthService | undefined;
 let removeEmbeddedContentProtocol: (() => void) | undefined;
 let removeIpcBridge: (() => Promise<void>) | undefined;
 let notificationSubscription: Disposable | undefined;
@@ -412,6 +415,7 @@ async function requestQuit(): Promise<void> {
       await processSupervisor?.shutdown();
       communicationService?.shutdown();
       tlsService?.shutdown();
+      oauthService?.shutdown();
       webSocketService?.shutdown();
       networkService?.shutdown();
     }
@@ -532,6 +536,13 @@ if (!app.requestSingleInstanceLock()) {
     );
     webSocketService = new WebSocketService();
     tlsService = new TlsService();
+    if (!secretFacade) {
+      throw new Error("Secret facade is unavailable");
+    }
+    oauthService = new OAuthService({
+      secrets: secretFacade,
+      openExternal: (url) => shell.openExternal(url),
+    });
     loopManager = new LoopManager(
       models,
       executions,
@@ -577,6 +588,7 @@ if (!app.requestSingleInstanceLock()) {
       channels: communicationService,
       webSockets: webSocketService,
       tls: tlsService,
+      oauth: oauthService,
       a2a: a2aService,
       executionResultFlow: (pluginId, subject) =>
         (pluginId === "borg.chat" &&
