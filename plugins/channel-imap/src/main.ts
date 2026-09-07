@@ -1,15 +1,20 @@
 import { imapChannelInject } from "@borg/contracts";
 import {
   definePlugin,
-  z,
   type Disposable,
   type PluginContext,
 } from "@borg/plugin-sdk";
+import { imapChannelConfigSchema } from "./config";
 import {
   IMAP_DEFAULT_MAILBOX,
   IMAP_PASSWORD_SECRET_KEY,
   ImapFakeTransport,
 } from "./runtime";
+
+export {
+  imapChannelConfigSchema,
+  type ImapChannelConfig,
+} from "./config";
 
 export {
   IMAP_CHANNEL_ADAPTER_ID,
@@ -19,18 +24,6 @@ export {
   ImapChannelNotStartedError,
   ImapFakeTransport,
 } from "./runtime";
-
-export const imapChannelConfigSchema = z
-  .object({
-    enabled: z.boolean().default(false),
-    host: z.string().max(253).default(""),
-    port: z.number().int().min(1).max(65_535).default(993),
-    username: z.string().max(320).default(""),
-    mailbox: z.string().min(1).max(256).default(IMAP_DEFAULT_MAILBOX),
-  })
-  .strict();
-
-export type ImapChannelConfig = z.infer<typeof imapChannelConfigSchema>;
 
 class ImapChannelController {
   readonly #context: PluginContext;
@@ -96,10 +89,15 @@ export default definePlugin({
   engines: {
     borg: "^0.1.0",
   },
-  permissions: ["channels.register", "secrets:read"],
+  permissions: [
+    "channels.register",
+    "secrets:read",
+    "secrets:write",
+    "ui.settings",
+  ],
   contributes: {
     commands: [imapChannelInject.id],
-    kinds: ["channel"],
+    kinds: ["channel", "settingsPage"],
   },
   configSchema: imapChannelConfigSchema,
   async activate(context) {
