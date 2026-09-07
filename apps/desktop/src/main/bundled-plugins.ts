@@ -147,6 +147,38 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.channel.google",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-channel-google/main",
+      "ui": "@borg/plugin-channel-google/ui",
+      "permissions": [
+        "channels.register",
+        "oauth.connect",
+        "network:dynamic",
+        "runtime.background",
+        "ui.settings"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.channel.google.connect",
+          "borg.channel.google.disconnect",
+          "borg.channel.google.getStatus",
+          "borg.channel.google.inject"
+        ],
+        "kinds": [
+          "channel",
+          "settingsPage"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-channel-google/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.channel.imap",
       "version": "0.1.0",
       "engines": {
@@ -174,6 +206,38 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-channel-imap/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.channel.m365",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-channel-m365/main",
+      "ui": "@borg/plugin-channel-m365/ui",
+      "permissions": [
+        "channels.register",
+        "oauth.connect",
+        "network:dynamic",
+        "runtime.background",
+        "ui.settings"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.channel.m365.connect",
+          "borg.channel.m365.disconnect",
+          "borg.channel.m365.getStatus",
+          "borg.channel.m365.inject"
+        ],
+        "kinds": [
+          "channel",
+          "settingsPage"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-channel-m365/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {
