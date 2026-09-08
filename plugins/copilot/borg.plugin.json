@@ -1,0 +1,33 @@
+{
+  "id": "borg.copilot",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-copilot/main",
+  "ui": "@borg/plugin-copilot/ui",
+  "permissions": [
+    "models.register",
+    "network:api.github.com",
+    "network:api.githubcopilot.com",
+    "network:github.com",
+    "secrets:read",
+    "secrets:write",
+    "ui.settings",
+    "ui.wizard"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.copilot.connect",
+      "borg.copilot.disconnect",
+      "borg.copilot.getStatus",
+      "borg.copilot.pollDeviceFlow",
+      "borg.copilot.startDeviceFlow"
+    ],
+    "kinds": [
+      "llmProvider",
+      "settingsPage",
+      "wizardStep"
+    ]
+  }
+}

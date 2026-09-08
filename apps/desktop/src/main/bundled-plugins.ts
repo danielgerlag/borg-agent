@@ -68,6 +68,39 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.azure",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-azure/main",
+      "ui": "@borg/plugin-azure/ui",
+      "permissions": [
+        "models.register",
+        "network:dynamic",
+        "secrets:read",
+        "secrets:write",
+        "ui.settings",
+        "ui.wizard"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.azure.connect",
+          "borg.azure.disconnect",
+          "borg.azure.getStatus"
+        ],
+        "kinds": [
+          "llmProvider",
+          "settingsPage",
+          "wizardStep"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-azure/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.bots",
       "version": "0.1.0",
       "engines": {
@@ -363,6 +396,43 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.copilot",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-copilot/main",
+      "ui": "@borg/plugin-copilot/ui",
+      "permissions": [
+        "models.register",
+        "network:api.github.com",
+        "network:api.githubcopilot.com",
+        "network:github.com",
+        "secrets:read",
+        "secrets:write",
+        "ui.settings",
+        "ui.wizard"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.copilot.connect",
+          "borg.copilot.disconnect",
+          "borg.copilot.getStatus",
+          "borg.copilot.pollDeviceFlow",
+          "borg.copilot.startDeviceFlow"
+        ],
+        "kinds": [
+          "llmProvider",
+          "settingsPage",
+          "wizardStep"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-copilot/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.feedback",
       "version": "0.1.0",
       "engines": {
@@ -602,6 +672,37 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.ollama",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-ollama/main",
+      "ui": "@borg/plugin-ollama/ui",
+      "permissions": [
+        "models.register",
+        "network:dynamic",
+        "ui.settings",
+        "ui.wizard"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.ollama.connect",
+          "borg.ollama.disconnect",
+          "borg.ollama.getStatus"
+        ],
+        "kinds": [
+          "llmProvider",
+          "settingsPage",
+          "wizardStep"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-ollama/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.openai",
       "version": "0.1.0",
       "engines": {
@@ -632,6 +733,39 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-openai/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "borg.openrouter",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-openrouter/main",
+      "ui": "@borg/plugin-openrouter/ui",
+      "permissions": [
+        "models.register",
+        "network:openrouter.ai",
+        "secrets:read",
+        "secrets:write",
+        "ui.settings",
+        "ui.wizard"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.openrouter.connect",
+          "borg.openrouter.disconnect",
+          "borg.openrouter.getStatus"
+        ],
+        "kinds": [
+          "llmProvider",
+          "settingsPage",
+          "wizardStep"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-openrouter/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {
