@@ -1699,6 +1699,47 @@ export const discordChannelDisconnect = defineCommand({
   output: discordChannelStatusSchema,
 });
 
+export const slackSocketStateSchema = z.enum([
+  "idle",
+  "connecting",
+  "ready",
+  "backoff",
+  "fatal",
+]);
+
+export const slackChannelStatusSchema = z
+  .object({
+    hasBotToken: z.boolean(),
+    hasAppToken: z.boolean(),
+    connected: z.boolean(),
+    botUserId: z.string().optional(),
+    socketState: slackSocketStateSchema,
+    error: z.string().max(1_000).optional(),
+  })
+  .strict();
+
+export type SlackSocketState = z.infer<typeof slackSocketStateSchema>;
+export type SlackChannelStatus = z.infer<typeof slackChannelStatusSchema>;
+
+export const slackChannelGetStatus = defineCommand({
+  id: "borg.channel.slack.getStatus",
+  input: z.object({}).strict(),
+  output: slackChannelStatusSchema,
+});
+
+export const slackChannelVerify = defineCommand({
+  id: "borg.channel.slack.verify",
+  input: z.object({}).strict(),
+  output: slackChannelStatusSchema,
+  timeoutMs: 30_000,
+});
+
+export const slackChannelDisconnect = defineCommand({
+  id: "borg.channel.slack.disconnect",
+  input: z.object({}).strict(),
+  output: slackChannelStatusSchema,
+});
+
 export const botStatusSchema = z.enum([
   "stopped",
   "running",
