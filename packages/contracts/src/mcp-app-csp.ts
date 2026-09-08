@@ -61,18 +61,21 @@ export function buildAppCsp(grant: McpAppNetworkGrant): string {
   ].join("; ");
 }
 
-export function buildProxyCsp(): string {
+export function buildProxyCsp(grant: McpAppNetworkGrant = EMPTY_GRANT): string {
+  const resources = joinOrigins(grant.resource);
+  const connect = joinOrigins(grant.connect) || "'none'";
+  const workers = resources || "'none'";
   return [
     "default-src 'none'",
-    "script-src 'unsafe-inline'",
-    "style-src 'unsafe-inline'",
+    `script-src 'unsafe-inline'${suffix(resources)}`,
+    `style-src 'unsafe-inline'${suffix(resources)}`,
     "frame-src 'self'",
-    "connect-src 'none'",
-    "img-src data: blob:",
-    "font-src data:",
-    "media-src 'none'",
+    `connect-src ${connect}`,
+    `img-src data: blob:${suffix(resources)}`,
+    `font-src data:${suffix(resources)}`,
+    `media-src ${resources ? `data:${suffix(resources)}` : "'none'"}`,
     "object-src 'none'",
-    "worker-src 'none'",
+    `worker-src ${workers}`,
     "base-uri 'none'",
     "form-action 'none'",
   ].join("; ");

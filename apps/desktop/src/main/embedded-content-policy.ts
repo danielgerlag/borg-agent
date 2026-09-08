@@ -1,4 +1,5 @@
 import {
+  buildAppCsp,
   grantFromProxyUrl,
   mcpAppRequestAllowed,
 } from "@borg/contracts";
@@ -49,6 +50,10 @@ export function findEmbeddedProxyUrl(
     current = current.parent;
   }
   return undefined;
+}
+
+export function embeddedAppCsp(proxyUrl: string): string {
+  return buildAppCsp(grantFromProxyUrl(proxyUrl));
 }
 
 export function shouldAllowEmbeddedRequest(

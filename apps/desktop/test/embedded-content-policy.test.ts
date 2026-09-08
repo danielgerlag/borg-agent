@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { encodeMcpAppCspQuery } from "@borg/contracts";
 import {
   belongsToEmbeddedContent,
+  embeddedAppCsp,
   isEmbeddedProxyUrl,
   shouldAllowEmbeddedRequest,
 } from "../src/main/embedded-content-policy";
@@ -138,6 +139,23 @@ describe("embedded content request policy", () => {
         url: "https://api.example.com/v1",
       }),
     ).toBe(false);
+  });
+
+  it("stamps the inner iframe CSP from the proxy grant before srcdoc", () => {
+    const encoded = encodeMcpAppCspQuery({
+      connectDomains: ["https://cesium.com", "https://*.cesium.com"],
+      resourceDomains: ["https://cesium.com", "https://*.cesium.com"],
+      frameDomains: [],
+      baseUriDomains: [],
+    });
+    const csp = embeddedAppCsp(
+      `borg-embedded://mcp-app/proxy.html?csp=${encoded}`,
+    );
+    expect(csp).toContain("script-src 'unsafe-inline' https://cesium.com");
+    expect(csp).toContain("https://*.cesium.com");
+    expect(embeddedAppCsp("borg-embedded://mcp-app/proxy.html")).toContain(
+      "connect-src 'none'",
+    );
   });
 
   it("still denies undeclared loopback images", () => {

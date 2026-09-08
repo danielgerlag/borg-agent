@@ -4,6 +4,7 @@ import {
   buildAllowAttribute,
   buildAppCsp,
   buildPermissionsPolicy,
+  buildProxyCsp,
   encodeMcpAppCspQuery,
   encodeMcpAppPermissionsQuery,
   grantFromProxyUrl,
@@ -46,6 +47,21 @@ describe("mcp app csp grants", () => {
         baseUriDomains: [],
       }).connect,
     ).toEqual(["http://[::1]:8787", "ws://localhost:8080"]);
+  });
+
+  it("keeps frame-src self on the proxy while adding declared script hosts", () => {
+    expect(buildProxyCsp()).toContain("frame-src 'self'");
+    expect(buildProxyCsp()).toContain("connect-src 'none'");
+    expect(
+      buildProxyCsp(
+        parseMcpAppNetworkGrant({
+          connectDomains: [],
+          resourceDomains: ["https://cesium.com"],
+          frameDomains: [],
+          baseUriDomains: [],
+        }),
+      ),
+    ).toContain("script-src 'unsafe-inline' https://cesium.com");
   });
 
   it("builds connect-src from declared domains and none when empty", () => {

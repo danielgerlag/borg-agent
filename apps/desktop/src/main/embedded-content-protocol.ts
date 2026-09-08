@@ -3,6 +3,7 @@ import {
   MCP_APP_MAX_MESSAGE_BYTES,
   buildPermissionsPolicy,
   buildProxyCsp,
+  grantFromProxyUrl,
   permissionsFromProxyUrl,
 } from "@borg/contracts";
 import {
@@ -183,18 +184,17 @@ const bridgeScript = `
 })();
 `;
 
-function proxyDocument(): string {
-  const policy = buildProxyCsp();
+function proxyDocument(outerCsp: string): string {
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="${policy}">
+<meta http-equiv="Content-Security-Policy" content="${outerCsp}">
 <meta name="referrer" content="no-referrer">
 <style>html,body,#app{box-sizing:border-box;margin:0;min-height:100%;width:100%}#app{border:0;display:block;min-height:18rem}</style>
 </head>
 <body>
-<iframe id="app" sandbox="allow-scripts" csp="${policy}" referrerpolicy="no-referrer" title="MCP App"></iframe>
+<iframe id="app" sandbox="allow-scripts" referrerpolicy="no-referrer" title="MCP App"></iframe>
 <script>${bridgeScript}</script>
 </body>
 </html>`;
@@ -271,8 +271,8 @@ export function installEmbeddedContentProtocol(): () => void {
     const permissionsPolicy = buildPermissionsPolicy(
       permissionsFromProxyUrl(request.url),
     );
-    const policy = buildProxyCsp();
-    return new Response(proxyDocument(), {
+    const policy = buildProxyCsp(grantFromProxyUrl(request.url));
+    return new Response(proxyDocument(policy), {
       status: 200,
       headers: {
         "Cache-Control": "no-store",
