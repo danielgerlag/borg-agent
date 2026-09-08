@@ -16,6 +16,7 @@
     "@borg/plugin-channel-imap": "workspace:*",
     "@borg/plugin-channel-m365": "workspace:*",
     "@borg/plugin-channel-mock": "workspace:*",
+    "@borg/plugin-channel-slack": "workspace:*",
     "@borg/plugin-config-sqlite": "workspace:*",
     "@borg/plugin-context-map": "workspace:*",
     "@borg/plugin-copilot": "workspace:*",
