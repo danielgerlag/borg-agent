@@ -243,7 +243,7 @@ describe("CopilotProvider", () => {
       [500, SAFE_COPILOT_ERRORS.unavailable],
     ] as const) {
       const provider = new CopilotProvider({
-        fetchImpl: async (url, init) => {
+        fetchImpl: async (url) => {
           if (String(url) === COPILOT_SESSION_TOKEN_URL) {
             return new Response(
               JSON.stringify({
