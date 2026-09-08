@@ -181,4 +181,20 @@ describe("CommandEventBus handler errors", () => {
       message: "Azure rejected the request.",
     });
   });
+
+  it("does not put the command id in the user-facing message", async () => {
+    const command = defineCommand({
+      id: "borg.test.boom-empty",
+      input: z.object({}).strict(),
+      output: z.object({ ok: z.boolean() }),
+    });
+    const bus = new CommandEventBus();
+    bus.handle("borg.test", new Set([command.id]), command, () => {
+      throw "nope";
+    });
+    await expect(bus.invoke(command, {})).rejects.toMatchObject({
+      code: "failed",
+      message: "The request failed.",
+    });
+  });
 });

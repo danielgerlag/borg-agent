@@ -225,7 +225,7 @@ export class CommandEventBus {
         "failed",
         error instanceof Error && error.message.trim().length > 0
           ? error.message
-          : `Command ${commandId} failed`,
+          : "The request failed.",
         { cause: error },
       );
     } finally {

@@ -12,10 +12,25 @@ import {
   parseAzureConfig,
   type AzureAuthMode,
 } from "./config";
+import {
+  parseAzureUserError,
+  type AzureUserErrorShape,
+} from "./errors";
 
 function asAuthMode(value: string): AzureAuthMode {
   return value === "azure-default" ? "azure-default" : "api-key";
 }
+
+function describeAzureFailure(failure: unknown): AzureUserErrorShape {
+  return parseAzureUserError(
+    failure instanceof Error ? failure.message : String(failure),
+  );
+}
+
+const MISSING_KEY_DRAFT: AzureUserErrorShape = {
+  headline: "Enter an API key to save.",
+  nextStep: "Paste a key from Azure AI Foundry or Azure OpenAI.",
+};
 
 export default defineUiPlugin<Component>({
   id: "borg.azure",
@@ -31,7 +46,7 @@ export default defineUiPlugin<Component>({
       const [message, setMessage] = createSignal(
         "Optional. Skip to keep using the built-in demo model.",
       );
-      const [error, setError] = createSignal<string>();
+      const [error, setError] = createSignal<AzureUserErrorShape>();
 
       const refresh = async (): Promise<void> => {
         const [document, stored, status] = await Promise.all([
@@ -49,7 +64,7 @@ export default defineUiPlugin<Component>({
 
       onMount(() => {
         void refresh().catch((failure: unknown) =>
-          setError(failure instanceof Error ? failure.message : String(failure)),
+          setError(describeAzureFailure(failure)),
         );
       });
 
@@ -71,7 +86,7 @@ export default defineUiPlugin<Component>({
           setMessage("Azure settings saved. Connect to load models.");
           await refresh();
         } catch (failure) {
-          setError(failure instanceof Error ? failure.message : String(failure));
+          setError(describeAzureFailure(failure));
         } finally {
           setBusy(false);
         }
@@ -80,7 +95,7 @@ export default defineUiPlugin<Component>({
       const saveKey = async (): Promise<void> => {
         const value = keyDraft().trim();
         if (!value) {
-          setError("Enter an API key to save.");
+          setError(MISSING_KEY_DRAFT);
           return;
         }
         setBusy(true);
@@ -94,7 +109,7 @@ export default defineUiPlugin<Component>({
           setMessage("API key saved. Connect to use Azure models.");
           await refresh();
         } catch (failure) {
-          setError(failure instanceof Error ? failure.message : String(failure));
+          setError(describeAzureFailure(failure));
         } finally {
           setBusy(false);
         }
@@ -116,7 +131,7 @@ export default defineUiPlugin<Component>({
           );
         } catch (failure) {
           setConnected(false);
-          setError(failure instanceof Error ? failure.message : String(failure));
+          setError(describeAzureFailure(failure));
         } finally {
           setBusy(false);
         }
@@ -137,7 +152,7 @@ export default defineUiPlugin<Component>({
           setMessage("API key removed.");
           await refresh();
         } catch (failure) {
-          setError(failure instanceof Error ? failure.message : String(failure));
+          setError(describeAzureFailure(failure));
         } finally {
           setBusy(false);
         }
@@ -294,22 +309,46 @@ export default defineUiPlugin<Component>({
                 </Show>
               </div>
 
-              <p
-                class="mt-3 text-xs"
-                classList={{
-                  "text-[var(--success)]": connected() && !error(),
-                  "text-[var(--text-muted)]": !connected() && !error(),
-                  "text-[var(--danger)]": Boolean(error()),
-                }}
-                data-testid="azure-status"
-              >
-                {error() ??
-                  (connected()
-                    ? "Azure is connected for this Borg session."
-                    : authMode() === "api-key" && hasKey()
-                      ? "A key is saved. Verify it to enable Azure models."
-                      : message())}
-              </p>
+              <Show when={error()}>
+                {(failure) => (
+                  <div
+                    role="alert"
+                    class="mt-4 rounded-xl border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-3 py-3"
+                    data-testid="azure-error"
+                  >
+                    <p
+                      class="text-sm font-semibold text-[var(--danger)]"
+                      data-testid="azure-error-headline"
+                    >
+                      {failure().headline}
+                    </p>
+                    <p
+                      class="mt-1 text-sm text-[var(--text)]"
+                      data-testid="azure-error-next-step"
+                    >
+                      {failure().nextStep}
+                    </p>
+                  </div>
+                )}
+              </Show>
+              <Show when={!error()}>
+                <p
+                  class="mt-3 text-xs"
+                  classList={{
+                    "text-[var(--success)]": connected() && !busy(),
+                    "text-[var(--text-muted)]": !connected() || busy(),
+                  }}
+                  data-testid="azure-status"
+                >
+                  {busy()
+                    ? "Checking Azure…"
+                    : connected()
+                      ? "Azure is connected for this Borg session."
+                      : authMode() === "api-key" && hasKey()
+                        ? "A key is saved. Verify it to enable Azure models."
+                        : message()}
+                </p>
+              </Show>
             </div>
           </div>
         </Panel>

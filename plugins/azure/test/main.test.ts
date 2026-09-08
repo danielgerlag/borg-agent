@@ -1,17 +1,36 @@
+import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProviderDispatchPermit } from "@borg/plugin-sdk";
 import {
   AZURE_IMDS_TOKEN_URL,
   AzureProvider,
   AzureToolMap,
+  AzureUserError,
   SAFE_AZURE_ERRORS,
   buildAzureRequest,
+  classifyAzureStatus,
   createAzureTokenAcquirer,
+  formatAzureUserError,
   foundryResourceUrl,
+  parseAzureErrorBody,
+  parseAzureUserError,
   resolveAzureCompletionsUrl,
   resolveAzureModelsUrl,
 } from "../src/runtime";
 import { createAzureHarness } from "./harness";
+
+function azureMessage(key: keyof typeof SAFE_AZURE_ERRORS): string {
+  return formatAzureUserError(SAFE_AZURE_ERRORS[key]);
+}
+
+function expectAzureUserError(
+  error: unknown,
+  key: keyof typeof SAFE_AZURE_ERRORS,
+): void {
+  expect(error).toBeInstanceOf(AzureUserError);
+  expect(error).toMatchObject(SAFE_AZURE_ERRORS[key]);
+  expect(String(error)).not.toMatch(/borg\.azure\./);
+}
 
 const RESOURCE = "https://demo.openai.azure.com";
 
@@ -111,7 +130,7 @@ describe("Azure Foundry URL", () => {
       `${RESOURCE}/openai/v1/models?api-version=v1`,
     );
     expect(() => resolveAzureCompletionsUrl("http://example.com")).toThrow(
-      SAFE_AZURE_ERRORS.invalidEndpoint,
+      azureMessage("invalidEndpoint"),
     );
   });
 });
@@ -149,7 +168,7 @@ describe("Azure request conversion", () => {
     expect(Object.hasOwn(body, "max_completion_tokens")).toBe(false);
     expect(body.stream).toBe(true);
     expect(tools.resolve("tools_echo")).toBe("tools.echo");
-    expect(() => tools.alias("tools_echo")).toThrow(SAFE_AZURE_ERRORS.unknownTool);
+    expect(() => tools.alias("tools_echo")).toThrow(azureMessage("unknownTool"));
   });
 });
 
@@ -286,7 +305,8 @@ describe("Azure token acquirer", () => {
         throw new Error("missing");
       },
     });
-    await expect(acquire()).rejects.toThrow(SAFE_AZURE_ERRORS.missingCredential);
+    const error = await acquire().catch((failure: unknown) => failure);
+    expectAzureUserError(error, "missingCredential");
   });
 });
 
@@ -383,18 +403,19 @@ describe("AzureProvider", () => {
     if (!(error instanceof Error)) {
       throw error;
     }
-    expect(error.message).toBe(SAFE_AZURE_ERRORS.rejectedKey);
+    expectAzureUserError(error, "rejectedKey");
+    expect(error.message).toBe(azureMessage("rejectedKey"));
     expect(String(error)).not.toContain(secret);
   });
 
   it("maps 400/403/429/5xx, abort, timeout, and protocol failures", async () => {
     const secret = "azure-secret-value";
-    for (const [status, message] of [
-      [400, SAFE_AZURE_ERRORS.rejected],
-      [403, SAFE_AZURE_ERRORS.rejectedKey],
-      [429, SAFE_AZURE_ERRORS.rateLimited],
-      [500, SAFE_AZURE_ERRORS.unavailable],
-      [529, SAFE_AZURE_ERRORS.unavailable],
+    for (const [status, key] of [
+      [400, "rejected"],
+      [403, "rejectedKey"],
+      [429, "rateLimited"],
+      [500, "unavailable"],
+      [529, "unavailable"],
     ] as const) {
       const provider = new AzureProvider({
         fetchImpl: async () =>
@@ -413,7 +434,7 @@ describe("AzureProvider", () => {
           createProviderDispatchPermit(),
           new AbortController().signal,
         ),
-      ).rejects.toThrow(message);
+      ).rejects.toThrow(azureMessage(key));
     }
 
     const aborted = new AbortController();
@@ -434,7 +455,7 @@ describe("AzureProvider", () => {
         createProviderDispatchPermit(),
         aborted.signal,
       ),
-    ).rejects.toThrow(SAFE_AZURE_ERRORS.cancelled);
+    ).rejects.toThrow(azureMessage("cancelled"));
 
     const timingOut = new AzureProvider({
       timeoutMs: 20,
@@ -464,7 +485,7 @@ describe("AzureProvider", () => {
         createProviderDispatchPermit(),
         new AbortController().signal,
       ),
-    ).rejects.toThrow(SAFE_AZURE_ERRORS.timeout);
+    ).rejects.toThrow(azureMessage("timeout"));
 
     const malformed = new AzureProvider({
       fetchImpl: async () => sseResponse(["data: {not-json}"]),
@@ -482,7 +503,7 @@ describe("AzureProvider", () => {
         createProviderDispatchPermit(),
         new AbortController().signal,
       ),
-    ).rejects.toThrow(SAFE_AZURE_ERRORS.protocol);
+    ).rejects.toThrow(azureMessage("protocol"));
   });
 
   it("maps streamed tool calls", async () => {
@@ -532,7 +553,7 @@ describe("AzureProvider", () => {
         createProviderDispatchPermit(),
         new AbortController().signal,
       ),
-    ).rejects.toThrow(SAFE_AZURE_ERRORS.missingKey);
+    ).rejects.toThrow(azureMessage("missingKey"));
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
@@ -606,3 +627,194 @@ describe("borg.azure lifecycle", () => {
     fixture.restoreFetch();
   });
 });
+
+describe("AzureUserError", () => {
+  it("encodes headline and next step for IPC and parses them back", () => {
+    for (const parts of Object.values(SAFE_AZURE_ERRORS)) {
+      const encoded = formatAzureUserError(parts);
+      expect(encoded).toBe(`${parts.headline}\n${parts.nextStep}`);
+      expect(encoded).not.toMatch(/borg\.azure\./);
+      expect(parseAzureUserError(encoded)).toEqual(parts);
+    }
+  });
+
+  it("hides kernel command wrapping from the settings UI", () => {
+    expect(parseAzureUserError("Command borg.azure.connect failed")).toEqual({
+      headline: "Azure could not connect.",
+      nextStep:
+        "Check the endpoint, API version, and credentials, then try Verify and connect again.",
+    });
+  });
+
+  it("classifies 400 API version bodies without echoing them", () => {
+    const secret = "azure-secret-value";
+    const payload = {
+      error: {
+        code: "InvalidApiVersionParameter",
+        message: `The API version '2024-10-21' is not supported. ${secret}`,
+      },
+    };
+    expect(parseAzureErrorBody(payload)).toEqual({
+      code: "InvalidApiVersionParameter",
+      message: `The API version '2024-10-21' is not supported. ${secret}`,
+    });
+    const error = classifyAzureStatus(400, payload);
+    expectAzureUserError(error, "rejectedApiVersion");
+    expect(String(error)).not.toContain(secret);
+    expect(classifyAzureStatus(400, { error: { message: secret } })).toMatchObject(
+      SAFE_AZURE_ERRORS.rejected,
+    );
+    expect(classifyAzureStatus(401)).toMatchObject(SAFE_AZURE_ERRORS.rejectedKey);
+  });
+});
+
+describe("Azure verify user errors", () => {
+  it("maps missing Azure Identity credentials to a headline and next step", async () => {
+    const fetchImpl = vi.fn();
+    const provider = new AzureProvider({
+      fetchImpl,
+      endpoint: RESOURCE,
+      authMode: "azure-default",
+      acquireAzureToken: createAzureTokenAcquirer({
+        env: { BORG_AZURE_SKIP_MANAGED_IDENTITY: "yes" },
+        fetchImpl,
+        probeImds: vi.fn(),
+        execFile: async () => {
+          throw new Error("missing");
+        },
+      }),
+      getApiKey: async () => undefined,
+    });
+    const error = await provider.verify().catch((failure: unknown) => failure);
+    expectAzureUserError(error, "missingCredential");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("maps 401 verify to a credentials headline without leaking the body", async () => {
+    const secret = "azure-secret-value";
+    const provider = new AzureProvider({
+      fetchImpl: async () =>
+        new Response(`{"error":{"message":"${secret}"}}`, { status: 401 }),
+      endpoint: RESOURCE,
+      authMode: "api-key",
+      getApiKey: async () => secret,
+    });
+    const error = await provider.verify().catch((failure: unknown) => failure);
+    expectAzureUserError(error, "rejectedKey");
+    expect(String(error)).not.toContain(secret);
+  });
+
+  it("maps a 400 API version body to a two-line API version error", async () => {
+    const secret = "azure-secret-value";
+    const provider = new AzureProvider({
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "InvalidApiVersionParameter",
+              message: `The API version '2024-10-21' is not supported. ${secret}`,
+            },
+          }),
+          { status: 400 },
+        ),
+      endpoint: RESOURCE,
+      authMode: "api-key",
+      getApiKey: async () => secret,
+    });
+    const error = await provider.verify().catch((failure: unknown) => failure);
+    expectAzureUserError(error, "rejectedApiVersion");
+    expect(String(error)).not.toContain(secret);
+  });
+
+  it("maps an empty catalog to a deploy-a-model next step", async () => {
+    const provider = new AzureProvider({
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ data: [] }), { status: 200 }),
+      endpoint: RESOURCE,
+      authMode: "api-key",
+      getApiKey: async () => "azure-test-key",
+    });
+    const error = await provider.verify().catch((failure: unknown) => failure);
+    expectAzureUserError(error, "emptyCatalog");
+  });
+});
+
+describe("azureConnect user errors", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects Verify and connect when the API key is missing", async () => {
+    const fixture = createAzureHarness({ endpoint: RESOURCE });
+    const harness = await fixture.activate();
+    const error = await fixture.invokeConnect().catch((failure: unknown) => failure);
+    expectAzureUserError(error, "missingKey");
+    await harness.deactivate();
+    fixture.restoreFetch();
+  });
+
+  it("surfaces 401 from Verify and connect", async () => {
+    const secret = "azure-secret-value";
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(`{"error":{"message":"${secret}"}}`, { status: 401 }),
+    );
+    const fixture = createAzureHarness({ endpoint: RESOURCE, fetchImpl });
+    const harness = await fixture.activate();
+    fixture.secrets.set("apiKey", secret);
+    const error = await fixture.invokeConnect().catch((failure: unknown) => failure);
+    expectAzureUserError(error, "rejectedKey");
+    expect(String(error)).not.toContain(secret);
+    await harness.deactivate();
+    fixture.restoreFetch();
+  });
+
+  it("surfaces a 400 API version body from Verify and connect", async () => {
+    const secret = "azure-secret-value";
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              innererror: { code: "UnsupportedApiVersion" },
+              message: `Unrecognized api-version. ${secret}`,
+            },
+          }),
+          { status: 400 },
+        ),
+    );
+    const fixture = createAzureHarness({ endpoint: RESOURCE, fetchImpl });
+    const harness = await fixture.activate();
+    fixture.secrets.set("apiKey", secret);
+    const error = await fixture.invokeConnect().catch((failure: unknown) => failure);
+    expectAzureUserError(error, "rejectedApiVersion");
+    expect(String(error)).not.toContain(secret);
+    await harness.deactivate();
+    fixture.restoreFetch();
+  });
+
+  it("surfaces an empty catalog from Verify and connect", async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    );
+    const fixture = createAzureHarness({ endpoint: RESOURCE, fetchImpl });
+    const harness = await fixture.activate();
+    fixture.secrets.set("apiKey", "azure-test-key");
+    const error = await fixture.invokeConnect().catch((failure: unknown) => failure);
+    expectAzureUserError(error, "emptyCatalog");
+    await harness.deactivate();
+    fixture.restoreFetch();
+  });
+});
+
+describe("Azure settings error UI", () => {
+  it("declares a distinct headline and next-step alert", async () => {
+    const source = await readFile(new URL("../src/ui.tsx", import.meta.url), "utf8");
+    expect(source).toContain('data-testid="azure-error"');
+    expect(source).toContain('data-testid="azure-error-headline"');
+    expect(source).toContain('data-testid="azure-error-next-step"');
+    expect(source).toContain("parseAzureUserError");
+    expect(source).not.toMatch(/error\(\)\s*\?\?/);
+  });
+});
+
