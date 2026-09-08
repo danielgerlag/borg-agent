@@ -17,6 +17,7 @@ export const bundledUiPlugins: Readonly<Record<string, UiPluginLoader>> = {
   "borg.channel.m365": async () => import("@borg/plugin-channel-m365/ui"),
   "borg.channel.slack": async () => import("@borg/plugin-channel-slack/ui"),
   "borg.chat": async () => import("@borg/plugin-chat/ui"),
+  "borg.coinbase": async () => import("@borg/plugin-coinbase/ui"),
   "borg.copilot": async () => import("@borg/plugin-copilot/ui"),
   "borg.feedback": async () => import("@borg/plugin-feedback/ui"),
   "borg.graphs": async () => import("@borg/plugin-graphs/ui"),

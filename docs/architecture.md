@@ -910,6 +910,8 @@ Web search is two ordinary tool plugins, `borg.search.tavily` and `borg.search.b
 
 `borg.channel.m365` and `borg.channel.google` are `private` mail channel adapters on kernel `OAuthService`, and they register calendar, Drive, and contacts.search tools on the same plugins while `snapshot().connected`. Each registers the channel when enabled with a public native/desktop client id so inject works without a mailbox. Live inbox polling starts only while connected. `send` throws if disconnected; there is no fake receipt. Destinations are the connected mailbox plus `allowedRecipients` (max 64). Graph is pinned to `https://graph.microsoft.com` for mail, `calendarView`/`events`, Drive search/items, and GET `/v1.0/me/contacts`. Gmail is pinned to `https://gmail.googleapis.com`; Calendar and Drive use `https://www.googleapis.com` with allowlisted `/calendar/v3/calendars/primary/events` and `/drive/v3/files` paths only. Contacts search uses the People API origin `https://people.googleapis.com` for GET `/v1/people/me/connections` and GET `/v1/people:searchContacts` only. Auth endpoints are plugin constants. Extra OAuth scopes are Microsoft `Calendars.ReadWrite`, `Files.Read`, and `Contacts.Read`, and Google `calendar.events`, `drive.readonly`, and `contacts.readonly`. Expanding those scopes requires Disconnect then Connect (`prompt=consent`). Settings order is Microsoft 365 47 and Google 48. STARTTLS, IMAP XOAUTH2, SMTP, and Drive write are out of scope.
 
+`borg.coinbase` is the HiveMind Coinbase trading connector. It is not a communication channel. It registers `coinbase.trading.*` tools only while enabled with a CDP key name and a stored EC private key. HTTP is pinned to `https://api.coinbase.com` or `https://api-sandbox.coinbase.com` with an allowlisted Advanced Trade and v2 transaction path set. Auth is a per-request ES256 CDP JWT. `create_order` and `send_crypto` require approval. Settings order is 50.
+
 ## Prompt assembly and memory
 
 The kernel prompt assembler combines registered slots deterministically:
@@ -1244,3 +1246,5 @@ The Electron journey enables Tavily in settings, chats `scenario:search`, approv
 ## Slice 13 implementation record
 
 Slice 13 adds `borg.openai` as the second production `llmProvider` without changing the kernel, default persona, or mock path. The plugin talks to pinned `https://api.openai.com/v1/chat/completions` with raw `fetch`, Bearer auth, `redirect: "error"`, Chat Completions SSE, and a frozen GPT-5 Mini / Nano / GPT-5 catalog. Connect verifies with a non-billed `GET /v1/models/gpt-5-mini` derived from the completions URL. A saved key restores registration at activation with zero fetches. Wizard and settings order is 26 so Anthropic remains the first optional LLM step (order 25). `BORG_OPENAI_ENDPOINT` is honored only when `BORG_E2E=1` and the host is loopback.
+
+`borg.channel.slack` is a Socket Mode channel plugin. `borg.coinbase` is a trading tool plugin for the Coinbase Advanced Trade API.

@@ -1,0 +1,28 @@
+{
+  "id": "borg.coinbase",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-coinbase/main",
+  "ui": "@borg/plugin-coinbase/ui",
+  "permissions": [
+    "network:api.coinbase.com",
+    "network:api-sandbox.coinbase.com",
+    "secrets:read",
+    "secrets:write",
+    "tools.register",
+    "ui.settings"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.coinbase.disconnect",
+      "borg.coinbase.getStatus",
+      "borg.coinbase.verify"
+    ],
+    "kinds": [
+      "settingsPage",
+      "tool"
+    ]
+  }
+}
