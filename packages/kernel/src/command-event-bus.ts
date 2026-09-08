@@ -221,9 +221,13 @@ export class CommandEventBus {
       if (error instanceof CommandInvocationError) {
         throw error;
       }
-      throw new CommandInvocationError("failed", `Command ${commandId} failed`, {
-        cause: error,
-      });
+      throw new CommandInvocationError(
+        "failed",
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : `Command ${commandId} failed`,
+        { cause: error },
+      );
     } finally {
       if (timer !== undefined) {
         clearTimeout(timer);

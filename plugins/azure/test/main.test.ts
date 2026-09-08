@@ -96,18 +96,19 @@ function textStreamFrames(text = "Hello from Azure"): string[] {
 }
 
 describe("Azure Foundry URL", () => {
-  it("strips /api/projects/ and rejects non-https endpoints", () => {
+  it("strips /api/projects/ and omits dated api-version on the v1 path", () => {
     expect(foundryResourceUrl(`${RESOURCE}/`)).toBe(RESOURCE);
     expect(
       foundryResourceUrl("https://ai.azure.com/api/projects/my-project"),
     ).toBe("https://ai.azure.com");
     expect(resolveAzureCompletionsUrl(RESOURCE)).toBe(
-      `${RESOURCE}/openai/v1/chat/completions?api-version=2024-10-21`,
+      `${RESOURCE}/openai/v1/chat/completions`,
     );
     expect(
-      resolveAzureModelsUrl("https://ai.azure.com/api/projects/foo"),
-    ).toBe(
-      "https://ai.azure.com/openai/v1/models?api-version=2024-10-21",
+      resolveAzureModelsUrl("https://demo.services.ai.azure.com/api/projects/foo"),
+    ).toBe("https://demo.services.ai.azure.com/openai/v1/models");
+    expect(resolveAzureModelsUrl(RESOURCE, "v1")).toBe(
+      `${RESOURCE}/openai/v1/models?api-version=v1`,
     );
     expect(() => resolveAzureCompletionsUrl("http://example.com")).toThrow(
       SAFE_AZURE_ERRORS.invalidEndpoint,
@@ -584,9 +585,7 @@ describe("borg.azure lifecycle", () => {
   it("verifies api-key connect against Foundry models and persists ids", async () => {
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.method).toBe("GET");
-      expect(String(url)).toBe(
-        `${RESOURCE}/openai/v1/models?api-version=2024-10-21`,
-      );
+      expect(String(url)).toBe(`${RESOURCE}/openai/v1/models`);
       const headers = new Headers(init?.headers);
       expect(headers.get("api-key")).toBe("azure-test-key");
       expect(headers.get("authorization")).toBeNull();

@@ -85,12 +85,22 @@ export function foundryResourceUrl(endpoint: string): string {
   return index >= 0 ? trimmed.slice(0, index) : trimmed;
 }
 
+function isDatedAzureApiVersion(version: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}/.test(version);
+}
+
 export function withApiVersion(url: string, apiVersion: string): string {
   const version = apiVersion.trim();
   if (version.length === 0) {
     return url;
   }
   const parsed = new URL(url);
+  if (
+    parsed.pathname.includes("/openai/v1/") &&
+    isDatedAzureApiVersion(version)
+  ) {
+    return url;
+  }
   parsed.searchParams.set("api-version", version);
   return parsed.toString();
 }
