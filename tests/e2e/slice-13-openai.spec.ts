@@ -221,6 +221,7 @@ async function connectOpenAI(): Promise<void> {
 async function pickGpt5Mini(): Promise<void> {
   await page.getByTestId("settings-section-borg.chat.personas").click();
   await expect(page.getByTestId("personas-settings-page")).toBeVisible();
+  await expect(page.getByTestId("persona-editor")).toBeVisible();
   await page.getByTestId("persona-primary-model").selectOption(
     "borg.openai:gpt-5-mini",
   );

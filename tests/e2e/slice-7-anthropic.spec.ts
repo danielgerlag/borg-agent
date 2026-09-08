@@ -207,6 +207,7 @@ async function connectAnthropic(): Promise<void> {
 async function pickSonnet(): Promise<void> {
   await page.getByTestId("settings-section-borg.chat.personas").click();
   await expect(page.getByTestId("personas-settings-page")).toBeVisible();
+  await expect(page.getByTestId("persona-editor")).toBeVisible();
   await page.getByTestId("persona-primary-model").selectOption(
     "borg.anthropic:claude-sonnet-5",
   );

@@ -469,9 +469,9 @@ export function createPersonasSettings(
                   class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
                   data-testid="persona-loop-strategy"
                 >
-                  <option value="react">ReAct — think, then use tools</option>
+                  <option value="react">ReAct. Think, then use tools.</option>
                   <option value="code-act">
-                    CodeAct — write and run code to act
+                    CodeAct. Write and run code to act.
                   </option>
                 </select>
               </label>
