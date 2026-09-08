@@ -303,6 +303,39 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.channel.slack",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-channel-slack/main",
+      "ui": "@borg/plugin-channel-slack/ui",
+      "permissions": [
+        "channels.register",
+        "network:dynamic",
+        "network:websocket",
+        "runtime.background",
+        "secrets:read",
+        "secrets:write",
+        "ui.settings"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.channel.slack.disconnect",
+          "borg.channel.slack.getStatus",
+          "borg.channel.slack.verify"
+        ],
+        "kinds": [
+          "channel",
+          "settingsPage"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-channel-slack/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.chat",
       "version": "0.1.0",
       "engines": {
