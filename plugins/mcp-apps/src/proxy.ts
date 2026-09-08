@@ -1,7 +1,14 @@
 import {
   MCP_APP_BRIDGE_CHANNEL,
   MCP_APP_MAX_MESSAGE_BYTES,
+  buildAllowAttribute,
+  buildAppCsp,
+  encodeMcpAppCspQuery,
+  encodeMcpAppPermissionsQuery,
   mcpAppToolArgumentsSchema,
+  parseMcpAppNetworkGrant,
+  type McpAppCsp,
+  type McpAppPermissions,
   type McpAppRequestId,
   type McpAppSnapshot,
   type McpAppToolArguments,
@@ -250,13 +257,30 @@ export function createHostInitializeResult(
       isRecord(tool.inputSchema) &&
       tool.inputSchema.type === "object",
   );
+  const grant = parseMcpAppNetworkGrant(app.csp);
   return {
     protocolVersion:
       requestedProtocolVersion === MCP_APP_PROTOCOL_VERSION
         ? requestedProtocolVersion
         : MCP_APP_PROTOCOL_VERSION,
     hostInfo: { name: "Borg", version: "0.1.0" },
-    hostCapabilities: { serverTools: {} },
+    hostCapabilities: {
+      serverTools: {},
+      sandbox: {
+        csp: {
+          connectDomains: grant.connect,
+          resourceDomains: grant.resource,
+          frameDomains: grant.frame,
+          baseUriDomains: grant.base,
+        },
+        permissions: {
+          ...(app.permissions.camera ? { camera: {} } : {}),
+          ...(app.permissions.microphone ? { microphone: {} } : {}),
+          ...(app.permissions.geolocation ? { geolocation: {} } : {}),
+          ...(app.permissions.clipboardWrite ? { clipboardWrite: {} } : {}),
+        },
+      },
+    },
     hostContext: {
       displayMode: "inline",
       availableDisplayModes: ["inline"],
@@ -275,29 +299,25 @@ export function createHostInitializeResult(
   };
 }
 
-export function sandboxResourceReady(appHtml: string): object {
+export function sandboxResourceReady(
+  appHtml: string,
+  csp: McpAppCsp,
+  permissions: McpAppPermissions,
+): object {
+  const allow = buildAllowAttribute(permissions);
   return {
     jsonrpc: "2.0",
     method: SANDBOX_RESOURCE_READY_METHOD,
-    params: { html: appHtml },
+    params: {
+      html: appHtml,
+      csp: buildAppCsp(parseMcpAppNetworkGrant(csp)),
+      ...(allow !== undefined ? { allow } : {}),
+    },
   };
 }
 
-export function hardenAppHtml(html: string): string {
-  const policy = [
-    "default-src 'none'",
-    "script-src 'unsafe-inline'",
-    "style-src 'unsafe-inline'",
-    "img-src data: blob:",
-    "font-src data:",
-    "connect-src 'none'",
-    "media-src 'none'",
-    "object-src 'none'",
-    "frame-src 'none'",
-    "worker-src 'none'",
-    "base-uri 'none'",
-    "form-action 'none'",
-  ].join("; ");
+export function hardenAppHtml(html: string, csp: McpAppCsp): string {
+  const policy = buildAppCsp(parseMcpAppNetworkGrant(csp));
   const metadata =
     `<meta http-equiv="Content-Security-Policy" content="${policy}">` +
     '<meta name="referrer" content="no-referrer">';
@@ -366,10 +386,24 @@ export function createProxyUrl(input: {
   readonly instanceId: string;
   readonly nonce: string;
   readonly parentOrigin: string;
+  readonly csp?: McpAppCsp | undefined;
+  readonly permissions?: McpAppPermissions | undefined;
 }): string {
   const url = new URL("borg-embedded://mcp-app/proxy.html");
   url.searchParams.set("instanceId", input.instanceId);
   url.searchParams.set("nonce", input.nonce);
   url.searchParams.set("parentOrigin", input.parentOrigin);
+  if (input.csp !== undefined) {
+    const encoded = encodeMcpAppCspQuery(input.csp);
+    if (encoded !== undefined) {
+      url.searchParams.set("csp", encoded);
+    }
+  }
+  if (input.permissions !== undefined) {
+    const encoded = encodeMcpAppPermissionsQuery(input.permissions);
+    if (encoded !== undefined) {
+      url.searchParams.set("perm", encoded);
+    }
+  }
   return url.href;
 }

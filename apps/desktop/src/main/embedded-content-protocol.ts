@@ -1,6 +1,9 @@
 import {
   MCP_APP_BRIDGE_CHANNEL,
   MCP_APP_MAX_MESSAGE_BYTES,
+  buildPermissionsPolicy,
+  buildProxyCsp,
+  permissionsFromProxyUrl,
 } from "@borg/contracts";
 import {
   app,
@@ -76,20 +79,43 @@ const bridgeScript = `
     );
   }
   function validInit(value) {
-    return (
-      value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      Object.keys(value).length === 3 &&
-      value.jsonrpc === "2.0" &&
-      value.method === resourceReadyMethod &&
-      value.params &&
-      typeof value.params === "object" &&
-      !Array.isArray(value.params) &&
-      Object.keys(value.params).length === 1 &&
-      typeof value.params.html === "string" &&
-      new TextEncoder().encode(value.params.html).byteLength <= maxAppHtmlBytes
-    );
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value) ||
+      value.jsonrpc !== "2.0" ||
+      value.method !== resourceReadyMethod ||
+      !value.params ||
+      typeof value.params !== "object" ||
+      Array.isArray(value.params) ||
+      typeof value.params.html !== "string" ||
+      new TextEncoder().encode(value.params.html).byteLength > maxAppHtmlBytes
+    ) {
+      return false;
+    }
+    var paramKeys = Object.keys(value.params);
+    if (
+      paramKeys.length < 1 ||
+      paramKeys.length > 3 ||
+      !paramKeys.every(function (key) {
+        return key === "html" || key === "csp" || key === "allow";
+      })
+    ) {
+      return false;
+    }
+    if (
+      value.params.csp !== undefined &&
+      typeof value.params.csp !== "string"
+    ) {
+      return false;
+    }
+    if (
+      value.params.allow !== undefined &&
+      typeof value.params.allow !== "string"
+    ) {
+      return false;
+    }
+    return true;
   }
   function reserved(value) {
     return (
@@ -121,7 +147,14 @@ const bridgeScript = `
           return;
         }
         initialized = true;
-        app.srcdoc = event.data.payload.params.html;
+        var params = event.data.payload.params;
+        if (typeof params.csp === "string" && params.csp.length > 0) {
+          app.setAttribute("csp", params.csp);
+        }
+        if (typeof params.allow === "string" && params.allow.length > 0) {
+          app.setAttribute("allow", params.allow);
+        }
+        app.srcdoc = params.html;
         return;
       }
       var incoming = cleanPayload(event.data.payload);
@@ -150,45 +183,9 @@ const bridgeScript = `
 })();
 `;
 
-const policy = [
-  "default-src 'none'",
-  "script-src 'unsafe-inline'",
-  "style-src 'unsafe-inline'",
-  "frame-src 'self'",
-  "connect-src 'none'",
-  "img-src data: blob:",
-  "font-src data:",
-  "media-src 'none'",
-  "object-src 'none'",
-  "worker-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-].join("; ");
-
-const permissionsPolicy = [
-  "accelerometer=()",
-  "autoplay=()",
-  "camera=()",
-  "clipboard-read=()",
-  "clipboard-write=()",
-  "display-capture=()",
-  "fullscreen=()",
-  "geolocation=()",
-  "gyroscope=()",
-  "hid=()",
-  "idle-detection=()",
-  "magnetometer=()",
-  "microphone=()",
-  "midi=()",
-  "payment=()",
-  "publickey-credentials-get=()",
-  "screen-wake-lock=()",
-  "serial=()",
-  "usb=()",
-  "window-management=()",
-].join(", ");
-
-const proxyDocument = `<!DOCTYPE html>
+function proxyDocument(): string {
+  const policy = buildProxyCsp();
+  return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -201,6 +198,7 @@ const proxyDocument = `<!DOCTYPE html>
 <script>${bridgeScript}</script>
 </body>
 </html>`;
+}
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -270,7 +268,11 @@ export function installEmbeddedContentProtocol(): () => void {
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
     }
-    return new Response(proxyDocument, {
+    const permissionsPolicy = buildPermissionsPolicy(
+      permissionsFromProxyUrl(request.url),
+    );
+    const policy = buildProxyCsp();
+    return new Response(proxyDocument(), {
       status: 200,
       headers: {
         "Cache-Control": "no-store",

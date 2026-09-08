@@ -1,7 +1,9 @@
 import {
+  grantFromProxyUrl,
   mcpAppDiscovered,
   mcpAppSnapshotSchema,
   mcpAppsInvokeTool,
+  permissionsFromProxyUrl,
 } from "@borg/contracts";
 import { describe, expect, it } from "vitest";
 import {
@@ -186,7 +188,18 @@ describe("MCP App bridge validation", () => {
     );
     expect(result).toMatchObject({
       protocolVersion: "2026-01-26",
-      hostCapabilities: { serverTools: {} },
+      hostCapabilities: {
+        serverTools: {},
+        sandbox: {
+          csp: {
+            connectDomains: [],
+            resourceDomains: [],
+            frameDomains: [],
+            baseUriDomains: [],
+          },
+          permissions: {},
+        },
+      },
       hostContext: {
         displayMode: "inline",
         availableDisplayModes: ["inline"],
@@ -220,15 +233,55 @@ describe("MCP App bridge validation", () => {
       hostContext: { displayMode: "inline" },
     });
     expect(withoutSafeTool).not.toHaveProperty("hostContext.toolInfo");
+
+    const granted = createHostInitializeResult(
+      {
+        ...appSnapshot(),
+        csp: {
+          connectDomains: ["https://api.example.com", "http://evil.example"],
+          resourceDomains: [],
+          frameDomains: [],
+          baseUriDomains: [],
+        },
+        permissions: {
+          camera: true,
+          microphone: false,
+          geolocation: false,
+          clipboardWrite: false,
+        },
+      },
+      "2026-01-26",
+    );
+    expect(granted).toMatchObject({
+      hostCapabilities: {
+        sandbox: {
+          csp: { connectDomains: ["https://api.example.com"] },
+          permissions: { camera: {} },
+        },
+      },
+    });
   });
 });
+
+const emptyCsp = {
+  connectDomains: [],
+  resourceDomains: [],
+  frameDomains: [],
+  baseUriDomains: [],
+};
+const emptyPermissions = {
+  camera: false,
+  microphone: false,
+  geolocation: false,
+  clipboardWrite: false,
+};
 
 describe("MCP App document isolation", () => {
   const appHtml =
     '<!DOCTYPE html><html><head></head><body><script>window.parent.postMessage({jsonrpc:"2.0"},"*")</script></body></html>';
 
   it("adds a deny-by-default policy to the inner document", () => {
-    const hardened = hardenAppHtml(appHtml);
+    const hardened = hardenAppHtml(appHtml, emptyCsp);
     expect(hardened).toContain("default-src 'none'");
     expect(hardened).toContain("connect-src 'none'");
     expect(hardened).toContain("frame-src 'none'");
@@ -236,15 +289,27 @@ describe("MCP App document isolation", () => {
     expect(hardened).toContain('name="referrer" content="no-referrer"');
   });
 
+  it("interpolates declared connect domains into the inner policy", () => {
+    const hardened = hardenAppHtml(appHtml, {
+      ...emptyCsp,
+      connectDomains: ["https://api.example.com"],
+    });
+    expect(hardened).toContain("connect-src https://api.example.com");
+    expect(hardened).not.toContain("connect-src 'none'");
+  });
+
   it("injects policy before any untrusted document content", () => {
     const hostile =
       '<!DOCTYPE html><html data-value=">"><script>const fake = "<head>"</script><body></body></html>';
-    const hardened = hardenAppHtml(hostile);
+    const hardened = hardenAppHtml(hostile, emptyCsp);
     expect(hardened.indexOf("Content-Security-Policy")).toBeLessThan(
       hardened.indexOf("<script>"),
     );
     expect(() =>
-      hardenAppHtml('<!DOCTYPE html><!-- <html> --><body></body>'),
+      hardenAppHtml(
+        '<!DOCTYPE html><!-- <html> --><body></body>',
+        emptyCsp,
+      ),
     ).toThrow(/document envelope/);
   });
 
@@ -261,7 +326,25 @@ describe("MCP App document isolation", () => {
     expect(url.hostname).toBe("mcp-app");
     expect(url.pathname).toBe("/proxy.html");
     expect(url.searchParams.get("nonce")).toBe(nonce);
+    expect(url.searchParams.get("csp")).toBeNull();
+    expect(url.searchParams.get("perm")).toBeNull();
     expect(candidate).not.toContain("</script>");
+    const grantedUrl = createProxyUrl({
+      instanceId: "instance",
+      nonce: "nonce",
+      parentOrigin: "null",
+      csp: {
+        ...emptyCsp,
+        connectDomains: ["https://api.example.com"],
+      },
+      permissions: { ...emptyPermissions, camera: true },
+    });
+    expect(grantFromProxyUrl(grantedUrl).connect).toEqual([
+      "https://api.example.com",
+    ]);
+    expect(permissionsFromProxyUrl(grantedUrl)).toMatchObject({
+      camera: true,
+    });
     const ready = {
       jsonrpc: "2.0",
       method: SANDBOX_PROXY_READY_METHOD,
@@ -269,10 +352,27 @@ describe("MCP App document isolation", () => {
     };
     expect(isProxyReady(ready)).toBe(true);
     expect(isProxyReady({ ...ready, extra: true })).toBe(false);
-    expect(sandboxResourceReady("<!DOCTYPE html>")).toEqual({
+    expect(
+      sandboxResourceReady("<!DOCTYPE html>", emptyCsp, emptyPermissions),
+    ).toEqual({
       jsonrpc: "2.0",
       method: SANDBOX_RESOURCE_READY_METHOD,
-      params: { html: "<!DOCTYPE html>" },
+      params: {
+        html: "<!DOCTYPE html>",
+        csp: expect.stringContaining("connect-src 'none'"),
+      },
+    });
+    expect(
+      sandboxResourceReady(
+        "<!DOCTYPE html>",
+        { ...emptyCsp, connectDomains: ["https://api.example.com"] },
+        { ...emptyPermissions, camera: true },
+      ),
+    ).toMatchObject({
+      params: {
+        allow: "camera",
+        csp: expect.stringContaining("connect-src https://api.example.com"),
+      },
     });
     expect(isSandboxReservedMessage(ready)).toBe(true);
     expect(
