@@ -191,6 +191,26 @@ const bridge = Object.freeze({
       });
     },
   }),
+  plugins: Object.freeze({
+    list: (capability: string): Promise<unknown> => {
+      assertShellCapability(capability);
+      return invokeKernel("borg:kernel:call", {
+        method: "plugins.list",
+        args: { capability },
+      });
+    },
+    setEnabled: (
+      capability: string,
+      pluginId: string,
+      enabled: boolean,
+    ): Promise<unknown> => {
+      assertShellCapability(capability);
+      return invokeKernel("borg:kernel:call", {
+        method: "plugins.setEnabled",
+        args: { capability, pluginId, enabled },
+      });
+    },
+  }),
   loops: Object.freeze({
     start: (capability: string, input: unknown): Promise<unknown> =>
       invokeKernel("borg:kernel:call", {

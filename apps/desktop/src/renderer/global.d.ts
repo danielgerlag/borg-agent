@@ -37,6 +37,15 @@ declare global {
     readonly secretBackend: string;
   }
 
+  interface PluginCatalogEntry {
+    readonly id: string;
+    readonly version: string;
+    readonly status: string;
+    readonly enabled: boolean;
+    readonly locked: boolean;
+    readonly lockReason?: string;
+  }
+
   interface RendererNotification {
     readonly id: string;
     readonly sourcePluginId: string;
@@ -95,6 +104,14 @@ declare global {
     };
     readonly setup: {
       complete(capability: string): Promise<SetupSnapshot>;
+    };
+    readonly plugins: {
+      list(capability: string): Promise<readonly PluginCatalogEntry[]>;
+      setEnabled(
+        capability: string,
+        pluginId: string,
+        enabled: boolean,
+      ): Promise<PluginCatalogEntry>;
     };
     readonly loops: {
       start(

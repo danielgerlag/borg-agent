@@ -106,6 +106,7 @@ let setupSchemaRegistration: Disposable | undefined;
 let pluginEnablementSchemaRegistration: Disposable | undefined;
 let startupRecovery: { readonly message: string } | undefined;
 let windowServicesReady = false;
+let pluginReloadPaused = 0;
 let quitting = false;
 let shutdownComplete = false;
 let currentTrayMenuLabels: readonly string[] = [];
@@ -619,6 +620,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     pluginLifecycleSubscription = pluginManager.subscribe(() => {
       if (
+        pluginReloadPaused === 0 &&
         windowServicesReady &&
         !quitting &&
         mainWindow &&
@@ -756,6 +758,16 @@ if (!app.requestSingleInstanceLock()) {
       getMainWindow: () => mainWindow,
       requestQuit: () => {
         void requestQuit();
+      },
+      runWithPausedPluginReload: async (operation) => {
+        pluginReloadPaused += 1;
+        try {
+          return await operation();
+        } finally {
+          // Lifecycle subscribers run on a queued microtask.
+          await Promise.resolve();
+          pluginReloadPaused -= 1;
+        }
       },
     });
     installTestApi();

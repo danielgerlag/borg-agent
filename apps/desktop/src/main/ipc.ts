@@ -98,6 +98,18 @@ const kernelCallSchema = z.discriminatedUnion("method", [
     args: z.object({ capability: z.string().uuid() }),
   }),
   z.object({
+    method: z.literal("plugins.list"),
+    args: z.object({ capability: z.string().uuid() }),
+  }),
+  z.object({
+    method: z.literal("plugins.setEnabled"),
+    args: z.object({
+      capability: z.string().uuid(),
+      pluginId: z.string().regex(/^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/),
+      enabled: z.boolean(),
+    }),
+  }),
+  z.object({
     method: z.literal("loops.start"),
     args: z.object({
       capability: z.string().uuid(),
@@ -321,6 +333,7 @@ export interface IpcBridgeOptions {
   completeSetup(): Promise<Readonly<Record<string, unknown>>>;
   getMainWindow(): BrowserWindow | undefined;
   requestQuit(): void;
+  runWithPausedPluginReload<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void> {
@@ -586,6 +599,23 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
             throw new Error("Renderer shell capability is invalid");
           }
           return success(await options.completeSetup());
+        case "plugins.list":
+          if (request.args.capability !== options.shellCapability) {
+            throw new Error("Renderer shell capability is invalid");
+          }
+          return success(options.plugins.listCatalog());
+        case "plugins.setEnabled":
+          if (request.args.capability !== options.shellCapability) {
+            throw new Error("Renderer shell capability is invalid");
+          }
+          return success(
+            await options.runWithPausedPluginReload(() =>
+              options.plugins.setEnabled(
+                request.args.pluginId,
+                request.args.enabled,
+              ),
+            ),
+          );
         case "loops.start": {
           const pluginId = resolveUiPlugin(
             options.plugins,
