@@ -161,7 +161,7 @@ export const App: Component<AppProps> = (props) => {
         step.label.toLowerCase().includes("persona") ||
         step.label.toLowerCase().includes("model")
       ) {
-        return "Choose assistant";
+        return "Choose persona";
       }
       return step.label;
     }),

@@ -17,7 +17,6 @@ import {
   type EmbeddedContentSnapshot,
   type ChatSession,
   type ChatUsage,
-  type ModelDescriptor,
   type Persona,
   type WorkspaceFile,
 } from "@borg/contracts";
@@ -35,7 +34,6 @@ import {
   MessageSquarePlus,
   Send,
   Trash2,
-  UserRoundCog,
 } from "lucide-solid";
 import {
   For,
@@ -49,7 +47,8 @@ import {
 } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
 import { adoptChatDocument } from "./adopt-document";
-import { displayModelName, matchesModelPreference } from "./model-preference";
+import { createPersonaWizardStep } from "./persona-setup";
+import { createPersonasSettings } from "./personas-settings";
 
 type ChatDocument = z.infer<typeof chatDocumentSchema>;
 
@@ -1235,229 +1234,6 @@ export default defineUiPlugin<Component>({
       );
     };
 
-    const PersonaSetup: Component = () => {
-      const [personas, setPersonas] = createSignal<readonly Persona[]>([]);
-      const [models, setModels] = createSignal<readonly ModelDescriptor[]>([]);
-      const [selected, setSelected] = createSignal("");
-      const [selectedModel, setSelectedModel] = createSignal("");
-      const [name, setName] = createSignal("");
-      const [instructions, setInstructions] = createSignal("");
-      const [status, setStatus] = createSignal("Loading personas…");
-
-      const ensureAvailableModel = async (
-        persona: Persona,
-        availableModels: readonly ModelDescriptor[],
-      ): Promise<string | undefined> => {
-        const configured = persona.preferredModels
-          .map((preference) =>
-            availableModels.find((model) =>
-              matchesModelPreference(model, preference),
-            ),
-          )
-          .find((model) => model !== undefined);
-        const fallback = availableModels[0]?.preferenceId;
-        if (!configured && fallback) {
-          await context.personas.update(persona.id, {
-            preferredModels: [
-              fallback,
-              ...persona.preferredModels.filter(
-                (preference) => preference !== fallback,
-              ),
-            ],
-          });
-        }
-        return configured?.preferenceId ?? fallback;
-      };
-
-      const load = async (): Promise<void> => {
-        const [available, current, availableModels] = await Promise.all([
-          context.personas.list(),
-          context.personas.getDefault(),
-          context.models.list(),
-        ]);
-        setPersonas(available);
-        setModels(availableModels);
-        setSelected(current.id);
-        const model = await ensureAvailableModel(current, availableModels);
-        setSelectedModel(model ?? "");
-        setPersonaReady(model !== undefined);
-        setStatus(
-          model ? "Assistant ready" : "Choose an available model to continue",
-        );
-      };
-
-      onMount(() => {
-        void load().catch((error: unknown) => {
-          setPersonaReady(false);
-          setStatus(describeError(error));
-        });
-      });
-
-      const choose = async (personaId: string): Promise<void> => {
-        setSelected(personaId);
-        setStatus("Saving…");
-        try {
-          await context.personas.setDefault(personaId);
-          const persona = await context.personas.get(personaId);
-          const model = persona
-            ? await ensureAvailableModel(persona, models())
-            : undefined;
-          setSelectedModel(model ?? "");
-          setPersonaReady(model !== undefined);
-          setStatus("Default assistant saved");
-        } catch (error) {
-          setPersonaReady(false);
-          setStatus(describeError(error));
-        }
-      };
-
-      const chooseModel = async (preferenceId: string): Promise<void> => {
-        if (!preferenceId || !selected()) {
-          setPersonaReady(false);
-          return;
-        }
-        setSelectedModel(preferenceId);
-        setStatus("Saving model…");
-        try {
-          const persona = await context.personas.get(selected());
-          if (!persona) {
-            throw new Error("Selected persona is unavailable");
-          }
-          await context.personas.update(persona.id, {
-            preferredModels: [
-              preferenceId,
-              ...persona.preferredModels.filter(
-                (preference) => preference !== preferenceId,
-              ),
-            ],
-          });
-          setPersonaReady(true);
-          setStatus("Default model saved");
-        } catch (error) {
-          setPersonaReady(false);
-          setStatus(describeError(error));
-        }
-      };
-
-      const createPersona = async (): Promise<void> => {
-        const slug = name()
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9_-]+/g, "-")
-          .replace(/^-+|-+$/g, "");
-        if (!slug || !instructions().trim()) {
-          setStatus("Name and instructions are required");
-          return;
-        }
-        setStatus("Creating…");
-        try {
-          const persona = await context.personas.create({
-            id: `user/${slug}`,
-            name: name().trim(),
-            instructions: instructions().trim(),
-            preferredModels: [selectedModel()],
-            secondaryModels: [],
-            allowedTools: ["*"],
-            mcpServers: [],
-            loopStrategy: "react",
-            toolExecutionMode: "sequential-partial",
-            skillIds: [],
-            contextMapStrategy: "general",
-            archived: false,
-          });
-          await context.personas.setDefault(persona.id);
-          setName("");
-          setInstructions("");
-          await load();
-          setSelected(persona.id);
-          setStatus("Custom assistant created");
-        } catch (error) {
-          setStatus(describeError(error));
-        }
-      };
-
-      return (
-        <section data-testid="wizard-persona-step">
-          <div class="flex items-center gap-3">
-            <UserRoundCog
-              aria-hidden="true"
-              size={20}
-              class="text-[var(--accent)]"
-            />
-            <div>
-              <h3 class="text-xl font-semibold">Choose your assistant</h3>
-              <p class="text-xs text-[var(--text-muted)]">
-                Pick who Borg should use for new conversations. The recommended
-                defaults are ready to go.
-              </p>
-            </div>
-          </div>
-          <label class="mt-5 block text-sm text-[var(--text-muted)]">
-            Model
-            <select
-              value={selectedModel()}
-              onFocus={() => void load()}
-              onChange={(event) =>
-                void chooseModel(event.currentTarget.value)
-              }
-              class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-              data-testid="wizard-model-select"
-            >
-              <For each={models()}>
-                {(model) => (
-                  <option value={model.preferenceId}>
-                    {displayModelName(model)}
-                  </option>
-                )}
-              </For>
-            </select>
-          </label>
-          <label class="mt-4 block text-sm text-[var(--text-muted)]">
-            Assistant
-            <select
-              value={selected()}
-              onChange={(event) => void choose(event.currentTarget.value)}
-              class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-              data-testid="wizard-persona-select"
-            >
-              <For each={personas()}>
-                {(persona) => <option value={persona.id}>{persona.name}</option>}
-              </For>
-            </select>
-          </label>
-          <details class="mt-5 rounded-xl border border-[var(--border)] p-4">
-            <summary class="cursor-pointer text-sm font-semibold">
-              Create a custom assistant
-            </summary>
-            <input
-              value={name()}
-              onInput={(event) => setName(event.currentTarget.value)}
-              class="mt-4 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-              placeholder="Assistant name"
-              data-testid="settings-persona-name"
-            />
-            <textarea
-              value={instructions()}
-              onInput={(event) => setInstructions(event.currentTarget.value)}
-              class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-              placeholder="Instructions"
-              data-testid="settings-persona-instructions"
-            />
-            <button
-              type="button"
-              class="mt-3 rounded-xl border border-[var(--accent)] px-4 py-2 text-sm text-[var(--accent)]"
-              disabled={!selectedModel()}
-              onClick={() => void createPersona()}
-              data-testid="settings-persona-create"
-            >
-              Create and select
-            </button>
-          </details>
-          <p class="mt-3 text-xs text-[var(--text-muted)]">{status()}</p>
-        </section>
-      );
-    };
-
     const ActiveSessions: Component = () => {
       const [sessions, setSessions] = createSignal<readonly ChatSession[]>([]);
       const activeSessions = createMemo(() =>
@@ -1534,17 +1310,17 @@ export default defineUiPlugin<Component>({
     });
     const wizard = context.ui.registerWizardStep({
       id: "borg.chat.persona",
-      label: "Choose assistant",
+      label: "Choose persona",
       order: 30,
       required: true,
       isComplete: personaReady,
-      component: PersonaSetup,
+      component: createPersonaWizardStep(context, setPersonaReady),
     });
     const settings = context.ui.registerSettingsPage({
       id: "borg.chat.personas",
-      label: "Assistants",
+      label: "Personas",
       order: 10,
-      component: PersonaSetup,
+      component: createPersonasSettings(context),
     });
     const widget = context.ui.registerFlightDeckWidget({
       id: "borg.chat.active-sessions",

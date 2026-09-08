@@ -256,18 +256,17 @@ test("answers feedback in the shared interaction UI and finishes in thread", asy
   await expect(page.getByTestId("chat-session-status")).toHaveText("Ready");
 });
 
-test("creates an assistant and uses it for new chats", async () => {
+test("creates a persona and uses it for new chats", async () => {
   await page.getByTestId("nav-settings").click();
   await page.getByTestId("settings-section-borg.chat.personas").click();
-  await expect(page.getByTestId("wizard-persona-step")).toBeVisible();
-  await page.getByText("Create a custom assistant").click();
+  await expect(page.getByTestId("personas-settings-page")).toBeVisible();
+  await page.getByTestId("persona-new").click();
   await page.getByTestId("settings-persona-name").fill("Code reviewer");
-  await page
-    .getByTestId("settings-persona-instructions")
-    .fill("Review code carefully.");
+  await page.getByTestId("settings-persona-instructions").fill("Review code carefully.");
   await page.getByTestId("settings-persona-create").click();
-  await expect(page.getByTestId("wizard-persona-select")).toHaveValue(
-    "user/code-reviewer",
+  await expect(page.getByTestId("persona-row-user/code-reviewer")).toHaveAttribute(
+    "aria-current",
+    "true",
   );
   await page.getByTestId("nav-chat").click();
   await page.getByTestId("chat-new-session").click();
