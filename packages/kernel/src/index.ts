@@ -105,8 +105,13 @@ export {
   type NetworkServiceOptions,
 } from "./network-service";
 export {
+  PLUGIN_ENABLEMENT_NAMESPACE,
+  pluginEnablementSchema,
+} from "./plugin-enablement";
+export {
   PluginManager,
   type ActivePluginMetadata,
+  type PluginCatalogEntry,
   type PluginManagerOptions,
   type PluginRecord,
   type PluginSource,

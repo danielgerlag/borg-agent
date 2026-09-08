@@ -47,6 +47,10 @@ import type { OAuthService } from "./oauth-service";
 import type { WebSocketService } from "./websocket-service";
 import type { A2AService } from "./a2a-service";
 import type { WorkspaceService } from "./workspace-service";
+import {
+  PLUGIN_ENABLEMENT_NAMESPACE,
+  pluginEnablementSchema,
+} from "./plugin-enablement";
 
 export type PluginStatus =
   | "discovered"
@@ -67,6 +71,15 @@ export interface PluginRecord {
   readonly version: string;
   readonly status: PluginStatus;
   readonly error?: string;
+}
+
+export interface PluginCatalogEntry {
+  readonly id: string;
+  readonly version: string;
+  readonly status: PluginStatus;
+  readonly enabled: boolean;
+  readonly locked: boolean;
+  readonly lockReason?: string;
 }
 
 export interface ActivePluginMetadata {
@@ -231,6 +244,9 @@ async function withTimeout(
 
 export class PluginManager {
   readonly #records = new Map<string, PluginRecord>();
+  readonly #sources = new Map<string, PluginSource>();
+  readonly #locks = new Map<string, string>();
+  #disabled = new Set<string>();
   readonly #active = new Map<string, ActivePlugin>();
   readonly #activationOrder: string[] = [];
   readonly #subscribers = new Map<symbol, () => void | Promise<void>>();
@@ -293,6 +309,7 @@ export class PluginManager {
     }
 
     const manifest: BorgPluginManifest = parsedManifest.data;
+    this.#sources.set(manifest.id, source);
     const reservedEvent = manifest.contributes.events?.find((eventId) =>
       isKernelOnlyEvent(eventId),
     );
@@ -1688,13 +1705,31 @@ export class PluginManager {
   }
 
   async activateAll(sources: readonly PluginSource[]): Promise<readonly PluginRecord[]> {
+    this.#disabled = new Set(await this.#readDisabledIds());
     const records: PluginRecord[] = [];
     for (const source of sources) {
+      const parsed = pluginManifestSchema.safeParse(source.manifest);
+      if (parsed.success) {
+        this.#sources.set(parsed.data.id, source);
+        if (
+          this.#disabled.has(parsed.data.id) &&
+          !this.#locks.has(parsed.data.id)
+        ) {
+          const record: PluginRecord = {
+            id: parsed.data.id,
+            version: parsed.data.version,
+            status: "disabled",
+          };
+          this.#records.set(parsed.data.id, record);
+          this.#publishLifecycle();
+          records.push(record);
+          continue;
+        }
+      }
       try {
         records.push(await this.activate(source));
       } catch (error) {
         console.error("[kernel] plugin activation failed", error);
-        const parsed = pluginManifestSchema.safeParse(source.manifest);
         if (parsed.success) {
           const record = this.#records.get(parsed.data.id);
           if (record) {
@@ -1704,6 +1739,66 @@ export class PluginManager {
       }
     }
     return records;
+  }
+
+  lock(pluginId: string, reason: string): void {
+    this.#locks.set(pluginId, reason);
+  }
+
+  listCatalog(): readonly PluginCatalogEntry[] {
+    const ids = new Set([...this.#sources.keys(), ...this.#records.keys()]);
+    return [...ids]
+      .map((pluginId) => this.#toCatalogEntry(pluginId))
+      .sort((left, right) => {
+        if (left.locked !== right.locked) {
+          return left.locked ? -1 : 1;
+        }
+        return left.id.localeCompare(right.id);
+      });
+  }
+
+  async setEnabled(
+    pluginId: string,
+    enabled: boolean,
+  ): Promise<PluginCatalogEntry> {
+    const source = this.#sources.get(pluginId);
+    const record = this.#records.get(pluginId);
+    if (!source && !record) {
+      throw new Error(`Unknown plugin ${pluginId}`);
+    }
+    const lockReason = this.#locks.get(pluginId);
+    if (lockReason !== undefined) {
+      throw new Error(`Plugin ${pluginId} is locked: ${lockReason}`);
+    }
+
+    const nextDisabled = new Set(this.#disabled);
+    if (enabled) {
+      nextDisabled.delete(pluginId);
+    } else {
+      nextDisabled.add(pluginId);
+    }
+    await this.#writeDisabledIds(nextDisabled);
+    this.#disabled = nextDisabled;
+
+    if (enabled) {
+      if (!this.#active.has(pluginId)) {
+        if (!source) {
+          throw new Error(`Plugin ${pluginId} has no stored source`);
+        }
+        await this.activate(source);
+      }
+    } else if (this.#active.has(pluginId)) {
+      await this.deactivate(pluginId);
+    } else {
+      this.#records.set(pluginId, {
+        id: pluginId,
+        version: record?.version ?? this.#sourceVersion(pluginId),
+        status: "disabled",
+      });
+      this.#publishLifecycle();
+    }
+
+    return this.#toCatalogEntry(pluginId);
   }
 
   async deactivate(pluginId: string): Promise<void> {
@@ -1867,6 +1962,58 @@ export class PluginManager {
           console.error("[kernel] plugin lifecycle subscriber failed", error),
         );
     }
+  }
+
+  async #readDisabledIds(): Promise<readonly string[]> {
+    const config = this.#options.config;
+    if (!config) {
+      return [];
+    }
+    try {
+      const document = await config.get(PLUGIN_ENABLEMENT_NAMESPACE);
+      return pluginEnablementSchema.parse(document).disabled;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message ===
+          `Config schema for ${PLUGIN_ENABLEMENT_NAMESPACE} is unavailable`
+      ) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async #writeDisabledIds(disabled: ReadonlySet<string>): Promise<void> {
+    const config = this.#options.config;
+    if (!config) {
+      return;
+    }
+    await config.update(PLUGIN_ENABLEMENT_NAMESPACE, {
+      disabled: [...disabled],
+    });
+  }
+
+  #sourceVersion(pluginId: string): string {
+    const source = this.#sources.get(pluginId);
+    if (!source) {
+      return "0.0.0";
+    }
+    const parsed = pluginManifestSchema.safeParse(source.manifest);
+    return parsed.success ? parsed.data.version : "0.0.0";
+  }
+
+  #toCatalogEntry(pluginId: string): PluginCatalogEntry {
+    const record = this.#records.get(pluginId);
+    const lockReason = this.#locks.get(pluginId);
+    const entry = {
+      id: pluginId,
+      version: record?.version ?? this.#sourceVersion(pluginId),
+      status: record?.status ?? "discovered",
+      enabled: !this.#disabled.has(pluginId),
+      locked: lockReason !== undefined,
+    };
+    return lockReason === undefined ? entry : { ...entry, lockReason };
   }
 
   async #disposeAll(

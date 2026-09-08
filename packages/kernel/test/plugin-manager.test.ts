@@ -26,6 +26,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CommandEventBus,
   CommandInvocationError,
+  ConfigFacade,
   CostLedger,
   DurableModelCallJournal,
   ExecutionSecurityService,
@@ -36,6 +37,8 @@ import {
   OAuthService,
   PluginManager,
   PersistenceRegistry,
+  PLUGIN_ENABLEMENT_NAMESPACE,
+  pluginEnablementSchema,
   ProcessSupervisor,
   ScannerRegistry,
   satisfiesBorgEngine,
@@ -166,6 +169,24 @@ async function bindTestExecution(
     },
     "detached",
   );
+}
+
+async function createEnablementManager(disabled: readonly string[] = []) {
+  const persistence = new PersistenceRegistry();
+  persistence.registerConfigStore("test.config", new MemoryConfigStore());
+  const config = new ConfigFacade(persistence);
+  config.registerSchema(PLUGIN_ENABLEMENT_NAMESPACE, pluginEnablementSchema);
+  if (disabled.length > 0) {
+    await config.update(PLUGIN_ENABLEMENT_NAMESPACE, {
+      disabled: [...disabled],
+    });
+  }
+  const bus = new CommandEventBus();
+  return {
+    bus,
+    config,
+    manager: new PluginManager(bus, "0.1.0", { config }),
+  };
 }
 
 function createSource(id: string, engine = "^0.1.0"): PluginSource {
@@ -1733,6 +1754,115 @@ describe("oauth host API", () => {
     await manager.deactivate(allowed.id);
     expect(oauth.countOwned(allowed.id)).toBe(0);
     oauth.shutdown();
+  });
+
+  it("skips a disabled plugin during activateAll without calling activate", async () => {
+    const { manager } = await createEnablementManager(["test.skip"]);
+    const skipped = createSource("test.skip");
+    const activate = vi.fn();
+    const loadMain = vi.fn(async () =>
+      definePlugin({
+        id: "test.skip",
+        version: "0.1.0",
+        engines: { borg: "^0.1.0" },
+        permissions: [],
+        contributes: { commands: [ping.id] },
+        activate,
+      }),
+    );
+    const kept = createSource("test.kept");
+
+    await manager.activateAll([
+      { ...skipped, loadMain },
+      kept,
+    ]);
+
+    expect(loadMain).not.toHaveBeenCalled();
+    expect(activate).not.toHaveBeenCalled();
+    expect(manager.isActive("test.skip")).toBe(false);
+    expect(manager.isActive("test.kept")).toBe(true);
+    expect(manager.getRecords()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "test.skip", status: "disabled" }),
+        expect.objectContaining({ id: "test.kept", status: "active" }),
+      ]),
+    );
+    expect(manager.listCatalog()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "test.skip",
+          status: "disabled",
+          enabled: false,
+          locked: false,
+        }),
+      ]),
+    );
+  });
+
+  it("setEnabled(false) deactivates a plugin and persists disabled", async () => {
+    const { manager, config, bus } = await createEnablementManager();
+    await manager.activate(createSource("test.echo"));
+    await expect(bus.invoke(ping, { value: "before" })).resolves.toEqual({
+      echoed: "before",
+    });
+
+    await expect(manager.setEnabled("test.echo", false)).resolves.toMatchObject({
+      id: "test.echo",
+      status: "disabled",
+      enabled: false,
+      locked: false,
+    });
+    expect(manager.isActive("test.echo")).toBe(false);
+    await expect(config.get(PLUGIN_ENABLEMENT_NAMESPACE)).resolves.toEqual({
+      disabled: ["test.echo"],
+    });
+    await expect(bus.invoke(ping, { value: "after" })).rejects.toMatchObject({
+      code: "unavailable",
+    });
+  });
+
+  it("setEnabled(true) activates the stored source and clears disabled", async () => {
+    const { manager, config, bus } = await createEnablementManager();
+    const source = createSource("test.echo");
+    await manager.activate(source);
+    await manager.setEnabled("test.echo", false);
+
+    await expect(manager.setEnabled("test.echo", true)).resolves.toMatchObject({
+      id: "test.echo",
+      status: "active",
+      enabled: true,
+      locked: false,
+    });
+    expect(manager.isActive("test.echo")).toBe(true);
+    await expect(config.get(PLUGIN_ENABLEMENT_NAMESPACE)).resolves.toEqual({
+      disabled: [],
+    });
+    await expect(bus.invoke(ping, { value: "again" })).resolves.toEqual({
+      echoed: "again",
+    });
+  });
+
+  it("refuses to disable a locked plugin", async () => {
+    const { manager, config } = await createEnablementManager();
+    await manager.activate(createSource("test.echo"));
+    manager.lock("test.echo", "Required for Borg to start");
+
+    await expect(manager.setEnabled("test.echo", false)).rejects.toThrow(
+      /locked/,
+    );
+    expect(manager.isActive("test.echo")).toBe(true);
+    await expect(config.get(PLUGIN_ENABLEMENT_NAMESPACE)).resolves.toEqual({
+      disabled: [],
+    });
+    expect(manager.listCatalog()).toEqual([
+      expect.objectContaining({
+        id: "test.echo",
+        status: "active",
+        enabled: true,
+        locked: true,
+        lockReason: "Required for Borg to start",
+      }),
+    ]);
   });
 });
 

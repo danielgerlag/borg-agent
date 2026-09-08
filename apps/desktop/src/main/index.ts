@@ -17,6 +17,8 @@ import {
   NotificationService,
   PersonaService,
   PersistenceRegistry,
+  PLUGIN_ENABLEMENT_NAMESPACE,
+  pluginEnablementSchema,
   PluginManager,
   ProcessSupervisor,
   PromptAssembler,
@@ -101,6 +103,7 @@ let interactionSubscription: Disposable | undefined;
 let loopSubscription: Disposable | undefined;
 let pluginLifecycleSubscription: Disposable | undefined;
 let setupSchemaRegistration: Disposable | undefined;
+let pluginEnablementSchemaRegistration: Disposable | undefined;
 let startupRecovery: { readonly message: string } | undefined;
 let windowServicesReady = false;
 let quitting = false;
@@ -419,6 +422,7 @@ async function requestQuit(): Promise<void> {
       webSocketService?.shutdown();
       networkService?.shutdown();
     }
+    await pluginEnablementSchemaRegistration?.dispose();
     await setupSchemaRegistration?.dispose();
   } finally {
     removeEmbeddedContentProtocol?.();
@@ -649,6 +653,10 @@ if (!app.requestSingleInstanceLock()) {
         "system.setup",
         setupSchema,
       );
+      pluginEnablementSchemaRegistration = configFacade.registerSchema(
+        PLUGIN_ENABLEMENT_NAMESPACE,
+        pluginEnablementSchema,
+      );
       const setup = await getSetupState();
       await configFacade.update("system.setup", {
         secretBackend: setup.secretBackend,
@@ -670,6 +678,15 @@ if (!app.requestSingleInstanceLock()) {
       if (!persistence.hasSecretStore()) {
         throw new Error("The selected secret store did not install its provider");
       }
+
+      pluginManager.lock(
+        getManifest(configStoreSources[0]).id,
+        "Required for Borg to start",
+      );
+      pluginManager.lock(
+        getManifest(selectedSecretSource).id,
+        "Required for Borg to start",
+      );
 
       const ordinarySources = bundledMainPlugins.filter(
         (source) =>
