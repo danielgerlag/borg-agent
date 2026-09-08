@@ -1864,6 +1864,61 @@ describe("oauth host API", () => {
       }),
     ]);
   });
+
+  it("activateAll with no stored enablement document keeps plugins on", async () => {
+    const { manager, config } = await createEnablementManager();
+    await manager.activateAll([createSource("test.echo")]);
+    expect(manager.isActive("test.echo")).toBe(true);
+    await expect(config.get(PLUGIN_ENABLEMENT_NAMESPACE)).resolves.toEqual({
+      disabled: [],
+    });
+    expect(manager.listCatalog()).toEqual([
+      expect.objectContaining({
+        id: "test.echo",
+        status: "active",
+        enabled: true,
+        locked: false,
+      }),
+    ]);
+  });
+
+  it("activateAll still loads a locked plugin listed in disabled", async () => {
+    const { manager } = await createEnablementManager(["test.echo"]);
+    manager.lock("test.echo", "Required for Borg to start");
+    await manager.activateAll([createSource("test.echo")]);
+    expect(manager.isActive("test.echo")).toBe(true);
+    expect(manager.listCatalog()).toEqual([
+      expect.objectContaining({
+        id: "test.echo",
+        status: "active",
+        enabled: false,
+        locked: true,
+        lockReason: "Required for Borg to start",
+      }),
+    ]);
+  });
+
+  it("setEnabled(true) activates a plugin skipped at boot", async () => {
+    const { manager, config, bus } = await createEnablementManager([
+      "test.echo",
+    ]);
+    await manager.activateAll([createSource("test.echo")]);
+    expect(manager.isActive("test.echo")).toBe(false);
+
+    await expect(manager.setEnabled("test.echo", true)).resolves.toMatchObject({
+      id: "test.echo",
+      status: "active",
+      enabled: true,
+      locked: false,
+    });
+    expect(manager.isActive("test.echo")).toBe(true);
+    await expect(config.get(PLUGIN_ENABLEMENT_NAMESPACE)).resolves.toEqual({
+      disabled: [],
+    });
+    await expect(bus.invoke(ping, { value: "after-skip" })).resolves.toEqual({
+      echoed: "after-skip",
+    });
+  });
 });
 
 describe("satisfiesBorgEngine", () => {

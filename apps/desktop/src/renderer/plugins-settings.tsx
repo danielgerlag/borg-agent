@@ -78,6 +78,7 @@ export const PluginsSettings: Component<{
                   type="checkbox"
                   checked={plugin.enabled}
                   disabled={plugin.locked || pendingId() !== undefined}
+                  aria-label={pluginLabel(plugin.id)}
                   onChange={(event) =>
                     void toggle(plugin, event.currentTarget.checked)
                   }

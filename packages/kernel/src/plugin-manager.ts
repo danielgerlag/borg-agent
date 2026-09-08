@@ -1956,11 +1956,14 @@ export class PluginManager {
 
   #publishLifecycle(): void {
     for (const subscriber of this.#subscribers.values()) {
-      Promise.resolve()
-        .then(async () => subscriber())
-        .catch((error: unknown) =>
+      try {
+        const result = subscriber();
+        void Promise.resolve(result).catch((error: unknown) =>
           console.error("[kernel] plugin lifecycle subscriber failed", error),
         );
+      } catch (error) {
+        console.error("[kernel] plugin lifecycle subscriber failed", error);
+      }
     }
   }
 

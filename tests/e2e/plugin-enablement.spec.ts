@@ -42,8 +42,7 @@ function waitForExit(
   });
 }
 
-test.beforeEach(async () => {
-  profileDirectory = mkdtempSync(path.join(tmpdir(), "borg-plugin-enablement-"));
+function e2eEnvironment(): Record<string, string> {
   const environment = Object.fromEntries(
     Object.entries(process.env).filter(
       (entry): entry is [string, string] =>
@@ -52,28 +51,54 @@ test.beforeEach(async () => {
   );
   environment.BORG_E2E = "1";
   environment.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
-  application = await electron.launch({
+  return environment;
+}
+
+async function launchApp(
+  profile: string,
+): Promise<{ application: ElectronApplication; page: Page }> {
+  const launched = await electron.launch({
     executablePath: electronPath,
-    args: [desktopApp, `--user-data-dir=${profileDirectory}`],
-    env: environment,
+    args: [desktopApp, `--user-data-dir=${profile}`],
+    env: e2eEnvironment(),
   });
-  page = await application.firstWindow();
-  await page.waitForLoadState("domcontentloaded");
+  const firstPage = await launched.firstWindow();
+  await firstPage.waitForLoadState("domcontentloaded");
+  return { application: launched, page: firstPage };
+}
+
+async function stopApp(
+  launched: ElectronApplication | undefined,
+): Promise<void> {
+  const process = launched?.process();
+  if (
+    process &&
+    process.exitCode === null &&
+    process.signalCode === null
+  ) {
+    const exit = waitForExit(process);
+    process.kill();
+    await exit;
+  }
+}
+
+async function openPluginsSettings(target: Page): Promise<void> {
+  await target.getByTestId("nav-settings").click();
+  await target.getByTestId("settings-section-system.plugins").click();
+  await expect(target.getByTestId("plugins-settings-page")).toBeVisible();
+}
+
+test.beforeEach(async () => {
+  profileDirectory = mkdtempSync(path.join(tmpdir(), "borg-plugin-enablement-"));
+  const launched = await launchApp(profileDirectory);
+  application = launched.application;
+  page = launched.page;
   await completeSetup(page);
 });
 
 test.afterEach(async () => {
   try {
-    const process = application?.process();
-    if (
-      process &&
-      process.exitCode === null &&
-      process.signalCode === null
-    ) {
-      const exit = waitForExit(process);
-      process.kill();
-      await exit;
-    }
+    await stopApp(application);
   } finally {
     application = undefined;
     if (profileDirectory) {
@@ -85,10 +110,20 @@ test.afterEach(async () => {
 
 test("disables and re-enables a bundled plugin from Settings", async () => {
   test.setTimeout(60_000);
-  await page.getByTestId("nav-settings").click();
-  await page.getByTestId("settings-section-system.plugins").click();
-  await expect(page.getByTestId("plugins-settings-page")).toBeVisible();
+  await openPluginsSettings(page);
   await expect(page.getByTestId("plugin-enabled-borg.hello")).toBeChecked();
+  await expect(
+    page.getByTestId("plugin-enabled-borg.config.sqlite"),
+  ).toBeChecked();
+  await expect(
+    page.getByTestId("plugin-enabled-borg.config.sqlite"),
+  ).toBeDisabled();
+  await expect(
+    page.getByTestId("plugin-enabled-borg.secrets.dev"),
+  ).toBeChecked();
+  await expect(
+    page.getByTestId("plugin-enabled-borg.secrets.dev"),
+  ).toBeDisabled();
 
   const disabledLoad = page.waitForEvent("load");
   await page.getByTestId("plugin-enabled-borg.hello").click();
@@ -104,4 +139,29 @@ test("disables and re-enables a bundled plugin from Settings", async () => {
   await enabledLoad;
   await expect(page.getByTestId("plugins-settings-page")).toBeVisible();
   await expect(page.getByTestId("plugin-enabled-borg.hello")).toBeChecked();
+});
+
+test("keeps a disabled plugin off after kernel restart", async () => {
+  test.setTimeout(90_000);
+  await openPluginsSettings(page);
+  const disabledLoad = page.waitForEvent("load");
+  await page.getByTestId("plugin-enabled-borg.hello").click();
+  await disabledLoad;
+  await expect(page.getByTestId("plugin-enabled-borg.hello")).not.toBeChecked();
+
+  const profile = profileDirectory;
+  if (!profile) {
+    throw new Error("Missing e2e profile directory");
+  }
+  await stopApp(application);
+  application = undefined;
+  const relaunched = await launchApp(profile);
+  application = relaunched.application;
+  page = relaunched.page;
+  await expect(page.getByTestId("chat-workspace")).toBeVisible();
+  await openPluginsSettings(page);
+  await expect(page.getByTestId("plugin-enabled-borg.hello")).not.toBeChecked();
+  await expect(
+    page.getByTestId("settings-section-borg.hello.settings"),
+  ).toHaveCount(0);
 });

@@ -331,7 +331,6 @@ function createMainWindow(): BrowserWindow {
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => {
-    // Same-URL navigation is a renderer reload after plugin enablement.
     if (event.url !== window.webContents.getURL()) {
       event.preventDefault();
     }
@@ -767,8 +766,6 @@ if (!app.requestSingleInstanceLock()) {
         try {
           return await operation();
         } finally {
-          // Lifecycle subscribers run on a queued microtask.
-          await Promise.resolve();
           pluginReloadPaused -= 1;
         }
       },
