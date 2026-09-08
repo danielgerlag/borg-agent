@@ -331,7 +331,10 @@ function createMainWindow(): BrowserWindow {
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => {
-    event.preventDefault();
+    // Same-URL navigation is a renderer reload after plugin enablement.
+    if (event.url !== window.webContents.getURL()) {
+      event.preventDefault();
+    }
   });
   window.on("close", (event) => {
     if (!quitting) {
