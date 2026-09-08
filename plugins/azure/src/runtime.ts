@@ -42,7 +42,9 @@ export const AZURE_TIMEOUT_MS = 60_000;
 export const AZURE_TOOL_NAME_MAX = 64;
 export const AZURE_COGNITIVE_RESOURCE =
   "https://cognitiveservices.azure.com";
+export const AZURE_FOUNDRY_RESOURCE = "https://ai.azure.com";
 export const AZURE_TOKEN_SCOPE = `${AZURE_COGNITIVE_RESOURCE}/.default`;
+export const AZURE_FOUNDRY_TOKEN_SCOPE = `${AZURE_FOUNDRY_RESOURCE}/.default`;
 export const AZURE_IMDS_TOKEN_URL =
   "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://cognitiveservices.azure.com";
 export const AZURE_TOKEN_REFRESH_SKEW_MS = 5 * 60_000;
@@ -81,11 +83,29 @@ export function isTruthyEnv(value: string | undefined): boolean {
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
+export function foundryProjectBase(endpoint: string): string | undefined {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  const match = /^https:\/\/[^/]+\/api\/projects\/[^/]+/i.exec(trimmed);
+  return match?.[0];
+}
+
 export function foundryResourceUrl(endpoint: string): string {
   const trimmed = endpoint.trim().replace(/\/+$/, "");
-  const marker = "/api/projects/";
-  const index = trimmed.indexOf(marker);
-  return index >= 0 ? trimmed.slice(0, index) : trimmed;
+  return foundryProjectBase(trimmed) ?? trimmed;
+}
+
+export function azureTokenResource(endpoint: string): string {
+  return foundryProjectBase(endpoint)
+    ? AZURE_FOUNDRY_RESOURCE
+    : AZURE_COGNITIVE_RESOURCE;
+}
+
+export function azureTokenScope(endpoint: string): string {
+  return `${azureTokenResource(endpoint)}/.default`;
+}
+
+export function azureImdsTokenUrl(resource: string): string {
+  return `http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=${resource}`;
 }
 
 function isDatedAzureApiVersion(version: string): boolean {
@@ -139,10 +159,11 @@ export function resolveAzureModelsUrl(
   endpoint: string,
   apiVersion: string = AZURE_DEFAULT_API_VERSION,
 ): string {
-  return withApiVersion(
-    `${resolveAzureResourceUrl(endpoint)}/openai/v1/models`,
-    apiVersion,
-  );
+  const resource = resolveAzureResourceUrl(endpoint);
+  if (foundryProjectBase(endpoint)) {
+    return `${resource}/deployments?api-version=v1`;
+  }
+  return withApiVersion(`${resource}/openai/v1/models`, apiVersion);
 }
 
 // TCP probe: a laptop without IMDS would otherwise hang on the HTTP token call.
@@ -234,6 +255,7 @@ export interface AzureTokenAcquirerOptions {
   readonly execFile?: AzureExecFile;
   readonly probeImds?: () => Promise<boolean>;
   readonly now?: () => number;
+  readonly resource?: string;
 }
 
 export function createAzureTokenAcquirer(
@@ -244,6 +266,8 @@ export function createAzureTokenAcquirer(
   const execFile = options.execFile ?? execFileStdout;
   const probe = options.probeImds ?? (() => probeImds());
   const now = options.now ?? (() => Date.now());
+  const resource = options.resource ?? AZURE_COGNITIVE_RESOURCE;
+  const tokenScope = `${resource}/.default`;
   let cached: AzureAccessToken | undefined;
 
   const shouldSkipManagedIdentity = (): boolean =>
@@ -269,7 +293,7 @@ export function createAzureTokenAcquirer(
       ? AbortSignal.any([signal, timeout])
       : timeout;
     try {
-      const response = await fetchImpl(AZURE_IMDS_TOKEN_URL, {
+      const response = await fetchImpl(azureImdsTokenUrl(resource), {
         method: "GET",
         headers: { Metadata: "true" },
         redirect: "error",
@@ -304,7 +328,7 @@ export function createAzureTokenAcquirer(
         "account",
         "get-access-token",
         "--resource",
-        AZURE_COGNITIVE_RESOURCE,
+        resource,
         "--output",
         "json",
       ]);
@@ -315,7 +339,7 @@ export function createAzureTokenAcquirer(
           "auth",
           "token",
           "--scope",
-          AZURE_TOKEN_SCOPE,
+          tokenScope,
         ]);
         const accessToken = stdout.trim();
         if (accessToken.length === 0) {
@@ -392,6 +416,40 @@ export function parseOpenAIModelCatalog(payload: unknown): string[] {
       seen.add(id);
       ids.push(id);
     }
+  }
+  return ids;
+}
+
+export function parseFoundryDeployments(payload: unknown): string[] {
+  const object = asObject(payload);
+  if (!object) {
+    fail("protocol");
+  }
+  const rows = object.value;
+  if (!Array.isArray(rows)) {
+    fail("protocol");
+  }
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const item of rows) {
+    const row = asObject(item);
+    if (!row) {
+      continue;
+    }
+    if (row.type !== undefined && row.type !== "ModelDeployment") {
+      continue;
+    }
+    const capabilities = asObject(row.capabilities);
+    const chat = capabilities?.chat_completion;
+    if (chat === false || chat === "false") {
+      continue;
+    }
+    const name = row.name;
+    if (typeof name !== "string" || name.length === 0 || seen.has(name)) {
+      continue;
+    }
+    seen.add(name);
+    ids.push(name);
   }
   return ids;
 }
@@ -534,9 +592,11 @@ export class AzureProvider implements LlmProviderContribution {
   readonly #authMode: AzureAuthMode;
   readonly #getApiKey: () => Promise<string | undefined>;
   readonly #acquireAzureToken: AcquireAzureToken;
+  readonly #foundryProject: boolean;
 
   constructor(options: AzureProviderOptions) {
     this.#fetch = options.fetchImpl ?? fetch;
+    this.#foundryProject = foundryProjectBase(options.endpoint) !== undefined;
     this.#completionsUrl = resolveAzureCompletionsUrl(
       options.endpoint,
       options.apiVersion ?? AZURE_DEFAULT_API_VERSION,
@@ -549,7 +609,10 @@ export class AzureProvider implements LlmProviderContribution {
     this.#authMode = options.authMode;
     this.#getApiKey = options.getApiKey;
     this.#acquireAzureToken =
-      options.acquireAzureToken ?? createAzureTokenAcquirer();
+      options.acquireAzureToken ??
+      createAzureTokenAcquirer({
+        resource: azureTokenResource(options.endpoint),
+      });
     this.models = Object.freeze([...(options.models ?? [])]);
     this.egress = Object.freeze({
       kind: "remote",
@@ -573,7 +636,9 @@ export class AzureProvider implements LlmProviderContribution {
     } catch {
       fail("protocol");
     }
-    const models = parseOpenAIModelCatalog(payload);
+    const models = this.#foundryProject
+      ? parseFoundryDeployments(payload)
+      : parseOpenAIModelCatalog(payload);
     if (models.length === 0) {
       fail("emptyCatalog");
     }

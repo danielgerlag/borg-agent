@@ -18,6 +18,7 @@ import {
   AzureProvider,
   AzureUserError,
   SAFE_AZURE_ERRORS,
+  azureTokenResource,
   azureUserError,
   createAzureTokenAcquirer,
 } from "./runtime";
@@ -43,10 +44,6 @@ export default definePlugin({
   configSchema: azureConfigSchema,
   async activate(context) {
     let registration: Disposable | undefined;
-    const acquireAzureToken = createAzureTokenAcquirer({
-      fetchImpl: globalThis.fetch.bind(globalThis),
-    });
-
     const readConfig = async (): Promise<AzureConfig> =>
       parseAzureConfig(await context.config.get());
 
@@ -66,7 +63,10 @@ export default definePlugin({
         apiVersion: config.apiVersion,
         authMode: config.authMode,
         models: config.models,
-        acquireAzureToken,
+        acquireAzureToken: createAzureTokenAcquirer({
+          fetchImpl: globalThis.fetch.bind(globalThis),
+          resource: azureTokenResource(config.endpoint),
+        }),
         getApiKey: () => context.secrets.get(AZURE_SECRET_KEY),
       });
 

@@ -10,10 +10,13 @@ import {
   buildAzureRequest,
   classifyAzureStatus,
   createAzureTokenAcquirer,
+  azureTokenResource,
   formatAzureUserError,
+  foundryProjectBase,
   foundryResourceUrl,
   parseAzureErrorBody,
   parseAzureUserError,
+  parseFoundryDeployments,
   resolveAzureCompletionsUrl,
   resolveAzureModelsUrl,
 } from "../src/runtime";
@@ -115,23 +118,55 @@ function textStreamFrames(text = "Hello from Azure"): string[] {
 }
 
 describe("Azure Foundry URL", () => {
-  it("strips /api/projects/ and omits dated api-version on the v1 path", () => {
+  const foundry =
+    "https://demo.services.ai.azure.com/api/projects/foo";
+
+  it("keeps the project path and lists deployments, not the catalog", () => {
     expect(foundryResourceUrl(`${RESOURCE}/`)).toBe(RESOURCE);
-    expect(
-      foundryResourceUrl("https://ai.azure.com/api/projects/my-project"),
-    ).toBe("https://ai.azure.com");
+    expect(foundryProjectBase(foundry)).toBe(foundry);
+    expect(foundryResourceUrl(foundry)).toBe(foundry);
+    expect(azureTokenResource(foundry)).toBe("https://ai.azure.com");
+    expect(azureTokenResource(RESOURCE)).toBe(
+      "https://cognitiveservices.azure.com",
+    );
     expect(resolveAzureCompletionsUrl(RESOURCE)).toBe(
       `${RESOURCE}/openai/v1/chat/completions`,
     );
-    expect(
-      resolveAzureModelsUrl("https://demo.services.ai.azure.com/api/projects/foo"),
-    ).toBe("https://demo.services.ai.azure.com/openai/v1/models");
+    expect(resolveAzureCompletionsUrl(foundry)).toBe(
+      `${foundry}/openai/v1/chat/completions`,
+    );
+    expect(resolveAzureModelsUrl(foundry)).toBe(
+      `${foundry}/deployments?api-version=v1`,
+    );
     expect(resolveAzureModelsUrl(RESOURCE, "v1")).toBe(
       `${RESOURCE}/openai/v1/models?api-version=v1`,
     );
     expect(() => resolveAzureCompletionsUrl("http://example.com")).toThrow(
       azureMessage("invalidEndpoint"),
     );
+  });
+
+  it("parses project deployments and skips non-chat rows", () => {
+    expect(
+      parseFoundryDeployments({
+        value: [
+          {
+            name: "gpt-4o",
+            type: "ModelDeployment",
+            capabilities: { chat_completion: "true" },
+          },
+          {
+            name: "dall-e-3",
+            type: "ModelDeployment",
+            capabilities: { chat_completion: "false" },
+          },
+          {
+            name: "embedding",
+            type: "Connection",
+          },
+        ],
+      }),
+    ).toEqual(["gpt-4o"]);
   });
 });
 
@@ -194,6 +229,32 @@ describe("Azure token acquirer", () => {
     expect(token.accessToken).toBe("az-token");
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(probeImds).toHaveBeenCalledOnce();
+  });
+
+  it("requests a Foundry token for project endpoints", async () => {
+    const execFile = vi.fn(async (file: string, args: readonly string[]) => {
+      expect(file).toBe("az");
+      expect(args).toEqual([
+        "account",
+        "get-access-token",
+        "--resource",
+        "https://ai.azure.com",
+        "--output",
+        "json",
+      ]);
+      return JSON.stringify({
+        accessToken: "foundry-token",
+        expires_on: 2_000_000_000,
+      });
+    });
+    const acquire = createAzureTokenAcquirer({
+      env: { BORG_AZURE_SKIP_MANAGED_IDENTITY: "1" },
+      resource: "https://ai.azure.com",
+      fetchImpl: vi.fn(),
+      execFile,
+      now: () => 1_000_000_000_000,
+    });
+    expect((await acquire()).accessToken).toBe("foundry-token");
   });
 
   it("does not probe IMDS when skip env is set", async () => {
@@ -736,6 +797,37 @@ describe("Azure verify user errors", () => {
     });
     const error = await provider.verify().catch((failure: unknown) => failure);
     expectAzureUserError(error, "emptyCatalog");
+  });
+
+  it("lists Foundry project deployments instead of the account catalog", async () => {
+    const foundry = "https://demo.services.ai.azure.com/api/projects/foo";
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      expect(String(url)).toBe(`${foundry}/deployments?api-version=v1`);
+      return new Response(
+        JSON.stringify({
+          value: [
+            {
+              name: "gpt-4o",
+              type: "ModelDeployment",
+              capabilities: { chat_completion: "true" },
+            },
+            {
+              name: "dall-e-3",
+              type: "ModelDeployment",
+              capabilities: { chat_completion: "false" },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+    const provider = new AzureProvider({
+      fetchImpl,
+      endpoint: foundry,
+      authMode: "api-key",
+      getApiKey: async () => "azure-test-key",
+    });
+    await expect(provider.verify()).resolves.toEqual(["gpt-4o"]);
   });
 });
 
