@@ -179,6 +179,7 @@ export default definePlugin({
   permissions: [
     "network:api.coinbase.com",
     "network:api-sandbox.coinbase.com",
+    "network:dynamic",
     "secrets:read",
     "secrets:write",
     "tools.register",

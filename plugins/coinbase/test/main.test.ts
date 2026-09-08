@@ -102,6 +102,7 @@ describe("borg.coinbase plugin", () => {
     expect(manifest.permissions).toEqual([
       "network:api.coinbase.com",
       "network:api-sandbox.coinbase.com",
+      "network:dynamic",
       "secrets:read",
       "secrets:write",
       "tools.register",
@@ -148,6 +149,9 @@ describe("borg.coinbase plugin", () => {
     expect(harness.tools.map((tool) => tool.id)).toEqual([...TOOL_IDS]);
     expect(
       harness.tools.find((tool) => tool.id === "coinbase.trading.create_order"),
+    ).toMatchObject({ approval: "ask", sideEffect: true });
+    expect(
+      harness.tools.find((tool) => tool.id === "coinbase.trading.send_crypto"),
     ).toMatchObject({ approval: "ask", sideEffect: true });
     expect(
       harness.tools.find((tool) => tool.id === "coinbase.trading.list_accounts"),

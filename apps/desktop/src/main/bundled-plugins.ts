@@ -399,6 +399,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
       "permissions": [
         "network:api.coinbase.com",
         "network:api-sandbox.coinbase.com",
+        "network:dynamic",
         "secrets:read",
         "secrets:write",
         "tools.register",
