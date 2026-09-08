@@ -26,6 +26,34 @@ function sseResponse(frames: readonly string[], status = 200): Response {
   });
 }
 
+function toolStreamFrames(): string[] {
+  return [
+    `data: ${JSON.stringify({
+      choices: [
+        {
+          index: 0,
+          delta: {
+            role: "assistant",
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_1",
+                type: "function",
+                function: { name: "tools_echo", arguments: '{"text":"hi"}' },
+              },
+            ],
+          },
+          finish_reason: null,
+        },
+      ],
+    })}`,
+    `data: ${JSON.stringify({
+      choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+    })}`,
+    "data: [DONE]",
+  ];
+}
+
 function textStreamFrames(text = "Hello from Copilot"): string[] {
   return [
     `data: ${JSON.stringify({
@@ -205,6 +233,115 @@ describe("CopilotProvider", () => {
       new AbortController().signal,
     );
   });
+
+  it("maps 400/401/429/5xx, abort, protocol, and streamed tools", async () => {
+    const secret = "gho-secret-value";
+    for (const [status, message] of [
+      [400, SAFE_COPILOT_ERRORS.rejected],
+      [401, SAFE_COPILOT_ERRORS.rejectedKey],
+      [429, SAFE_COPILOT_ERRORS.rateLimited],
+      [500, SAFE_COPILOT_ERRORS.unavailable],
+    ] as const) {
+      const provider = new CopilotProvider({
+        fetchImpl: async (url, init) => {
+          if (String(url) === COPILOT_SESSION_TOKEN_URL) {
+            return new Response(
+              JSON.stringify({
+                token: "session-token",
+                expires_at: 2_000_000_000,
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response(`{"error":"${secret}"}`, { status });
+        },
+        env: {},
+        getOauthToken: async () => secret,
+      });
+      await expect(
+        provider.complete(
+          {
+            modelId: "gpt-4o",
+            messages: [{ role: "user", content: "hello" }],
+            tools: [],
+          },
+          createProviderDispatchPermit(),
+          new AbortController().signal,
+        ),
+      ).rejects.toThrow(message);
+    }
+
+    const aborted = new AbortController();
+    aborted.abort();
+    const aborting = new CopilotProvider({
+      fetchImpl: vi.fn(),
+      env: {},
+      getOauthToken: async () => secret,
+    });
+    await expect(
+      aborting.complete(
+        {
+          modelId: "gpt-4o",
+          messages: [{ role: "user", content: "hello" }],
+          tools: [],
+        },
+        createProviderDispatchPermit(),
+        aborted.signal,
+      ),
+    ).rejects.toThrow(SAFE_COPILOT_ERRORS.cancelled);
+
+    const tools = new CopilotToolMap();
+    expect(tools.alias("tools.echo")).toBe("tools_echo");
+    expect(tools.resolve("tools_echo")).toBe("tools.echo");
+    const streaming = new CopilotProvider({
+      fetchImpl: async (url) => {
+        if (String(url) === COPILOT_SESSION_TOKEN_URL) {
+          return new Response(
+            JSON.stringify({ token: "session-token", expires_at: 2_000_000_000 }),
+            { status: 200 },
+          );
+        }
+        return sseResponse(toolStreamFrames());
+      },
+      env: {},
+      getOauthToken: async () => secret,
+    });
+    const first = await streaming.complete(
+      {
+        modelId: "gpt-4o",
+        messages: [{ role: "user", content: "echo" }],
+        tools: [
+          {
+            id: "tools.echo",
+            description: "Echo",
+            inputSchema: { type: "object" },
+          },
+        ],
+      },
+      createProviderDispatchPermit(),
+      new AbortController().signal,
+    );
+    expect(first.toolCalls).toEqual([
+      { id: "call_1", name: "tools.echo", input: { text: "hi" } },
+    ]);
+
+    const missing = new CopilotProvider({
+      fetchImpl: vi.fn(),
+      env: {},
+      getOauthToken: async () => undefined,
+    });
+    await expect(
+      missing.complete(
+        {
+          modelId: "gpt-4o",
+          messages: [{ role: "user", content: "hello" }],
+          tools: [],
+        },
+        createProviderDispatchPermit(),
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow(SAFE_COPILOT_ERRORS.missingToken);
+  });
 });
 
 describe("borg.copilot lifecycle and device flow", () => {
@@ -307,6 +444,57 @@ describe("borg.copilot lifecycle and device flow", () => {
     expect(fixture.secrets.has("githubOauthToken")).toBe(false);
     await harness.deactivate();
     fixture.restoreFetch();
+  });
+
+  it("treats slow_down as pending and access_denied as failed", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("GH_TOKEN", "");
+    let polls = 0;
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).includes("/login/device/code")) {
+        return new Response(
+          JSON.stringify({
+            device_code: "denied-device",
+            user_code: "DENY-0001",
+            verification_uri: "https://github.com/login/device",
+            expires_in: 900,
+            interval: 5,
+          }),
+          { status: 200 },
+        );
+      }
+      polls += 1;
+      if (polls === 1) {
+        return new Response(JSON.stringify({ error: "slow_down" }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ error: "access_denied" }), {
+        status: 200,
+      });
+    });
+    const fixture = createCopilotHarness({ fetchImpl });
+    const harness = await fixture.activate();
+    await fixture.invokeStartDeviceFlow();
+    expect(await fixture.invokePollDeviceFlow()).toEqual({ status: "pending" });
+    expect(await fixture.invokePollDeviceFlow()).toEqual({
+      status: "failed",
+      error: SAFE_COPILOT_ERRORS.deviceFlowDenied,
+    });
+    await harness.deactivate();
+    fixture.restoreFetch();
+  });
+
+  it("fails poll when no device flow is in progress", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("GH_TOKEN", "");
+    const fixture = createCopilotHarness();
+    const harness = await fixture.activate();
+    expect(await fixture.invokePollDeviceFlow()).toEqual({
+      status: "failed",
+      error: SAFE_COPILOT_ERRORS.deviceFlowInactive,
+    });
+    await harness.deactivate();
   });
 
   it("registers from a saved oauth token and models without fetching", async () => {

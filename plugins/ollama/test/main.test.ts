@@ -194,6 +194,60 @@ describe("OllamaProvider", () => {
       ),
     ).rejects.toThrow(SAFE_OLLAMA_ERRORS.timeout);
   });
+
+  it("maps streamed tool calls and rejects unknown aliases", async () => {
+    const tools = new OllamaToolMap();
+    expect(tools.alias("tools.echo")).toBe("tools_echo");
+    expect(tools.resolve("tools_echo")).toBe("tools.echo");
+    expect(() => tools.alias("tools_echo")).toThrow(SAFE_OLLAMA_ERRORS.unknownTool);
+    const provider = new OllamaProvider({
+      fetchImpl: async () =>
+        sseResponse([
+          `data: ${JSON.stringify({
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "call_1",
+                      type: "function",
+                      function: {
+                        name: "tools_echo",
+                        arguments: '{"text":"hi"}',
+                      },
+                    },
+                  ],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          })}`,
+          "data: [DONE]",
+        ]),
+      env: {},
+      models: ["llama3.2"],
+    });
+    const result = await provider.complete(
+      {
+        modelId: "llama3.2",
+        messages: [{ role: "user", content: "echo" }],
+        tools: [
+          {
+            id: "tools.echo",
+            description: "Echo",
+            inputSchema: { type: "object" },
+          },
+        ],
+      },
+      createProviderDispatchPermit(),
+      new AbortController().signal,
+    );
+    expect(result.toolCalls).toEqual([
+      { id: "call_1", name: "tools.echo", input: { text: "hi" } },
+    ]);
+  });
 });
 
 describe("borg.ollama lifecycle", () => {
