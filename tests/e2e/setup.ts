@@ -1,5 +1,42 @@
 import { expect, type Page } from "@playwright/test";
 
+const OPTIONAL_LLM_SETUP_STEPS = [
+  "openai-setup-step",
+  "anthropic-setup-step",
+  "azure-setup-step",
+  "copilot-setup-step",
+  "ollama-setup-step",
+  "openrouter-setup-step",
+] as const;
+
+async function skipOptionalLlmSetupSteps(
+  page: Page,
+  until: "persona" | "ready",
+): Promise<void> {
+  const doneTestId = until === "persona" ? "wizard-persona-step" : "setup-ready";
+  let visible = page.getByTestId(doneTestId);
+  for (const testId of OPTIONAL_LLM_SETUP_STEPS) {
+    visible = visible.or(page.getByTestId(testId));
+  }
+  await visible.waitFor();
+  for (let remaining = OPTIONAL_LLM_SETUP_STEPS.length + 1; remaining > 0; remaining -= 1) {
+    if (await page.getByTestId(doneTestId).isVisible()) {
+      return;
+    }
+    let skipped = false;
+    for (const testId of OPTIONAL_LLM_SETUP_STEPS) {
+      if (await page.getByTestId(testId).isVisible()) {
+        await page.getByTestId("setup-continue").click();
+        skipped = true;
+        break;
+      }
+    }
+    if (!skipped) {
+      return;
+    }
+  }
+}
+
 export async function completeSetup(page: Page): Promise<void> {
   await expect(page.getByTestId("surface-wizard")).toBeVisible();
   await expect(page.getByTestId("setup-welcome")).toBeVisible();
@@ -13,27 +50,11 @@ export async function completeSetup(page: Page): Promise<void> {
   }
   await page.getByTestId("setup-continue").click();
 
-  for (let remaining = 2; remaining > 0; remaining -= 1) {
-    await expect(
-      page
-        .getByTestId("openai-setup-step")
-        .or(page.getByTestId("anthropic-setup-step"))
-        .or(page.getByTestId("wizard-persona-step")),
-    ).toBeVisible();
-    if (await page.getByTestId("openai-setup-step").isVisible()) {
-      await page.getByTestId("setup-continue").click();
-      continue;
-    }
-    if (await page.getByTestId("anthropic-setup-step").isVisible()) {
-      await page.getByTestId("setup-continue").click();
-      continue;
-    }
-    break;
-  }
-
+  await skipOptionalLlmSetupSteps(page, "persona");
   await expect(page.getByTestId("wizard-persona-step")).toBeVisible();
   await expect(page.getByTestId("wizard-model-select")).not.toHaveValue("");
   await page.getByTestId("setup-continue").click();
+  await skipOptionalLlmSetupSteps(page, "ready");
 
   await expect(page.getByTestId("setup-ready")).toBeVisible();
   await page.getByTestId("setup-complete").click();

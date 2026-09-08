@@ -1,0 +1,27 @@
+{
+  "id": "borg.ollama",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-ollama/main",
+  "ui": "@borg/plugin-ollama/ui",
+  "permissions": [
+    "models.register",
+    "network:dynamic",
+    "ui.settings",
+    "ui.wizard"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.ollama.connect",
+      "borg.ollama.disconnect",
+      "borg.ollama.getStatus"
+    ],
+    "kinds": [
+      "llmProvider",
+      "settingsPage",
+      "wizardStep"
+    ]
+  }
+}

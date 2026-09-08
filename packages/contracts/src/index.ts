@@ -1867,6 +1867,157 @@ export const openaiDisconnect = defineCommand({
   output: openaiStatusSchema,
 });
 
+export const azureAuthModeSchema = z.enum(["api-key", "azure-default"]);
+
+export type AzureAuthMode = z.infer<typeof azureAuthModeSchema>;
+
+export const azureStatusSchema = z
+  .object({
+    hasKey: z.boolean(),
+    connected: z.boolean(),
+    authMode: azureAuthModeSchema,
+  })
+  .strict();
+
+export type AzureStatus = z.infer<typeof azureStatusSchema>;
+
+export const azureGetStatus = defineCommand({
+  id: "borg.azure.getStatus",
+  input: z.object({}).strict(),
+  output: azureStatusSchema,
+});
+
+export const azureConnect = defineCommand({
+  id: "borg.azure.connect",
+  input: z.object({}).strict(),
+  output: azureStatusSchema,
+});
+
+export const azureDisconnect = defineCommand({
+  id: "borg.azure.disconnect",
+  input: z.object({}).strict(),
+  output: azureStatusSchema,
+});
+
+export const copilotStatusSchema = z
+  .object({
+    hasToken: z.boolean(),
+    connected: z.boolean(),
+  })
+  .strict();
+
+export type CopilotStatus = z.infer<typeof copilotStatusSchema>;
+
+export const copilotGetStatus = defineCommand({
+  id: "borg.copilot.getStatus",
+  input: z.object({}).strict(),
+  output: copilotStatusSchema,
+});
+
+export const copilotConnect = defineCommand({
+  id: "borg.copilot.connect",
+  input: z.object({}).strict(),
+  output: copilotStatusSchema,
+});
+
+export const copilotDisconnect = defineCommand({
+  id: "borg.copilot.disconnect",
+  input: z.object({}).strict(),
+  output: copilotStatusSchema,
+});
+
+export const copilotDeviceFlowStartSchema = z
+  .object({
+    userCode: z.string().min(1),
+    verificationUri: z.string().min(1),
+    interval: z.number().int().positive(),
+    expiresIn: z.number().int().positive(),
+  })
+  .strict();
+
+export type CopilotDeviceFlowStart = z.infer<
+  typeof copilotDeviceFlowStartSchema
+>;
+
+export const copilotStartDeviceFlow = defineCommand({
+  id: "borg.copilot.startDeviceFlow",
+  input: z.object({}).strict(),
+  output: copilotDeviceFlowStartSchema,
+});
+
+export const copilotDeviceFlowPollSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("pending") }).strict(),
+  z.object({ status: z.literal("complete") }).strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      error: z.string().min(1).optional(),
+    })
+    .strict(),
+]);
+
+export type CopilotDeviceFlowPoll = z.infer<typeof copilotDeviceFlowPollSchema>;
+
+export const copilotPollDeviceFlow = defineCommand({
+  id: "borg.copilot.pollDeviceFlow",
+  input: z.object({}).strict(),
+  output: copilotDeviceFlowPollSchema,
+});
+
+export const ollamaStatusSchema = z
+  .object({
+    connected: z.boolean(),
+    modelCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type OllamaStatus = z.infer<typeof ollamaStatusSchema>;
+
+export const ollamaGetStatus = defineCommand({
+  id: "borg.ollama.getStatus",
+  input: z.object({}).strict(),
+  output: ollamaStatusSchema,
+});
+
+export const ollamaConnect = defineCommand({
+  id: "borg.ollama.connect",
+  input: z.object({}).strict(),
+  output: ollamaStatusSchema,
+});
+
+export const ollamaDisconnect = defineCommand({
+  id: "borg.ollama.disconnect",
+  input: z.object({}).strict(),
+  output: ollamaStatusSchema,
+});
+
+export const openrouterStatusSchema = z
+  .object({
+    hasKey: z.boolean(),
+    connected: z.boolean(),
+  })
+  .strict();
+
+export type OpenRouterStatus = z.infer<typeof openrouterStatusSchema>;
+
+export const openrouterGetStatus = defineCommand({
+  id: "borg.openrouter.getStatus",
+  input: z.object({}).strict(),
+  output: openrouterStatusSchema,
+});
+
+export const openrouterConnect = defineCommand({
+  id: "borg.openrouter.connect",
+  input: z.object({}).strict(),
+  output: openrouterStatusSchema,
+});
+
+export const openrouterDisconnect = defineCommand({
+  id: "borg.openrouter.disconnect",
+  input: z.object({}).strict(),
+  output: openrouterStatusSchema,
+});
+
 export const mcpServerStatusSchema = z.enum([
   "idle",
   "connecting",

@@ -45,24 +45,43 @@ async function completeSetup(page) {
   }
   await page.getByTestId("setup-continue").click();
 
-  const openaiStep = page.getByTestId("openai-setup-step");
-  const anthropicStep = page.getByTestId("anthropic-setup-step");
+  const optionalSteps = [
+    "openai-setup-step",
+    "anthropic-setup-step",
+    "azure-setup-step",
+    "copilot-setup-step",
+    "ollama-setup-step",
+    "openrouter-setup-step",
+  ];
   const personaStep = page.getByTestId("wizard-persona-step");
-  for (let remaining = 2; remaining > 0; remaining -= 1) {
-    await openaiStep.or(anthropicStep).or(personaStep).waitFor();
-    if (await openaiStep.isVisible()) {
-      await page.getByTestId("setup-continue").click();
-      continue;
+  const skipOptional = async (doneTestId) => {
+    const done = page.getByTestId(doneTestId);
+    let visible = done;
+    for (const testId of optionalSteps) {
+      visible = visible.or(page.getByTestId(testId));
     }
-    if (await anthropicStep.isVisible()) {
-      await page.getByTestId("setup-continue").click();
-      continue;
+    await visible.waitFor();
+    for (let remaining = optionalSteps.length + 1; remaining > 0; remaining -= 1) {
+      if (await done.isVisible()) {
+        return;
+      }
+      let skipped = false;
+      for (const testId of optionalSteps) {
+        if (await page.getByTestId(testId).isVisible()) {
+          await page.getByTestId("setup-continue").click();
+          skipped = true;
+          break;
+        }
+      }
+      if (!skipped) {
+        return;
+      }
     }
-    break;
-  }
-
+  };
+  await skipOptional("wizard-persona-step");
   await personaStep.waitFor();
   await page.getByTestId("setup-continue").click();
+  await skipOptional("setup-ready");
   await page.getByTestId("setup-complete").click();
   await page.getByTestId("chat-workspace").waitFor();
 }

@@ -1,0 +1,29 @@
+{
+  "id": "borg.openrouter",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-openrouter/main",
+  "ui": "@borg/plugin-openrouter/ui",
+  "permissions": [
+    "models.register",
+    "network:openrouter.ai",
+    "secrets:read",
+    "secrets:write",
+    "ui.settings",
+    "ui.wizard"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.openrouter.connect",
+      "borg.openrouter.disconnect",
+      "borg.openrouter.getStatus"
+    ],
+    "kinds": [
+      "llmProvider",
+      "settingsPage",
+      "wizardStep"
+    ]
+  }
+}
