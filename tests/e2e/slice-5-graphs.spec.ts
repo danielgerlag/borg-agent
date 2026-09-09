@@ -121,15 +121,16 @@ async function expandTranscriptEvent(text: string): Promise<void> {
     .locator('[data-testid="chat-message"][data-role="event"]')
     .filter({ hasText: text });
   await expect(event).toBeVisible();
-  const alreadyOpen = await event.evaluate(
+  const details = event.locator("details");
+  const alreadyOpen = await details.evaluate(
     (node) => node instanceof HTMLDetailsElement && node.open,
   );
   if (!alreadyOpen) {
-    await event.locator("summary").click();
+    await details.locator("summary").click();
   }
-  await expect(event).toHaveJSProperty("open", true);
-  await expect(event.locator("p")).toBeVisible();
-  await expect(event.locator("p")).toContainText(text);
+  await expect(details).toHaveJSProperty("open", true);
+  await expect(details.locator("p")).toBeVisible();
+  await expect(details.locator("p")).toContainText(text);
 }
 
 async function setWindowVisibility(visible: boolean): Promise<void> {
