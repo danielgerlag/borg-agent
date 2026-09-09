@@ -181,3 +181,7 @@ export {
   type WorkspaceFile,
   type WorkspaceHandle,
 } from "./workspace-service";
+export type {
+  WorkspaceImportResult,
+  WorkspacePreview,
+} from "@borg/contracts";

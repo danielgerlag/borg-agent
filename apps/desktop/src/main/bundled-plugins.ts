@@ -364,8 +364,10 @@ export const bundledMainPlugins: readonly PluginSource[] = [
           "borg.chat.createSession",
           "borg.chat.deleteSession",
           "borg.chat.getSession",
+          "borg.chat.importWorkspaceFiles",
           "borg.chat.listSessions",
           "borg.chat.listWorkspace",
+          "borg.chat.previewWorkspaceFile",
           "borg.chat.sendMessage",
           "borg.chat.spawnSubAgent"
         ],
@@ -374,7 +376,8 @@ export const bundledMainPlugins: readonly PluginSource[] = [
           "borg.chat.session.deleted",
           "borg.chat.session.updated",
           "borg.chat.turn.completed",
-          "borg.chat.turn.started"
+          "borg.chat.turn.started",
+          "borg.chat.workspace.updated"
         ],
         "kinds": [
           "flightDeckWidget",

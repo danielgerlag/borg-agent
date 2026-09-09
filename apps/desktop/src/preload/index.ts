@@ -1,5 +1,10 @@
 import type { BusEnvelope } from "@borg/contracts";
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import {
+  contextBridge,
+  ipcRenderer,
+  webUtils,
+  type IpcRendererEvent,
+} from "electron";
 
 interface IpcSuccess<T> {
   readonly ok: true;
@@ -422,6 +427,52 @@ const bridge = Object.freeze({
         }
       };
     },
+  }),
+  files: Object.freeze({
+    getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+    startDrag: (
+      capability: string,
+      sessionId: string,
+      relativePaths: readonly string[],
+    ): void => {
+      ipcRenderer.send("borg:files:startDrag", {
+        capability,
+        sessionId,
+        relativePaths,
+      });
+    },
+    copyWorkspaceFiles: (
+      capability: string,
+      sessionId: string,
+      relativePaths: readonly string[],
+    ): Promise<boolean> =>
+      invokeKernel("borg:kernel:call", {
+        method: "files.copyWorkspaceFiles",
+        args: { capability, sessionId, relativePaths },
+      }),
+    readClipboardPaths: (capability: string): Promise<readonly string[]> =>
+      invokeKernel("borg:kernel:call", {
+        method: "files.readClipboardPaths",
+        args: { capability },
+      }),
+    openWorkspaceFile: (
+      capability: string,
+      sessionId: string,
+      path: string,
+    ): Promise<boolean> =>
+      invokeKernel("borg:kernel:call", {
+        method: "files.openWorkspaceFile",
+        args: { capability, sessionId, path },
+      }),
+    revealWorkspaceFile: (
+      capability: string,
+      sessionId: string,
+      path: string,
+    ): Promise<boolean> =>
+      invokeKernel("borg:kernel:call", {
+        method: "files.revealWorkspaceFile",
+        args: { capability, sessionId, path },
+      }),
   }),
   window: Object.freeze({
     hide: (capability: string): Promise<boolean> => {

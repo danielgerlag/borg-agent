@@ -36,6 +36,8 @@ import type {
   ReleasedModelCompletion,
   ToolSecurityMetadata,
   WorkspaceFile,
+  WorkspaceImportResult,
+  WorkspacePreview,
   DynamicToolDefinition,
   ToolApproval,
 } from "@borg/contracts";
@@ -67,6 +69,8 @@ export type {
   ReleasedModelCompletion,
   ToolApproval,
   ToolSecurityMetadata,
+  WorkspaceImportResult,
+  WorkspacePreview,
 } from "@borg/contracts";
 
 export interface Disposable {
@@ -405,6 +409,12 @@ export interface PluginWorkspace {
       }
     | undefined;
   listFiles(sessionId: string): Promise<readonly WorkspaceFile[]>;
+  readFile(sessionId: string, relativePath: string): Promise<WorkspacePreview>;
+  importNativePaths(
+    sessionId: string,
+    nativePaths: readonly string[],
+    destDir?: string,
+  ): Promise<WorkspaceImportResult>;
   release(sessionId: string): Promise<void>;
 }
 
@@ -1031,6 +1041,18 @@ export interface PluginUiModels {
   list(): Promise<readonly ModelDescriptor[]>;
 }
 
+export interface PluginUiFiles {
+  getPathForFile(file: File): string;
+  startDrag(sessionId: string, relativePaths: readonly string[]): void;
+  copyWorkspaceFiles(
+    sessionId: string,
+    relativePaths: readonly string[],
+  ): Promise<void>;
+  readClipboardPaths(): Promise<readonly string[]>;
+  openWorkspaceFile(sessionId: string, path: string): Promise<void>;
+  revealWorkspaceFile(sessionId: string, path: string): Promise<void>;
+}
+
 export interface PluginUiContext<TComponent = unknown> {
   readonly pluginId: string;
   readonly bus: PluginUiBus;
@@ -1042,6 +1064,7 @@ export interface PluginUiContext<TComponent = unknown> {
   readonly personas: PluginUiPersonas;
   readonly models: PluginUiModels;
   readonly cost: PluginUiCost;
+  readonly files: PluginUiFiles;
   notify(request: NotificationRequest): Promise<void>;
 }
 

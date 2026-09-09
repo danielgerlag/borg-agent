@@ -4,13 +4,16 @@ import {
   chatDocumentSchema,
   chatGetSession,
   chatListSessions,
+  chatImportWorkspaceFiles,
   chatListWorkspace,
   chatMessageAppended,
+  chatPreviewWorkspaceFile,
   chatSendMessage,
   chatSessionDeleted,
   chatSessionUpdated,
   chatSpawnSubAgent,
   chatTurnCompleted,
+  chatWorkspaceUpdated,
   embeddedContentSnapshotSchema,
   emptyChatUsage,
   type ChatEntry,
@@ -19,6 +22,7 @@ import {
   type ChatUsage,
   type Persona,
   type WorkspaceFile,
+  type WorkspacePreview,
 } from "@borg/contracts";
 import {
   defineUiPlugin,
@@ -196,6 +200,8 @@ export default defineUiPlugin<Component>({
       const [sessions, setSessions] = createSignal<readonly ChatSession[]>([]);
       const [document, setDocument] = createSignal<ChatDocument>();
       const [files, setFiles] = createSignal<readonly WorkspaceFile[]>([]);
+      const [selectedPath, setSelectedPath] = createSignal<string>();
+      const [preview, setPreview] = createSignal<WorkspacePreview>();
       const [personas, setPersonas] = createSignal<readonly Persona[]>([]);
       const [defaultPersonaId, setDefaultPersonaId] = createSignal("");
       const [draft, setDraft] = createSignal("");
@@ -341,6 +347,8 @@ export default defineUiPlugin<Component>({
         abandonLoopSubscription();
         setDocument(undefined);
         setFiles([]);
+        setSelectedPath(undefined);
+        setPreview(undefined);
         setDraft("");
         setSubAgentTask("");
         setError(undefined);
@@ -474,6 +482,14 @@ export default defineUiPlugin<Component>({
         }
         setDocument((current) => adoptChatDocument({ current, next }));
         setFiles(workspace.files);
+        const selected = selectedPath();
+        if (
+          selected &&
+          !workspace.files.some((file) => file.path === selected)
+        ) {
+          setSelectedPath(undefined);
+          setPreview(undefined);
+        }
         if (next.session.activeRunId) {
           await subscribeRun(next.session.activeRunId);
         } else if (loopSubscription) {
@@ -503,6 +519,8 @@ export default defineUiPlugin<Component>({
         setStreaming("");
         setDocument((current) => adoptChatDocument({ current, next }));
         setFiles(workspace.files);
+        setSelectedPath(undefined);
+        setPreview(undefined);
         setSubAgentTask("");
         setComposingNew(false);
         setError(undefined);
@@ -582,6 +600,8 @@ export default defineUiPlugin<Component>({
               abandonLoopSubscription();
               setDocument(undefined);
               setFiles([]);
+              setSelectedPath(undefined);
+              setPreview(undefined);
               setDraft("");
               setComposingNew(false);
               setWorkspaceOpen(false);
@@ -596,6 +616,13 @@ export default defineUiPlugin<Component>({
               void refreshSelected();
             }
             void refreshSessions();
+          }),
+        );
+        void addEventSubscription(
+          context.bus.on(chatWorkspaceUpdated, ({ sessionId }) => {
+            if (document()?.session.id === sessionId) {
+              void refreshSelected();
+            }
           }),
         );
         void refreshSessions()
@@ -633,6 +660,8 @@ export default defineUiPlugin<Component>({
             abandonLoopSubscription();
             setDocument(undefined);
             setFiles([]);
+            setSelectedPath(undefined);
+            setPreview(undefined);
             setDraft("");
             setComposingNew(false);
             setWorkspaceOpen(false);
@@ -803,10 +832,151 @@ export default defineUiPlugin<Component>({
         }
       };
 
+      const textPreview = createMemo(() => {
+        const value = preview();
+        return value?.kind === "text" ? value : undefined;
+      });
+      const imagePreview = createMemo(() => {
+        const value = preview();
+        return value?.kind === "image" ? value : undefined;
+      });
+      const binaryPreview = createMemo(() => {
+        const value = preview();
+        return value?.kind === "binary" ? value : undefined;
+      });
+
+      const isComposerTarget = (event: Event): boolean => {
+        const target = event.target;
+        return target instanceof Node && composerInput?.contains(target) === true;
+      };
+
+      const hasOsFiles = (event: DragEvent): boolean =>
+        event.dataTransfer?.types.includes("Files") === true;
+
+      const importNativePaths = async (
+        nativePaths: readonly string[],
+      ): Promise<void> => {
+        const sessionId = document()?.session.id;
+        if (!sessionId || nativePaths.length === 0) {
+          return;
+        }
+        setError(undefined);
+        try {
+          const result = await context.bus.invoke(chatImportWorkspaceFiles, {
+            sessionId,
+            nativePaths: nativePaths.slice(0, 50),
+          });
+          if (!active || document()?.session.id !== sessionId) {
+            return;
+          }
+          setFiles(result.files);
+          setWorkspaceOpen(true);
+        } catch (failure) {
+          if (active) {
+            setError(describeError(failure));
+          }
+        }
+      };
+
+      const previewFile = async (relativePath: string): Promise<void> => {
+        const sessionId = document()?.session.id;
+        if (!sessionId) {
+          return;
+        }
+        setSelectedPath(relativePath);
+        try {
+          const next = await context.bus.invoke(chatPreviewWorkspaceFile, {
+            sessionId,
+            path: relativePath,
+          });
+          if (
+            !active ||
+            document()?.session.id !== sessionId ||
+            selectedPath() !== relativePath
+          ) {
+            return;
+          }
+          setPreview(next);
+        } catch (failure) {
+          if (
+            active &&
+            document()?.session.id === sessionId &&
+            selectedPath() === relativePath
+          ) {
+            setPreview(undefined);
+            setError(describeError(failure));
+          }
+        }
+      };
+
+      const importDropped = (event: DragEvent): void => {
+        const transferred = event.dataTransfer?.files;
+        if (!transferred || transferred.length === 0) {
+          return;
+        }
+        const nativePaths: string[] = [];
+        for (const file of transferred) {
+          const nativePath = context.files.getPathForFile(file);
+          if (nativePath.length > 0) {
+            nativePaths.push(nativePath);
+          }
+        }
+        void importNativePaths(nativePaths);
+      };
+
+      const onWorkspaceDragOver = (event: DragEvent): void => {
+        if (!document() || !hasOsFiles(event) || isComposerTarget(event)) {
+          return;
+        }
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "copy";
+        }
+      };
+
+      const onWorkspaceDrop = (event: DragEvent): void => {
+        if (!document() || isComposerTarget(event) || !hasOsFiles(event)) {
+          return;
+        }
+        event.preventDefault();
+        importDropped(event);
+      };
+
+      const onFilesKeyDown = (event: KeyboardEvent): void => {
+        const meta = event.metaKey || event.ctrlKey;
+        if (!meta) {
+          return;
+        }
+        const sessionId = document()?.session.id;
+        if (!sessionId) {
+          return;
+        }
+        if (event.key === "c" || event.key === "C") {
+          const path = selectedPath();
+          if (!path) {
+            return;
+          }
+          event.preventDefault();
+          void context.files
+            .copyWorkspaceFiles(sessionId, [path])
+            .catch((failure: unknown) => setError(describeError(failure)));
+          return;
+        }
+        if (event.key === "v" || event.key === "V") {
+          event.preventDefault();
+          void context.files
+            .readClipboardPaths()
+            .then((nativePaths) => importNativePaths(nativePaths))
+            .catch((failure: unknown) => setError(describeError(failure)));
+        }
+      };
+
       return (
         <section
           class="relative h-full min-h-0 overflow-hidden bg-[var(--panel)]"
           data-testid="chat-workspace"
+          onDragOver={onWorkspaceDragOver}
+          onDrop={onWorkspaceDrop}
         >
           <div
             class="grid h-full min-h-0 grid-cols-[13rem_minmax(20rem,1fr)] grid-rows-[minmax(0,1fr)]"
@@ -1249,8 +1419,12 @@ export default defineUiPlugin<Component>({
                 <Show when={workspaceOpen() && document()}>
                   <aside
                     id="chat-workspace-browser"
-                    class="w-72 shrink-0 overflow-y-auto border-l border-[var(--border)] bg-[var(--panel-muted)]/30 p-4"
+                    class="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-[var(--border)] bg-[var(--panel-muted)]/30 p-4 outline-none"
                     data-testid="chat-workspace-browser"
+                    tabIndex={0}
+                    onKeyDown={onFilesKeyDown}
+                    onDragOver={onWorkspaceDragOver}
+                    onDrop={onWorkspaceDrop}
                   >
                     <div class="flex items-center justify-between gap-2">
                       <div class="flex items-center gap-2">
@@ -1275,15 +1449,32 @@ export default defineUiPlugin<Component>({
                         each={files()}
                         fallback={
                           <p class="text-xs text-[var(--text-subtle)]">
-                            No files yet.
+                            Drop files here, or paste from Finder, Explorer, or
+                            Files.
                           </p>
                         }
                       >
                         {(file) => (
-                          <div
-                            class="flex items-start gap-2 rounded-lg border border-[var(--border)] px-2.5 py-2"
+                          <button
+                            type="button"
+                            class="flex items-start gap-2 rounded-lg border border-[var(--border)] px-2.5 py-2 text-left hover:bg-[var(--panel)]"
+                            classList={{
+                              "border-[var(--accent)] bg-[var(--panel)] text-[var(--accent)]":
+                                selectedPath() === file.path,
+                            }}
                             data-testid="chat-workspace-file"
                             data-path={file.path}
+                            draggable="true"
+                            onClick={() => void previewFile(file.path)}
+                            onDragStart={(event) => {
+                              event.preventDefault();
+                              const sessionId = document()?.session.id;
+                              if (!sessionId) {
+                                return;
+                              }
+                              setSelectedPath(file.path);
+                              context.files.startDrag(sessionId, [file.path]);
+                            }}
                           >
                             <FileText
                               aria-hidden="true"
@@ -1296,10 +1487,86 @@ export default defineUiPlugin<Component>({
                                 {file.size} bytes
                               </p>
                             </div>
-                          </div>
+                          </button>
                         )}
                       </For>
                     </div>
+                    <Show when={preview()}>
+                      <div
+                        class="mt-4 border-t border-[var(--border)] pt-4"
+                        data-testid="chat-workspace-preview"
+                      >
+                        <Show when={textPreview()}>
+                          {(current) => (
+                            <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-[11px] leading-5">
+                              {current().content}
+                            </pre>
+                          )}
+                        </Show>
+                        <Show when={imagePreview()}>
+                          {(current) => (
+                            <img
+                              class="max-h-48 w-full rounded-lg object-contain"
+                              src={`data:${current().mimeType};base64,${current().content}`}
+                              alt={current().path}
+                            />
+                          )}
+                        </Show>
+                        <Show when={binaryPreview()}>
+                          {(current) => (
+                            <div>
+                              <p class="text-xs text-[var(--text-muted)]">
+                                This file can't be previewed.
+                              </p>
+                              <div class="mt-2 flex gap-2">
+                                <button
+                                  type="button"
+                                  class="rounded-md px-2 py-1 text-[10px] text-[var(--text)] hover:bg-[var(--panel)]"
+                                  data-testid="chat-workspace-open"
+                                  onClick={() => {
+                                    const sessionId = document()?.session.id;
+                                    if (!sessionId) {
+                                      return;
+                                    }
+                                    void context.files
+                                      .openWorkspaceFile(
+                                        sessionId,
+                                        current().path,
+                                      )
+                                      .catch((failure: unknown) =>
+                                        setError(describeError(failure)),
+                                      );
+                                  }}
+                                >
+                                  Open
+                                </button>
+                                <button
+                                  type="button"
+                                  class="rounded-md px-2 py-1 text-[10px] text-[var(--text)] hover:bg-[var(--panel)]"
+                                  data-testid="chat-workspace-reveal"
+                                  onClick={() => {
+                                    const sessionId = document()?.session.id;
+                                    if (!sessionId) {
+                                      return;
+                                    }
+                                    void context.files
+                                      .revealWorkspaceFile(
+                                        sessionId,
+                                        current().path,
+                                      )
+                                      .catch((failure: unknown) =>
+                                        setError(describeError(failure)),
+                                      );
+                                  }}
+                                >
+                                  Reveal in folder
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </Show>
+                      </div>
+                    </Show>
                   </aside>
                 </Show>
               </div>

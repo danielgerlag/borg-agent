@@ -1184,10 +1184,73 @@ export const workspaceFileSchema = z
 
 export type WorkspaceFile = z.infer<typeof workspaceFileSchema>;
 
+export const workspacePreviewSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("text"),
+      path: z.string().min(1),
+      size: z.number().int().nonnegative(),
+      content: z.string(),
+      truncated: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("image"),
+      path: z.string().min(1),
+      size: z.number().int().nonnegative(),
+      mimeType: z.string().min(1),
+      content: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("binary"),
+      path: z.string().min(1),
+      size: z.number().int().nonnegative(),
+    })
+    .strict(),
+]);
+
+export type WorkspacePreview = z.infer<typeof workspacePreviewSchema>;
+
+export const workspaceImportResultSchema = z
+  .object({
+    files: z.array(workspaceFileSchema),
+    imported: z.number().int().nonnegative(),
+    skipped: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type WorkspaceImportResult = z.infer<typeof workspaceImportResultSchema>;
+
 export const chatListWorkspace = defineCommand({
   id: "borg.chat.listWorkspace",
   input: z.object({ sessionId: z.string().uuid() }).strict(),
   output: z.object({ files: z.array(workspaceFileSchema) }).strict(),
+});
+
+export const chatPreviewWorkspaceFile = defineCommand({
+  id: "borg.chat.previewWorkspaceFile",
+  input: z
+    .object({
+      sessionId: z.string().uuid(),
+      path: z.string().min(1),
+    })
+    .strict(),
+  output: workspacePreviewSchema,
+});
+
+export const chatImportWorkspaceFiles = defineCommand({
+  id: "borg.chat.importWorkspaceFiles",
+  input: z
+    .object({
+      sessionId: z.string().uuid(),
+      nativePaths: z.array(z.string().min(1)).min(1).max(50),
+      destDir: z.string().min(1).optional(),
+    })
+    .strict(),
+  output: workspaceImportResultSchema,
 });
 
 export const chatMessageAppended = defineEvent({
@@ -1235,6 +1298,11 @@ export const chatSessionUpdated = defineEvent({
 
 export const chatSessionDeleted = defineEvent({
   id: "borg.chat.session.deleted",
+  payload: z.object({ sessionId: z.string().uuid() }).strict(),
+});
+
+export const chatWorkspaceUpdated = defineEvent({
+  id: "borg.chat.workspace.updated",
   payload: z.object({ sessionId: z.string().uuid() }).strict(),
 });
 

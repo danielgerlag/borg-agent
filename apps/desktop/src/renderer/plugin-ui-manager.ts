@@ -367,6 +367,60 @@ export async function activatePluginUi(
             return trackScoped({ dispose: unsubscribe });
           },
         },
+        files: {
+          getPathForFile: (file) => {
+            if (!plugin.permissions.includes("workspace.manage")) {
+              throw new Error(`Plugin ${plugin.id} cannot access workspace files`);
+            }
+            return window.borg.files.getPathForFile(file);
+          },
+          startDrag: (sessionId, relativePaths) => {
+            if (!plugin.permissions.includes("workspace.manage")) {
+              throw new Error(`Plugin ${plugin.id} cannot access workspace files`);
+            }
+            window.borg.files.startDrag(
+              plugin.uiCapability,
+              sessionId,
+              relativePaths,
+            );
+          },
+          copyWorkspaceFiles: async (sessionId, relativePaths) => {
+            if (!plugin.permissions.includes("workspace.manage")) {
+              throw new Error(`Plugin ${plugin.id} cannot access workspace files`);
+            }
+            await window.borg.files.copyWorkspaceFiles(
+              plugin.uiCapability,
+              sessionId,
+              relativePaths,
+            );
+          },
+          readClipboardPaths: async () => {
+            if (!plugin.permissions.includes("workspace.manage")) {
+              throw new Error(`Plugin ${plugin.id} cannot access workspace files`);
+            }
+            return window.borg.files.readClipboardPaths(plugin.uiCapability);
+          },
+          openWorkspaceFile: async (sessionId, path) => {
+            if (!plugin.permissions.includes("workspace.manage")) {
+              throw new Error(`Plugin ${plugin.id} cannot access workspace files`);
+            }
+            await window.borg.files.openWorkspaceFile(
+              plugin.uiCapability,
+              sessionId,
+              path,
+            );
+          },
+          revealWorkspaceFile: async (sessionId, path) => {
+            if (!plugin.permissions.includes("workspace.manage")) {
+              throw new Error(`Plugin ${plugin.id} cannot access workspace files`);
+            }
+            await window.borg.files.revealWorkspaceFile(
+              plugin.uiCapability,
+              sessionId,
+              path,
+            );
+          },
+        },
         notify: async (request) => {
           if (!plugin.permissions.includes("notifications:send")) {
             throw new Error(`Plugin ${plugin.id} cannot send notifications`);
