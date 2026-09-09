@@ -15,6 +15,26 @@ import {
   AZURE_DEFAULT_API_VERSION,
   type AzureAuthMode,
 } from "./config";
+import {
+  AzureUserError,
+  SAFE_AZURE_ERROR_MESSAGES,
+  azureUserError,
+  classifyAzureStatus,
+  parseAzureUserError,
+  type AzureSafeErrorKey,
+} from "./errors";
+
+export {
+  AzureUserError,
+  SAFE_AZURE_ERROR_MESSAGES,
+  SAFE_AZURE_ERRORS,
+  azureUserError,
+  classifyAzureStatus,
+  formatAzureUserError,
+  parseAzureErrorBody,
+  parseAzureUserError,
+} from "./errors";
+export type { AzureSafeErrorKey, AzureUserErrorShape } from "./errors";
 
 export const AZURE_PROVIDER_ID = "borg.azure";
 export const AZURE_SECRET_KEY = "apiKey";
@@ -22,33 +42,18 @@ export const AZURE_TIMEOUT_MS = 60_000;
 export const AZURE_TOOL_NAME_MAX = 64;
 export const AZURE_COGNITIVE_RESOURCE =
   "https://cognitiveservices.azure.com";
+export const AZURE_FOUNDRY_RESOURCE = "https://ai.azure.com";
 export const AZURE_TOKEN_SCOPE = `${AZURE_COGNITIVE_RESOURCE}/.default`;
+export const AZURE_FOUNDRY_TOKEN_SCOPE = `${AZURE_FOUNDRY_RESOURCE}/.default`;
 export const AZURE_IMDS_TOKEN_URL =
   "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://cognitiveservices.azure.com";
 export const AZURE_TOKEN_REFRESH_SKEW_MS = 5 * 60_000;
 
-export const SAFE_AZURE_ERRORS = Object.freeze({
-  cancelled: "The Azure request was cancelled.",
-  timeout: "The Azure request timed out.",
-  missingKey: "Azure is not connected. Add an API key in Settings.",
-  missingEndpoint: "Azure is not connected. Add a resource endpoint in Settings.",
-  missingCredential:
-    "Azure could not find credentials. Run az login or azd auth login, or use an API key.",
-  rejectedKey: "Azure rejected the credentials. Replace them in Settings.",
-  rateLimited: "Azure rate-limited the request. Try again shortly.",
-  unavailable: "Azure is temporarily unavailable. Try again shortly.",
-  rejected: "Azure rejected the request.",
-  protocol: "Azure returned an unreadable response.",
-  unknownTool: "Azure returned an unknown tool.",
-  invalidEndpoint: "Azure endpoint must be an https resource URL.",
-  emptyCatalog: "Azure returned no models.",
-});
-
-const SAFE_AZURE_ERROR_MESSAGES: ReadonlySet<string> = new Set(
-  Object.values(SAFE_AZURE_ERRORS),
-);
-
 const AZURE_TOOL_NAME = /^[A-Za-z0-9_-]+$/;
+
+function fail(key: AzureSafeErrorKey): never {
+  throw azureUserError(key);
+}
 
 export interface AzureUsageParts {
   readonly inputTokens: number;
@@ -78,11 +83,33 @@ export function isTruthyEnv(value: string | undefined): boolean {
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
+export function foundryProjectBase(endpoint: string): string | undefined {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  const match = /^https:\/\/[^/]+\/api\/projects\/[^/]+/i.exec(trimmed);
+  return match?.[0];
+}
+
 export function foundryResourceUrl(endpoint: string): string {
   const trimmed = endpoint.trim().replace(/\/+$/, "");
-  const marker = "/api/projects/";
-  const index = trimmed.indexOf(marker);
-  return index >= 0 ? trimmed.slice(0, index) : trimmed;
+  return foundryProjectBase(trimmed) ?? trimmed;
+}
+
+export function azureTokenResource(endpoint: string): string {
+  return foundryProjectBase(endpoint)
+    ? AZURE_FOUNDRY_RESOURCE
+    : AZURE_COGNITIVE_RESOURCE;
+}
+
+export function azureTokenScope(endpoint: string): string {
+  return `${azureTokenResource(endpoint)}/.default`;
+}
+
+export function azureImdsTokenUrl(resource: string): string {
+  return `http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=${resource}`;
+}
+
+function isDatedAzureApiVersion(version: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}/.test(version);
 }
 
 export function withApiVersion(url: string, apiVersion: string): string {
@@ -91,6 +118,12 @@ export function withApiVersion(url: string, apiVersion: string): string {
     return url;
   }
   const parsed = new URL(url);
+  if (
+    parsed.pathname.includes("/openai/v1/") &&
+    isDatedAzureApiVersion(version)
+  ) {
+    return url;
+  }
   parsed.searchParams.set("api-version", version);
   return parsed.toString();
 }
@@ -98,16 +131,16 @@ export function withApiVersion(url: string, apiVersion: string): string {
 export function resolveAzureResourceUrl(endpoint: string): string {
   const resource = foundryResourceUrl(endpoint);
   if (resource.length === 0) {
-    throw new Error(SAFE_AZURE_ERRORS.missingEndpoint);
+    fail("missingEndpoint");
   }
   let parsed: URL;
   try {
     parsed = new URL(resource);
   } catch {
-    throw new Error(SAFE_AZURE_ERRORS.invalidEndpoint);
+    fail("invalidEndpoint");
   }
   if (parsed.protocol !== "https:") {
-    throw new Error(SAFE_AZURE_ERRORS.invalidEndpoint);
+    fail("invalidEndpoint");
   }
   return resource;
 }
@@ -126,10 +159,11 @@ export function resolveAzureModelsUrl(
   endpoint: string,
   apiVersion: string = AZURE_DEFAULT_API_VERSION,
 ): string {
-  return withApiVersion(
-    `${resolveAzureResourceUrl(endpoint)}/openai/v1/models`,
-    apiVersion,
-  );
+  const resource = resolveAzureResourceUrl(endpoint);
+  if (foundryProjectBase(endpoint)) {
+    return `${resource}/deployments?api-version=v1`;
+  }
+  return withApiVersion(`${resource}/openai/v1/models`, apiVersion);
 }
 
 // TCP probe: a laptop without IMDS would otherwise hang on the HTTP token call.
@@ -196,15 +230,15 @@ function parseAzAccessToken(stdout: string, now: number): AzureAccessToken {
   try {
     payload = JSON.parse(stdout);
   } catch {
-    throw new Error(SAFE_AZURE_ERRORS.missingCredential);
+    fail("missingCredential");
   }
   const object = asObject(payload);
   if (!object) {
-    throw new Error(SAFE_AZURE_ERRORS.missingCredential);
+    fail("missingCredential");
   }
   const accessToken = object.accessToken;
   if (typeof accessToken !== "string" || accessToken.trim().length === 0) {
-    throw new Error(SAFE_AZURE_ERRORS.missingCredential);
+    fail("missingCredential");
   }
   return {
     accessToken: accessToken.trim(),
@@ -221,6 +255,7 @@ export interface AzureTokenAcquirerOptions {
   readonly execFile?: AzureExecFile;
   readonly probeImds?: () => Promise<boolean>;
   readonly now?: () => number;
+  readonly resource?: string;
 }
 
 export function createAzureTokenAcquirer(
@@ -231,6 +266,8 @@ export function createAzureTokenAcquirer(
   const execFile = options.execFile ?? execFileStdout;
   const probe = options.probeImds ?? (() => probeImds());
   const now = options.now ?? (() => Date.now());
+  const resource = options.resource ?? AZURE_COGNITIVE_RESOURCE;
+  const tokenScope = `${resource}/.default`;
   let cached: AzureAccessToken | undefined;
 
   const shouldSkipManagedIdentity = (): boolean =>
@@ -256,7 +293,7 @@ export function createAzureTokenAcquirer(
       ? AbortSignal.any([signal, timeout])
       : timeout;
     try {
-      const response = await fetchImpl(AZURE_IMDS_TOKEN_URL, {
+      const response = await fetchImpl(azureImdsTokenUrl(resource), {
         method: "GET",
         headers: { Metadata: "true" },
         redirect: "error",
@@ -291,7 +328,7 @@ export function createAzureTokenAcquirer(
         "account",
         "get-access-token",
         "--resource",
-        AZURE_COGNITIVE_RESOURCE,
+        resource,
         "--output",
         "json",
       ]);
@@ -302,18 +339,18 @@ export function createAzureTokenAcquirer(
           "auth",
           "token",
           "--scope",
-          AZURE_TOKEN_SCOPE,
+          tokenScope,
         ]);
         const accessToken = stdout.trim();
         if (accessToken.length === 0) {
-          throw new Error(SAFE_AZURE_ERRORS.missingCredential);
+          fail("missingCredential");
         }
         return {
           accessToken,
           expiresAtMs: instant + 3_600_000,
         };
       } catch {
-        throw new Error(SAFE_AZURE_ERRORS.missingCredential);
+        fail("missingCredential");
       }
     }
   };
@@ -364,11 +401,11 @@ export function normalizeOpenAIUsage(candidate: unknown): AzureUsageParts {
 export function parseOpenAIModelCatalog(payload: unknown): string[] {
   const object = asObject(payload);
   if (!object) {
-    throw new Error(SAFE_AZURE_ERRORS.protocol);
+    fail("protocol");
   }
   const data = object.data;
   if (!Array.isArray(data)) {
-    throw new Error(SAFE_AZURE_ERRORS.protocol);
+    fail("protocol");
   }
   const ids: string[] = [];
   const seen = new Set<string>();
@@ -383,6 +420,40 @@ export function parseOpenAIModelCatalog(payload: unknown): string[] {
   return ids;
 }
 
+export function parseFoundryDeployments(payload: unknown): string[] {
+  const object = asObject(payload);
+  if (!object) {
+    fail("protocol");
+  }
+  const rows = object.value;
+  if (!Array.isArray(rows)) {
+    fail("protocol");
+  }
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const item of rows) {
+    const row = asObject(item);
+    if (!row) {
+      continue;
+    }
+    if (row.type !== undefined && row.type !== "ModelDeployment") {
+      continue;
+    }
+    const capabilities = asObject(row.capabilities);
+    const chat = capabilities?.chat_completion;
+    if (chat === false || chat === "false") {
+      continue;
+    }
+    const name = row.name;
+    if (typeof name !== "string" || name.length === 0 || seen.has(name)) {
+      continue;
+    }
+    seen.add(name);
+    ids.push(name);
+  }
+  return ids;
+}
+
 export class AzureToolMap {
   readonly #toWire = new Map<string, string>();
   readonly #fromWire = new Map<string, string>();
@@ -393,7 +464,7 @@ export class AzureToolMap {
       return existing;
     }
     if (borgId.includes("_")) {
-      throw new Error(SAFE_AZURE_ERRORS.unknownTool);
+      fail("unknownTool");
     }
     const wire = borgId.replaceAll(".", "_");
     if (
@@ -401,7 +472,7 @@ export class AzureToolMap {
       wire.length > AZURE_TOOL_NAME_MAX ||
       !AZURE_TOOL_NAME.test(wire)
     ) {
-      throw new Error(SAFE_AZURE_ERRORS.unknownTool);
+      fail("unknownTool");
     }
     this.#toWire.set(borgId, wire);
     this.#fromWire.set(wire, borgId);
@@ -411,7 +482,7 @@ export class AzureToolMap {
   resolve(wireName: string): string {
     const borgId = this.#fromWire.get(wireName);
     if (!borgId) {
-      throw new Error(SAFE_AZURE_ERRORS.unknownTool);
+      fail("unknownTool");
     }
     return borgId;
   }
@@ -475,35 +546,22 @@ function convertMessage(
   };
 }
 
-export function classifyAzureStatus(status: number): string {
-  if (status === 401 || status === 403) {
-    return SAFE_AZURE_ERRORS.rejectedKey;
-  }
-  if (status === 429) {
-    return SAFE_AZURE_ERRORS.rateLimited;
-  }
-  if (status === 400) {
-    return SAFE_AZURE_ERRORS.rejected;
-  }
-  if (status === 529 || status >= 500) {
-    return SAFE_AZURE_ERRORS.unavailable;
-  }
-  return SAFE_AZURE_ERRORS.rejected;
-}
-
 export function azureErrorFromUnknown(error: unknown): Error {
+  if (error instanceof AzureUserError) {
+    return error;
+  }
   if (isAbortError(error)) {
-    return new Error(SAFE_AZURE_ERRORS.cancelled);
+    return azureUserError("cancelled");
   }
   if (error instanceof Error) {
     if (SAFE_AZURE_ERROR_MESSAGES.has(error.message)) {
-      return error;
+      return new AzureUserError(parseAzureUserError(error.message));
     }
     if (/timeout/i.test(error.message)) {
-      return new Error(SAFE_AZURE_ERRORS.timeout);
+      return azureUserError("timeout");
     }
   }
-  return new Error(SAFE_AZURE_ERRORS.protocol);
+  return azureUserError("protocol");
 }
 
 export interface AzureProviderOptions {
@@ -534,9 +592,11 @@ export class AzureProvider implements LlmProviderContribution {
   readonly #authMode: AzureAuthMode;
   readonly #getApiKey: () => Promise<string | undefined>;
   readonly #acquireAzureToken: AcquireAzureToken;
+  readonly #foundryProject: boolean;
 
   constructor(options: AzureProviderOptions) {
     this.#fetch = options.fetchImpl ?? fetch;
+    this.#foundryProject = foundryProjectBase(options.endpoint) !== undefined;
     this.#completionsUrl = resolveAzureCompletionsUrl(
       options.endpoint,
       options.apiVersion ?? AZURE_DEFAULT_API_VERSION,
@@ -549,7 +609,10 @@ export class AzureProvider implements LlmProviderContribution {
     this.#authMode = options.authMode;
     this.#getApiKey = options.getApiKey;
     this.#acquireAzureToken =
-      options.acquireAzureToken ?? createAzureTokenAcquirer();
+      options.acquireAzureToken ??
+      createAzureTokenAcquirer({
+        resource: azureTokenResource(options.endpoint),
+      });
     this.models = Object.freeze([...(options.models ?? [])]);
     this.egress = Object.freeze({
       kind: "remote",
@@ -565,18 +628,19 @@ export class AzureProvider implements LlmProviderContribution {
       signal ?? new AbortController().signal,
     );
     if (!response.ok) {
-      await discardBody(response);
-      throw new Error(classifyAzureStatus(response.status));
+      throw await azureHttpError(response);
     }
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
-      throw new Error(SAFE_AZURE_ERRORS.protocol);
+      fail("protocol");
     }
-    const models = parseOpenAIModelCatalog(payload);
+    const models = this.#foundryProject
+      ? parseFoundryDeployments(payload)
+      : parseOpenAIModelCatalog(payload);
     if (models.length === 0) {
-      throw new Error(SAFE_AZURE_ERRORS.emptyCatalog);
+      fail("emptyCatalog");
     }
     return models;
   }
@@ -605,11 +669,10 @@ export class AzureProvider implements LlmProviderContribution {
       permit,
     );
     if (!response.ok) {
-      await discardBody(response);
-      throw new Error(classifyAzureStatus(response.status));
+      throw await azureHttpError(response);
     }
     if (!response.body) {
-      throw new Error(SAFE_AZURE_ERRORS.protocol);
+      fail("protocol");
     }
     try {
       return await readOpenAICompatStream(
@@ -621,7 +684,7 @@ export class AzureProvider implements LlmProviderContribution {
       );
     } catch (error) {
       if (timeout.aborted && !signal.aborted) {
-        throw new Error(SAFE_AZURE_ERRORS.timeout);
+        fail("timeout");
       }
       throw azureErrorFromUnknown(error);
     }
@@ -638,29 +701,29 @@ export class AzureProvider implements LlmProviderContribution {
     readonly combined: AbortSignal;
   }> {
     if (signal.aborted) {
-      throw new Error(SAFE_AZURE_ERRORS.cancelled);
+      fail("cancelled");
     }
     const headers = new Headers(init.headers);
     if (this.#authMode === "api-key") {
       const apiKey = await this.#getApiKey();
       if (signal.aborted) {
-        throw new Error(SAFE_AZURE_ERRORS.cancelled);
+        fail("cancelled");
       }
       if (!apiKey) {
-        throw new Error(SAFE_AZURE_ERRORS.missingKey);
+        fail("missingKey");
       }
       headers.set("api-key", apiKey);
     } else {
       const token = await this.#acquireAzureToken(signal);
       if (signal.aborted) {
-        throw new Error(SAFE_AZURE_ERRORS.cancelled);
+        fail("cancelled");
       }
       headers.set("Authorization", `Bearer ${token.accessToken}`);
     }
     const timeout = AbortSignal.timeout(this.#timeoutMs);
     const combined = AbortSignal.any([signal, timeout]);
     if (combined.aborted) {
-      throw new Error(SAFE_AZURE_ERRORS.cancelled);
+      fail("cancelled");
     }
     await permit?.commit();
     try {
@@ -673,7 +736,7 @@ export class AzureProvider implements LlmProviderContribution {
       return { response, timeout, combined };
     } catch (error) {
       if (timeout.aborted && !signal.aborted) {
-        throw new Error(SAFE_AZURE_ERRORS.timeout);
+        fail("timeout");
       }
       throw azureErrorFromUnknown(error);
     }
@@ -725,7 +788,7 @@ async function readOpenAICompatStream(
     for (const index of indexes) {
       const block = toolBlocks.get(index);
       if (!block || block.id.length === 0 || block.name.length === 0) {
-        throw new Error(SAFE_AZURE_ERRORS.protocol);
+        fail("protocol");
       }
       finishedTools.push({
         id: block.id,
@@ -757,7 +820,7 @@ async function readOpenAICompatStream(
   }
 
   if (!completed) {
-    throw new Error(SAFE_AZURE_ERRORS.protocol);
+    fail("protocol");
   }
 
   return {
@@ -782,14 +845,14 @@ async function readOpenAICompatStream(
       const parsed: unknown = JSON.parse(frame.data);
       const object = asObject(parsed);
       if (!object) {
-        throw new Error(SAFE_AZURE_ERRORS.protocol);
+        fail("protocol");
       }
       payload = object;
     } catch {
-      throw new Error(SAFE_AZURE_ERRORS.protocol);
+      fail("protocol");
     }
     if (payload.error !== undefined && payload.error !== null) {
-      throw new Error(SAFE_AZURE_ERRORS.protocol);
+      fail("protocol");
     }
     if (payload.usage !== undefined && payload.usage !== null) {
       usageParts = normalizeOpenAIUsage(payload.usage);
@@ -801,7 +864,7 @@ async function readOpenAICompatStream(
       return;
     }
     if (choice.finish_reason === "content_filter") {
-      throw new Error(SAFE_AZURE_ERRORS.rejected);
+      fail("rejected");
     }
     const delta = asObject(choice.delta) ?? {};
     if (typeof delta.content === "string" && delta.content.length > 0) {
@@ -818,7 +881,7 @@ async function readOpenAICompatStream(
       }
       const index = asIndex(call.index);
       if (index < 0) {
-        throw new Error(SAFE_AZURE_ERRORS.protocol);
+        fail("protocol");
       }
       let state = toolBlocks.get(index);
       if (!state) {
@@ -867,7 +930,7 @@ async function parseSseFrames(
 ): Promise<void> {
   const { frames, rest } = splitSseBuffer(`${buffer}\n\n`);
   if (rest.trim().length > 0 && frames.length === 0) {
-    throw new Error(SAFE_AZURE_ERRORS.protocol);
+    fail("protocol");
   }
   for (const frame of frames) {
     await handle(frame);
@@ -898,7 +961,7 @@ function parseToolInput(json: string): JsonValue {
     const parsed: unknown = JSON.parse(json);
     return z.json().parse(parsed);
   } catch {
-    throw new Error(SAFE_AZURE_ERRORS.protocol);
+    fail("protocol");
   }
 }
 
@@ -931,6 +994,15 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-async function discardBody(response: Response): Promise<void> {
-  await response.arrayBuffer().catch(() => undefined);
+async function azureHttpError(response: Response): Promise<AzureUserError> {
+  const text = await response.text().catch(() => "");
+  let payload: unknown;
+  if (text.trim().length > 0) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = undefined;
+    }
+  }
+  return classifyAzureStatus(response.status, payload);
 }

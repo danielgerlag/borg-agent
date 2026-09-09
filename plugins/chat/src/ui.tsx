@@ -49,7 +49,7 @@ import {
 } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
 import { adoptChatDocument } from "./adopt-document";
-import { matchesModelPreference } from "./model-preference";
+import { displayModelName, matchesModelPreference } from "./model-preference";
 
 type ChatDocument = z.infer<typeof chatDocumentSchema>;
 
@@ -106,34 +106,6 @@ function addChatUsage(base: ChatUsage, extra: ChatUsage): ChatUsage {
     cacheWriteTokens: base.cacheWriteTokens + extra.cacheWriteTokens,
     costsByCurrency,
   };
-}
-
-function displayModelName(model: ModelDescriptor): string {
-  if (model.modelId === "mock:scripted") {
-    return "Built-in demo model";
-  }
-  if (model.modelId === "claude-sonnet-5") {
-    return "Claude Sonnet 5";
-  }
-  if (model.modelId === "claude-haiku-4-5") {
-    return "Claude Haiku 4.5";
-  }
-  if (model.modelId === "claude-opus-5") {
-    return "Claude Opus 5";
-  }
-  if (model.modelId === "gpt-5-mini") {
-    return "GPT-5 Mini";
-  }
-  if (model.modelId === "gpt-5-nano") {
-    return "GPT-5 Nano";
-  }
-  if (model.modelId === "gpt-5") {
-    return "GPT-5";
-  }
-  return model.modelId
-    .replace(/^[^:]+:/, "")
-    .replace(/[-_]+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function activityLabel(entry: ChatEntry): string {

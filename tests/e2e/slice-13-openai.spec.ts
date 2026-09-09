@@ -220,9 +220,9 @@ async function connectOpenAI(): Promise<void> {
 
 async function pickGpt5Mini(): Promise<void> {
   await page.getByTestId("settings-section-borg.chat.personas").click();
-  await page.getByTestId("wizard-model-select").selectOption({
-    label: "GPT-5 Mini",
-  });
+  await page.getByTestId("wizard-model-select").selectOption(
+    "borg.openai:gpt-5-mini",
+  );
   await expect(page.getByTestId("wizard-model-select")).toHaveValue(
     "borg.openai:gpt-5-mini",
   );

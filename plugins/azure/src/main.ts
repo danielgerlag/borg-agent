@@ -16,7 +16,10 @@ import {
 import {
   AZURE_SECRET_KEY,
   AzureProvider,
+  AzureUserError,
   SAFE_AZURE_ERRORS,
+  azureTokenResource,
+  azureUserError,
   createAzureTokenAcquirer,
 } from "./runtime";
 
@@ -41,10 +44,6 @@ export default definePlugin({
   configSchema: azureConfigSchema,
   async activate(context) {
     let registration: Disposable | undefined;
-    const acquireAzureToken = createAzureTokenAcquirer({
-      fetchImpl: globalThis.fetch.bind(globalThis),
-    });
-
     const readConfig = async (): Promise<AzureConfig> =>
       parseAzureConfig(await context.config.get());
 
@@ -64,7 +63,10 @@ export default definePlugin({
         apiVersion: config.apiVersion,
         authMode: config.authMode,
         models: config.models,
-        acquireAzureToken,
+        acquireAzureToken: createAzureTokenAcquirer({
+          fetchImpl: globalThis.fetch.bind(globalThis),
+          resource: azureTokenResource(config.endpoint),
+        }),
         getApiKey: () => context.secrets.get(AZURE_SECRET_KEY),
       });
 
@@ -97,8 +99,8 @@ export default definePlugin({
         register(config);
       } catch (error) {
         if (
-          !(error instanceof Error) ||
-          error.message !== SAFE_AZURE_ERRORS.invalidEndpoint
+          !(error instanceof AzureUserError) ||
+          error.headline !== SAFE_AZURE_ERRORS.invalidEndpoint.headline
         ) {
           throw error;
         }
@@ -110,13 +112,13 @@ export default definePlugin({
     context.bus.handle(azureConnect, async (_input, signal) => {
       const current = await readConfig();
       if (current.endpoint.trim().length === 0) {
-        throw new Error(SAFE_AZURE_ERRORS.missingEndpoint);
+        throw azureUserError("missingEndpoint");
       }
       if (
         current.authMode === "api-key" &&
         !(await context.secrets.has(AZURE_SECRET_KEY))
       ) {
-        throw new Error(SAFE_AZURE_ERRORS.missingKey);
+        throw azureUserError("missingKey");
       }
       const candidate = createProvider({ ...current, models: [] });
       const models = await candidate.verify(signal);

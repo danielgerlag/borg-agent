@@ -163,3 +163,38 @@ describe("CommandEventBus cancellation", () => {
     expect(received).toEqual([]);
   });
 });
+
+describe("CommandEventBus handler errors", () => {
+  it("surfaces the handler message instead of wrapping it", async () => {
+    const command = defineCommand({
+      id: "borg.test.boom",
+      input: z.object({}).strict(),
+      output: z.object({ ok: z.boolean() }),
+    });
+    const bus = new CommandEventBus();
+    bus.handle("borg.test", new Set([command.id]), command, () => {
+      throw new Error("Azure rejected the request.");
+    });
+    await expect(bus.invoke(command, {})).rejects.toMatchObject({
+      name: "CommandInvocationError",
+      code: "failed",
+      message: "Azure rejected the request.",
+    });
+  });
+
+  it("does not put the command id in the user-facing message", async () => {
+    const command = defineCommand({
+      id: "borg.test.boom-empty",
+      input: z.object({}).strict(),
+      output: z.object({ ok: z.boolean() }),
+    });
+    const bus = new CommandEventBus();
+    bus.handle("borg.test", new Set([command.id]), command, () => {
+      throw "nope";
+    });
+    await expect(bus.invoke(command, {})).rejects.toMatchObject({
+      code: "failed",
+      message: "The request failed.",
+    });
+  });
+});
