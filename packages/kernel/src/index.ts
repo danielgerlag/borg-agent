@@ -134,6 +134,11 @@ export {
   type ScannerRegistryOptions,
 } from "./scanner-registry";
 export {
+  ApprovalGrantStore,
+  type ApprovalDuration,
+  type ApprovalGrantKey,
+} from "./approval-grants";
+export {
   TrustAuthorizer,
   type AuthorizationRequest,
   type AuthorizationResult,

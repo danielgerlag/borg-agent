@@ -4,6 +4,10 @@ import type {
   ToolApproval,
 } from "@borg/contracts";
 import {
+  ApprovalGrantStore,
+  type ApprovalGrantKey,
+} from "./approval-grants";
+import {
   UNCLASSIFIED_SNAPSHOT,
   capacityCeiling,
   exceedsCapacity,
@@ -12,7 +16,10 @@ import {
   type ClassificationSnapshot,
 } from "./classification-service";
 import type { InteractionService } from "./interaction-service";
+import type { StoreFacade } from "./persistence";
 import { scanReportAction, type PromptScanReport } from "./scanner-registry";
+
+const MODEL_FEATURES = new Set(["model_input", "model_output"]);
 
 const MAX_PROMPT_REASONS = 20;
 const SECOND_PROMPT_REASON =
@@ -27,6 +34,7 @@ export interface AuthorizationRequest {
   readonly runId?: string | undefined;
   readonly sessionId?: string | undefined;
   readonly toolCallId?: string | undefined;
+  readonly grantId?: string | undefined;
   readonly payloadClassification?: DataClassification | undefined;
   readonly capacity?: ChannelCapacity | undefined;
   readonly scanReport?: PromptScanReport | undefined;
@@ -52,6 +60,7 @@ export interface AuthorizationResult {
 
 export interface TrustAuthorizerOptions {
   readonly classification?: ClassificationService | undefined;
+  readonly store?: StoreFacade | undefined;
 }
 
 /**
@@ -62,6 +71,7 @@ export interface TrustAuthorizerOptions {
 export class TrustAuthorizer {
   readonly #interactions: InteractionService;
   readonly #classification: ClassificationService | undefined;
+  readonly #grants: ApprovalGrantStore;
   readonly #inFlight = new Map<string, Promise<AuthorizationResult>>();
 
   constructor(
@@ -70,6 +80,7 @@ export class TrustAuthorizer {
   ) {
     this.#interactions = interactions;
     this.#classification = options.classification;
+    this.#grants = new ApprovalGrantStore(options.store);
   }
 
   async authorize(request: AuthorizationRequest): Promise<AuthorizationResult> {
@@ -82,10 +93,12 @@ export class TrustAuthorizer {
       snapshot.level,
     );
 
+    const grant = grantKey(request);
+    const granted = grant ? await this.#grants.has(grant) : false;
     const policyReasons: string[] = [];
     if (request.approval === "deny") {
       policyReasons.push(`Policy denies this ${request.feature} request.`);
-    } else if (request.approval === "ask") {
+    } else if (request.approval === "ask" && !granted) {
       policyReasons.push(`This ${request.feature} request needs your approval.`);
     }
 
@@ -115,10 +128,11 @@ export class TrustAuthorizer {
       request.runId,
       snapshot,
     );
+    const policyAsk = request.approval === "ask" && !granted;
+    const scanReview =
+      scanAction === "review" && !MODEL_FEATURES.has(request.feature);
     const needsReview =
-      request.approval === "ask" ||
-      classificationReasons.length > 0 ||
-      scanAction === "review";
+      policyAsk || classificationReasons.length > 0 || scanReview;
     if (!needsReview) {
       return freezeResult({
         allowed: true,
@@ -195,6 +209,12 @@ export class TrustAuthorizer {
         reasons: [...reasons, USER_DENIED_REASON],
       });
     }
+    const grant = grantKey(request);
+    const duration =
+      response.kind === "approval" ? (response.duration ?? "once") : "once";
+    if (grant && duration !== "once") {
+      await this.#grants.remember(grant, duration);
+    }
     return freezeResult({
       allowed: true,
       interactionUsed: true,
@@ -202,6 +222,18 @@ export class TrustAuthorizer {
       commitment,
     });
   }
+}
+
+function grantKey(request: AuthorizationRequest): ApprovalGrantKey | undefined {
+  if (!request.grantId) {
+    return undefined;
+  }
+  return {
+    pluginId: request.pluginId,
+    feature: request.feature,
+    grantId: request.grantId,
+    sessionId: request.sessionId,
+  };
 }
 
 function describeScan(report: PromptScanReport | undefined): readonly string[] {

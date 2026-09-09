@@ -389,6 +389,7 @@ export const App: Component<AppProps> = (props) => {
                           void props.respondToInteraction(interaction.id, {
                             kind: "approval",
                             decision: "allow",
+                            duration: "once",
                           })
                         }
                         data-testid="interaction-allow"
@@ -396,6 +397,39 @@ export const App: Component<AppProps> = (props) => {
                         Approve once
                       </Button>
                     </div>
+                    <Show when={interaction.kind === "tool_approval"}>
+                      <div class="mt-3 grid grid-cols-2 gap-3">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={!interaction.source.sessionId}
+                          onClick={() =>
+                            void props.respondToInteraction(interaction.id, {
+                              kind: "approval",
+                              decision: "allow",
+                              duration: "session",
+                            })
+                          }
+                          data-testid="interaction-allow-session"
+                        >
+                          Allow for this chat
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() =>
+                            void props.respondToInteraction(interaction.id, {
+                              kind: "approval",
+                              decision: "allow",
+                              duration: "always",
+                            })
+                          }
+                          data-testid="interaction-allow-always"
+                        >
+                          Always allow this tool
+                        </Button>
+                      </div>
+                    </Show>
                   </Show>
                 }
               >

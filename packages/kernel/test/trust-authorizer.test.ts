@@ -292,6 +292,97 @@ describe("TrustAuthorizer prompts", () => {
       { allowed: true },
     ]);
   });
+
+  it("does not prompt for model input when scanner coverage is missing", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+    const scanReport = await new ScannerRegistry().scan({
+      stage: "model_input",
+      text: "hello",
+      source: { kind: "user", id: "borg.chat" },
+    });
+
+    const result = await authorizer.authorize(
+      baseRequest({
+        feature: "model_input",
+        title: "Review model input safety",
+        scanReport,
+      }),
+    );
+    expect(result.allowed).toBe(true);
+    expect(result.interactionUsed).toBe(false);
+    expect(interactions.listPending()).toEqual([]);
+  });
+
+  it("remembers always allowing a tool", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+    const request = baseRequest({
+      approval: "ask",
+      grantId: "filesystem.write",
+      sessionId: "session-a",
+    });
+
+    const first = authorizer.authorize(request);
+    await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
+    interactions.respond(interactions.listPending()[0]!.id, {
+      kind: "approval",
+      decision: "allow",
+      duration: "always",
+    });
+    await expect(first).resolves.toMatchObject({ allowed: true });
+
+    const second = await authorizer.authorize({
+      ...request,
+      toolCallId: "call-2",
+    });
+    expect(second.allowed).toBe(true);
+    expect(second.interactionUsed).toBe(false);
+    expect(interactions.listPending()).toEqual([]);
+  });
+
+  it("remembers a tool for one chat only", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+    const first = authorizer.authorize(
+      baseRequest({
+        approval: "ask",
+        grantId: "filesystem.write",
+        sessionId: "session-a",
+        toolCallId: "call-1",
+      }),
+    );
+    await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
+    interactions.respond(interactions.listPending()[0]!.id, {
+      kind: "approval",
+      decision: "allow",
+      duration: "session",
+    });
+    await expect(first).resolves.toMatchObject({ allowed: true });
+
+    const sameChat = await authorizer.authorize(
+      baseRequest({
+        approval: "ask",
+        grantId: "filesystem.write",
+        sessionId: "session-a",
+        toolCallId: "call-2",
+      }),
+    );
+    expect(sameChat.interactionUsed).toBe(false);
+    expect(interactions.listPending()).toEqual([]);
+
+    const otherChat = authorizer.authorize(
+      baseRequest({
+        approval: "ask",
+        grantId: "filesystem.write",
+        sessionId: "session-b",
+        toolCallId: "call-3",
+      }),
+    );
+    await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
+    approveFirst(interactions);
+    await expect(otherChat).resolves.toMatchObject({ allowed: true });
+  });
 });
 
 describe("TrustAuthorizer commitments", () => {

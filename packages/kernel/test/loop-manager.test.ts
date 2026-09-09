@@ -326,7 +326,7 @@ describe("LoopManager", () => {
     expect(replayed).toEqual([]);
   });
 
-  it("emits interaction_wait while approved model output stays held", async () => {
+  it("does not hold model output for a scanner review", async () => {
     const { interactions, loops, models, scanners } = createLoopRuntime();
     scanners.register("borg.review", {
       id: "borg.review.model-output",
@@ -354,29 +354,19 @@ describe("LoopManager", () => {
     });
 
     const tokens: string[] = [];
-    const events: string[] = [];
     const run = await loops.start(
       loopStartInput("reviewed-model-output", { prompt: "hello" }),
     );
     loops.subscribeRun(run.id, "kernel.loop", (event) => {
-      events.push(event.type);
       if (event.type === "model_token") {
         tokens.push(event.token);
       }
     });
 
     await vi.waitFor(() =>
-      expect(interactions.listPending()).toHaveLength(1),
-    );
-    expect(events).toContain("interaction_wait");
-    expect(tokens).toEqual([]);
-    interactions.respond(interactions.listPending()[0]!.id, {
-      kind: "approval",
-      decision: "allow",
-    });
-    await vi.waitFor(() =>
       expect(loops.get(run.id)?.status).toBe("completed"),
     );
+    expect(interactions.listPending()).toEqual([]);
     expect(tokens).toEqual(["approved text"]);
   });
 

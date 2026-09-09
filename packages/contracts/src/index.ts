@@ -109,6 +109,7 @@ export const interactionResponseSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("approval"),
     decision: z.enum(["allow", "deny"]),
+    duration: z.enum(["once", "session", "always"]).optional(),
   }),
   z.object({
     kind: z.literal("text"),

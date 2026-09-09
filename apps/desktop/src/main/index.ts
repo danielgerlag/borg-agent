@@ -504,7 +504,10 @@ if (!app.requestSingleInstanceLock()) {
     interactionService = new InteractionService();
     const classification = new ClassificationService();
     const scanners = new ScannerRegistry();
-    const authorizer = new TrustAuthorizer(interactionService, { classification });
+    const authorizer = new TrustAuthorizer(interactionService, {
+      classification,
+      store: storeFacade,
+    });
     const costs = new CostLedger();
     const executions = new ExecutionSecurityService(storeFacade);
     const tools = new ToolService(interactionService, {
