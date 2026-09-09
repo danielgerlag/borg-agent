@@ -385,6 +385,7 @@ const AssignmentEditor: Component<{
             <input
               value={row.name}
               placeholder="name"
+              data-testid={`graph-assignment-name-${index()}`}
               onInput={(event) => {
                 const next = [...rows()];
                 next[index()] = { ...row, name: event.currentTarget.value };
@@ -395,6 +396,7 @@ const AssignmentEditor: Component<{
             <input
               value={row.value}
               placeholder="value or $vars.x"
+              data-testid={`graph-assignment-value-${index()}`}
               onInput={(event) => {
                 const next = [...rows()];
                 next[index()] = { ...row, value: event.currentTarget.value };

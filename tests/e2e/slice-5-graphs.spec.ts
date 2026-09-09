@@ -358,6 +358,18 @@ test("renders the graph canvas and keeps editor controls usable at supported win
   await expect(page.getByTestId("graph-node-config")).toBeVisible();
 });
 
+test("keeps focus while typing in a selected node field", async () => {
+  await openGraphsWorkspace();
+  await page.getByTestId("graph-create").click();
+  await page.getByTestId("graph-node-option-set-variable").click();
+  const value = page.getByTestId("graph-assignment-value-0");
+  await expect(value).toHaveValue("Ready");
+  await value.click();
+  await value.pressSequentially("xyz");
+  await expect(value).toBeFocused();
+  await expect(value).toHaveValue("Readyxyz");
+});
+
 test("launches a graph from Chat and shows its transcript lifecycle", async () => {
   await sendMessage("scenario:graph");
 
