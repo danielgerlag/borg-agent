@@ -12,6 +12,7 @@
     "src/ui.tsx",
     "src/connect.ts",
     "src/draw-edges.ts",
+    "src/canvas-keys.ts",
     "src/schema.ts",
     "src/schema-form.tsx",
     "src/schema-cards.tsx",
