@@ -256,6 +256,66 @@ test("answers feedback in the shared interaction UI and finishes in thread", asy
   await expect(page.getByTestId("chat-session-status")).toHaveText("Ready");
 });
 
+test("scrolls settings when the persona editor exceeds the window", async () => {
+  await page.getByTestId("nav-settings").click();
+  await page.getByTestId("settings-section-borg.chat.personas").click();
+  await expect(page.getByTestId("personas-settings-page")).toBeVisible();
+  await expect(page.getByTestId("persona-editor")).toBeVisible();
+  await expect(page.getByTestId("persona-save")).toBeAttached();
+
+  const metrics = await page.evaluate(() => {
+    const measure = (element: Element | null | undefined) => {
+      if (!(element instanceof HTMLElement)) {
+        return undefined;
+      }
+      const style = getComputedStyle(element);
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        overflowY: style.overflowY,
+        height: style.height,
+      };
+    };
+    const settings = document.querySelector('[data-testid="surface-settings"]');
+    const pane = document.querySelector('[data-testid="settings-page"]');
+    const save = document.querySelector('[data-testid="persona-save"]');
+    return {
+      innerHeight: window.innerHeight,
+      body: measure(document.body),
+      shell: measure(document.querySelector('[data-testid="app-shell"]')),
+      settings: measure(settings),
+      pane: measure(pane),
+      saveBottom: save?.getBoundingClientRect().bottom,
+    };
+  });
+
+  expect(
+    metrics.pane,
+    `layout ${JSON.stringify(metrics)}`,
+  ).toBeDefined();
+  expect(
+    metrics.pane!.scrollHeight,
+    `persona editor is not taller than the pane ${JSON.stringify(metrics)}`,
+  ).toBeGreaterThan(metrics.pane!.clientHeight);
+  expect(
+    metrics.pane!.clientHeight,
+    `settings pane grew past the window ${JSON.stringify(metrics)}`,
+  ).toBeLessThanOrEqual(metrics.innerHeight);
+
+  await page.getByTestId("persona-save").scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("persona-save")).toBeInViewport();
+
+  await page.getByTestId("settings-section-borg.azure.settings").click();
+  const azurePane = await page.getByTestId("settings-page").evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    innerHeight: window.innerHeight,
+  }));
+  expect(
+    azurePane.clientHeight,
+    `Azure settings pane grew past the window ${JSON.stringify(azurePane)}`,
+  ).toBeLessThanOrEqual(azurePane.innerHeight);
+});
+
 test("creates a persona and uses it for new chats", async () => {
   await page.getByTestId("nav-settings").click();
   await page.getByTestId("settings-section-borg.chat.personas").click();

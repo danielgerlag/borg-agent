@@ -785,10 +785,10 @@ const SettingsSurface: Component<{
   );
   return (
     <section
-      class="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)]"
+      class="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]"
       data-testid="surface-settings"
     >
-      <aside class="border-r border-[var(--border)] bg-[var(--panel)] p-5">
+      <aside class="min-h-0 overflow-y-auto border-r border-[var(--border)] bg-[var(--panel)] p-5">
         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-subtle)]">
           Settings
         </p>
@@ -836,7 +836,10 @@ const SettingsSurface: Component<{
           </Show>
         </div>
       </aside>
-      <div class="min-h-0 overflow-y-auto p-8">
+      <div
+        class="min-h-0 overflow-y-auto p-8"
+        data-testid="settings-page"
+      >
         <Show
           when={selectedId() !== "system.plugins"}
           fallback={
