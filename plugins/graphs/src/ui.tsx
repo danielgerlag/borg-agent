@@ -9,13 +9,16 @@ import {
   graphStepCompleted,
   graphsDeleteDefinition,
   graphsLaunch,
+  graphsListCatalog,
   graphsListContributions,
   graphsListDefinitions,
   graphsListRunning,
   graphsSaveDefinition,
+  graphValueMapSchema,
   type GraphDefinition,
   type GraphInstance,
   type GraphNode,
+  type Persona,
 } from "@borg/contracts";
 import { defineUiPlugin, type Disposable } from "@borg/plugin-sdk";
 import { Button, EmptyState, Panel } from "@borg/ui-kit";
@@ -32,6 +35,22 @@ import {
   outputPortId,
   portPosition,
 } from "./draw-edges";
+import {
+  type ToolCatalogItem,
+} from "./field-renderer";
+import {
+  builtInKinds,
+  defaultConfig,
+  formatKind,
+} from "./kind-registry";
+import LaunchDialog from "./launch-dialog";
+import NodeInspector from "./node-inspector";
+import {
+  defaultValueFromSchema,
+  isJsonObject,
+  schemaHasProperties,
+} from "./schema";
+import SchemaCardEditor from "./schema-cards";
 import {
   Activity,
   CircleAlert,
@@ -64,25 +83,6 @@ interface PaletteItem {
 }
 
 const ENGINE_ID = "borg.graphs.hivemind-v1";
-
-const builtInKinds = [
-  { kind: "manual", label: "Manual", type: "trigger" },
-  { kind: "schedule", label: "Schedule", type: "trigger" },
-  {
-    kind: "incoming_message",
-    label: "Incoming message",
-    type: "trigger",
-  },
-  { kind: "call_tool", label: "Call tool", type: "task" },
-  { kind: "invoke_agent", label: "Invoke agent", type: "task" },
-  { kind: "delay", label: "Delay", type: "task" },
-  { kind: "set_variable", label: "Set variable", type: "task" },
-  { kind: "invoke_prompt", label: "Invoke prompt", type: "task" },
-  { kind: "feedback_gate", label: "Feedback gate", type: "task" },
-  { kind: "branch", label: "Branch", type: "control" },
-  { kind: "for_each", label: "For each", type: "control" },
-  { kind: "end", label: "End", type: "control" },
-] as const satisfies readonly PaletteItem[];
 
 const cytoscapeStyles: cytoscape.StylesheetJson = [
   {
@@ -215,50 +215,6 @@ function sortDefinitions(
   );
 }
 
-function formatKind(kind: string): string {
-  return (
-    builtInKinds.find((item) => item.kind === kind)?.label ??
-    kind.replaceAll("_", " ")
-  );
-}
-
-function defaultConfig(kind: string): GraphNode["config"] {
-  switch (kind) {
-    case "schedule":
-      return { everyMs: 60_000 };
-    case "incoming_message":
-      return {};
-    case "call_tool":
-      return { input: { text: "Hello from a graph" }, toolId: "tools.echo" };
-    case "invoke_agent":
-      return {
-        personaId: "system/general",
-        prompt: "Complete this graph step.",
-      };
-    case "delay":
-      return { ms: 1_000 };
-    case "set_variable":
-      return { name: "value", value: "" };
-    case "invoke_prompt":
-      return { prompt: "Summarize the graph input." };
-    case "feedback_gate":
-      return { form: "confirm", prompt: "Continue this graph?" };
-    case "branch":
-      return { condition: "$vars.value" };
-    case "for_each":
-      return {
-        itemVariable: "item",
-        items: "$input.items",
-        collect: "$vars.item",
-        resultVariable: "items",
-      };
-    case "end":
-      return { output: "$vars.result" };
-    default:
-      return {};
-  }
-}
-
 function createDefaultGraph(): GraphDefinition {
   graphSequence += 1;
   return {
@@ -309,14 +265,6 @@ function createDefaultGraph(): GraphDefinition {
       },
     ],
   };
-}
-
-function isJsonObject(value: unknown): value is GraphNode["config"] {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value)
-  );
 }
 
 function graphElements(
@@ -423,6 +371,14 @@ export default defineUiPlugin<Component>({
         createSignal<readonly PaletteItem[]>(builtInKinds);
       const [configText, setConfigText] = createSignal("");
       const [configError, setConfigError] = createSignal<string>();
+      const [catalogTools, setCatalogTools] = createSignal<
+        readonly ToolCatalogItem[]
+      >([]);
+      const [personas, setPersonas] = createSignal<readonly Persona[]>([]);
+      const [launchOpen, setLaunchOpen] = createSignal(false);
+      const [launchInput, setLaunchInput] = createSignal<
+        Record<string, unknown>
+      >({});
       const [edgeSource, setEdgeSource] = createSignal("");
       const [edgeTarget, setEdgeTarget] = createSignal("");
       const [edgeHandle, setEdgeHandle] = createSignal<"true" | "false">(
@@ -444,6 +400,10 @@ export default defineUiPlugin<Component>({
       const selectedNode = createMemo(() =>
         draft()?.nodes.find(({ id }) => id === selectedNodeId()),
       );
+      const inspectorCatalog = () => ({
+        personas: personas(),
+        tools: catalogTools(),
+      });
       const edgeSourceNode = createMemo(() =>
         draft()?.nodes.find(({ id }) => id === edgeSource()),
       );
@@ -549,6 +509,24 @@ export default defineUiPlugin<Component>({
         setEdgeHandle("true");
         setValidationErrors([]);
         graph?.elements().remove();
+      };
+
+      const refreshCatalog = async (): Promise<void> => {
+        try {
+          const [catalog, listedPersonas] = await Promise.all([
+            context.bus.invoke(graphsListCatalog, {}),
+            context.personas.list(),
+          ]);
+          if (!active) {
+            return;
+          }
+          setCatalogTools(catalog.tools);
+          setPersonas(listedPersonas);
+        } catch {
+          if (active) {
+            setCatalogTools([]);
+          }
+        }
       };
 
       const refreshDefinitions = async (): Promise<void> => {
@@ -755,7 +733,11 @@ export default defineUiPlugin<Component>({
 
       onMount(() => {
         subscribeToDeltas();
-        void Promise.all([refreshDefinitions(), refreshRunning()]).finally(() => {
+        void Promise.all([
+          refreshDefinitions(),
+          refreshRunning(),
+          refreshCatalog(),
+        ]).finally(() => {
           if (active) {
             setLoading(false);
           }
@@ -774,6 +756,26 @@ export default defineUiPlugin<Component>({
         }
       });
 
+      const patchSelectedConfig = (config: GraphNode["config"]): void => {
+        const nodeId = selectedNodeId();
+        if (!nodeId) {
+          return;
+        }
+        setDraft((current) =>
+          current
+            ? {
+                ...current,
+                nodes: current.nodes.map((node) =>
+                  node.id === nodeId ? { ...node, config } : node,
+                ),
+              }
+            : current,
+        );
+        setConfigText(JSON.stringify(config, null, 2));
+        setConfigError(undefined);
+        setDirty(true);
+      };
+
       const updateConfig = (text: string): void => {
         setConfigText(text);
         const nodeId = selectedNodeId();
@@ -781,16 +783,17 @@ export default defineUiPlugin<Component>({
           return;
         }
         try {
-          const parsed = JSON.parse(text) as unknown;
+          const parsed: unknown = JSON.parse(text);
           if (!isJsonObject(parsed)) {
             throw new Error("Config must be a JSON object.");
           }
+          const config = graphValueMapSchema.parse(parsed);
           setDraft((current) =>
             current
               ? {
                   ...current,
                   nodes: current.nodes.map((node) =>
-                    node.id === nodeId ? { ...node, config: parsed } : node,
+                    node.id === nodeId ? { ...node, config } : node,
                   ),
                 }
               : current,
@@ -958,7 +961,10 @@ export default defineUiPlugin<Component>({
               ...candidate,
               nodes: candidate.nodes.map((node) =>
                 node.id === nodeId
-                  ? { ...node, config: parsedConfig }
+                  ? {
+                      ...node,
+                      config: graphValueMapSchema.parse(parsedConfig),
+                    }
                   : node,
               ),
             };
@@ -1030,6 +1036,25 @@ export default defineUiPlugin<Component>({
         }
       };
 
+      const launchSaved = async (
+        definition: GraphDefinition,
+        input: Record<string, unknown>,
+      ): Promise<void> => {
+        const result = await context.bus.invoke(graphsLaunch, {
+          graphId: definition.id,
+          input: graphValueMapSchema.parse(input),
+          trigger: "manual",
+        });
+        if (!active) {
+          return;
+        }
+        setLaunchedInstanceId(result.instanceId);
+        setInstanceStatus(`${definition.name}: Running`);
+        setOperationStatus("Graph launched.");
+        setLaunchOpen(false);
+        void refreshRunning();
+      };
+
       const run = async (): Promise<void> => {
         if (running()) {
           return;
@@ -1048,22 +1073,39 @@ export default defineUiPlugin<Component>({
           if (!active) {
             return;
           }
-          setDraft(cloneDefinition(saved.definition));
+          const definition = cloneDefinition(saved.definition);
+          setDraft(definition);
           setIsNewDefinition(false);
           setDirty(false);
           upsertDefinition(saved.definition);
-          const result = await context.bus.invoke(graphsLaunch, {
-            graphId: saved.definition.id,
-            input: {},
-            trigger: "manual",
-          });
-          if (!active) {
+          if (schemaHasProperties(definition.inputSchema)) {
+            setLaunchInput(defaultValueFromSchema(definition.inputSchema));
+            setLaunchOpen(true);
+            setOperationStatus("Fill graph inputs to launch.");
             return;
           }
-          setLaunchedInstanceId(result.instanceId);
-          setInstanceStatus(`${saved.definition.name}: Running`);
-          setOperationStatus("Graph launched.");
-          void refreshRunning();
+          await launchSaved(definition, {});
+        } catch (failure) {
+          if (active) {
+            setError(describeError(failure));
+            setOperationStatus("Launch failed.");
+          }
+        } finally {
+          if (active) {
+            setRunning(false);
+          }
+        }
+      };
+
+      const confirmLaunch = async (): Promise<void> => {
+        const definition = draft();
+        if (!definition || running()) {
+          return;
+        }
+        setRunning(true);
+        setError(undefined);
+        try {
+          await launchSaved(definition, launchInput());
         } catch (failure) {
           if (active) {
             setError(describeError(failure));
@@ -1562,29 +1604,14 @@ export default defineUiPlugin<Component>({
                           </div>
                         </div>
                       </dl>
-                      <label class="mt-4 block text-[10px] font-medium uppercase tracking-wider text-[var(--text-subtle)]">
-                        Config JSON
-                        <textarea
-                          value={configText()}
-                          onInput={(event) =>
-                            updateConfig(event.currentTarget.value)
-                          }
-                          rows={9}
-                          spellcheck={false}
-                          class="mt-1.5 w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-[11px] leading-5 normal-case tracking-normal text-[var(--text)] outline-none focus:border-[var(--accent)]"
-                          classList={{
-                            "border-[var(--danger)]": Boolean(configError()),
-                          }}
-                          data-testid="graph-node-config"
-                        />
-                      </label>
-                      <Show when={configError()}>
-                        {(message) => (
-                          <p class="mt-2 text-xs text-[var(--danger)]" role="alert">
-                            {message()}
-                          </p>
-                        )}
-                      </Show>
+                      <NodeInspector
+                        node={node()}
+                        configText={configText()}
+                        configError={configError() ?? ""}
+                        catalog={inspectorCatalog()}
+                        onConfigObject={patchSelectedConfig}
+                        onConfigText={updateConfig}
+                      />
                       <Button
                         type="button"
                         variant="danger"
@@ -1599,8 +1626,70 @@ export default defineUiPlugin<Component>({
                   )}
                 </Show>
               </section>
+              <Show when={draft()}>
+                {(current) => (
+                  <div class="mt-5 border-t border-[var(--border)] pt-5">
+                    <details class="rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+                      <summary class="cursor-pointer text-sm font-semibold">
+                        Graph inputs
+                      </summary>
+                      <p class="mt-1 text-[10px] leading-4 text-[var(--text-subtle)]">
+                        Fields the consumer fills when this graph runs.
+                      </p>
+                      <div class="mt-2">
+                        <SchemaCardEditor
+                          schema={current().inputSchema}
+                          onChange={(inputSchema) => {
+                            setDraft((definition) =>
+                              definition
+                                ? { ...definition, inputSchema }
+                                : definition,
+                            );
+                            setDirty(true);
+                          }}
+                          testId="graph-input-schema"
+                        />
+                      </div>
+                    </details>
+                    <details class="mt-3 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+                      <summary class="cursor-pointer text-sm font-semibold">
+                        Graph variables
+                      </summary>
+                      <p class="mt-1 text-[10px] leading-4 text-[var(--text-subtle)]">
+                        Types for values this graph stores while it runs.
+                      </p>
+                      <div class="mt-2">
+                        <SchemaCardEditor
+                          schema={current().variablesSchema}
+                          onChange={(variablesSchema) => {
+                            setDraft((definition) =>
+                              definition
+                                ? { ...definition, variablesSchema }
+                                : definition,
+                            );
+                            setDirty(true);
+                          }}
+                          testId="graph-variables-schema"
+                        />
+                      </div>
+                    </details>
+                  </div>
+                )}
+              </Show>
             </aside>
           </div>
+          <Portal>
+            <Show when={launchOpen() && draft()}>
+              <LaunchDialog
+                schema={draft()?.inputSchema ?? {}}
+                value={launchInput()}
+                onChange={setLaunchInput}
+                onCancel={() => setLaunchOpen(false)}
+                onLaunch={() => void confirmLaunch()}
+                launching={running()}
+              />
+            </Show>
+          </Portal>
         </section>
       );
     };

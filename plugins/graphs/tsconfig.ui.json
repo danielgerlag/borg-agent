@@ -8,5 +8,17 @@
     "declaration": false,
     "noEmit": true
   },
-  "include": ["src/ui.tsx", "src/connect.ts", "src/draw-edges.ts"]
+  "include": [
+    "src/ui.tsx",
+    "src/connect.ts",
+    "src/draw-edges.ts",
+    "src/schema.ts",
+    "src/schema-form.tsx",
+    "src/schema-cards.tsx",
+    "src/kind-registry.ts",
+    "src/assignments.ts",
+    "src/field-renderer.tsx",
+    "src/node-inspector.tsx",
+    "src/launch-dialog.tsx"
+  ]
 }

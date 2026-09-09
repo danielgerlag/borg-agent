@@ -1,5 +1,6 @@
 import {
   channelInboundMessage,
+  graphsListCatalog,
   graphsListInstances,
   graphsSaveDefinition,
   type GraphDefinition,
@@ -73,6 +74,13 @@ describe("borg.graphs plugin", () => {
     const listed = await fixture.invokeCommand<{
       instances: GraphInstance[];
     }>(graphsListInstances, { graphId: definition.id });
+    const catalog = await fixture.invokeCommand<{
+      tools: { id: string; description: string; inputSchema: unknown }[];
+    }>(graphsListCatalog, {});
+    expect(catalog.tools.map(({ id }) => id).sort()).toEqual(
+      ["graphs.inspect", "graphs.list", "graphs.run"].sort(),
+    );
+
     expect(listed.instances).toHaveLength(1);
     expect(listed.instances[0]).toMatchObject({
       graphId: definition.id,

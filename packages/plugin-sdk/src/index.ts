@@ -247,6 +247,11 @@ export interface PluginTools {
       readonly signal?: AbortSignal | undefined;
     },
   ): Promise<JsonValue>;
+  listCatalog(): readonly {
+    readonly id: string;
+    readonly description: string;
+    readonly inputSchema: JsonValue;
+  }[];
 }
 
 export interface ProviderDispatchPermit {

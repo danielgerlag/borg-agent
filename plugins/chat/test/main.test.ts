@@ -397,6 +397,7 @@ function createChatHarnessContext(
       registerExecutionScope: () =>
         unavailable("tools.registerExecutionScope"),
       invoke: async () => unavailable("tools.invoke"),
+      listCatalog: () => [],
     },
     models: {
       registerProvider: () => unavailable("models.registerProvider"),

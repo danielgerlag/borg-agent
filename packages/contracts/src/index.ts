@@ -1500,6 +1500,24 @@ export const graphsListContributions = defineCommand({
     .strict(),
 });
 
+export const graphToolCatalogEntrySchema = z
+  .object({
+    id: z.string().min(1),
+    description: z.string(),
+    inputSchema: z.json(),
+  })
+  .strict();
+
+export const graphsListCatalog = defineCommand({
+  id: "borg.graphs.listCatalog",
+  input: z.object({}).strict(),
+  output: z
+    .object({
+      tools: z.array(graphToolCatalogEntrySchema),
+    })
+    .strict(),
+});
+
 export const graphsGetDefinition = defineCommand({
   id: "borg.graphs.getDefinition",
   input: z.object({ graphId: z.string().min(1) }).strict(),
