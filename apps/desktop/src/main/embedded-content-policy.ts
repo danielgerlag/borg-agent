@@ -1,3 +1,9 @@
+import {
+  buildAppCsp,
+  grantFromProxyUrl,
+  mcpAppRequestAllowed,
+} from "@borg/contracts";
+
 export const EMBEDDED_CONTENT_SCHEME = "borg-embedded";
 
 interface FrameNode {
@@ -28,26 +34,44 @@ export function isEmbeddedProxyUrl(candidate: string): boolean {
 export function belongsToEmbeddedContent(
   frame: FrameNode | null | undefined,
 ): boolean {
+  return findEmbeddedProxyUrl(frame) !== undefined;
+}
+
+export function findEmbeddedProxyUrl(
+  frame: FrameNode | null | undefined,
+): string | undefined {
   const visited = new Set<FrameNode>();
   let current = frame;
   while (current && !current.isDestroyed() && !visited.has(current)) {
     if (isEmbeddedProxyUrl(current.url)) {
-      return true;
+      return current.url;
     }
     visited.add(current);
     current = current.parent;
   }
-  return false;
+  return undefined;
+}
+
+export function embeddedAppCsp(proxyUrl: string): string {
+  return buildAppCsp(grantFromProxyUrl(proxyUrl));
 }
 
 export function shouldAllowEmbeddedRequest(
   request: EmbeddedRequest,
 ): boolean {
-  if (!belongsToEmbeddedContent(request.frame)) {
+  const proxyUrl = findEmbeddedProxyUrl(request.frame);
+  if (proxyUrl === undefined) {
     return true;
   }
-  return (
+  if (
     (request.resourceType === "image" || request.resourceType === "font") &&
     (request.url.startsWith("data:") || request.url.startsWith("blob:"))
+  ) {
+    return true;
+  }
+  return mcpAppRequestAllowed(
+    request.url,
+    request.resourceType,
+    grantFromProxyUrl(proxyUrl),
   );
 }

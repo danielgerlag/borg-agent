@@ -274,7 +274,13 @@ export default defineUiPlugin<Component>({
         ) {
           proxyInitialized = true;
           try {
-            post(sandboxResourceReady(hardenAppHtml(app.html)));
+            post(
+              sandboxResourceReady(
+                hardenAppHtml(app.html, app.csp),
+                app.csp,
+                app.permissions,
+              ),
+            );
           } catch {
             failBridge();
           }
@@ -299,6 +305,8 @@ export default defineUiPlugin<Component>({
               globalThis.location.protocol === "file:"
                 ? "null"
                 : globalThis.location.origin,
+            csp: app.csp,
+            permissions: app.permissions,
           });
         }
       });

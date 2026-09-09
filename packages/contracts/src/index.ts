@@ -2361,6 +2361,22 @@ export const mcpAppPermissionsSchema = z
 
 export type McpAppPermissions = z.infer<typeof mcpAppPermissionsSchema>;
 
+export {
+  MCP_APP_CSP_QUERY_MAX_CHARS,
+  buildAllowAttribute,
+  buildAppCsp,
+  buildPermissionsPolicy,
+  buildProxyCsp,
+  encodeMcpAppCspQuery,
+  encodeMcpAppPermissionsQuery,
+  grantFromProxyUrl,
+  mcpAppRequestAllowed,
+  originMatchesGrant,
+  parseMcpAppNetworkGrant,
+  permissionsFromProxyUrl,
+  type McpAppNetworkGrant,
+} from "./mcp-app-csp";
+
 export const mcpAppToolSchema = z
   .object({
     name: z.string().min(1).max(256),

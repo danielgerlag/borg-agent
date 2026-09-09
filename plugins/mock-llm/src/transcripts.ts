@@ -132,4 +132,40 @@ export const mockTranscriptFixtures: readonly MockTranscriptFixture[] =
       resultPath: ["structuredContent", "form"],
       requiresAdvertisedTool: true,
     },
+    {
+      id: "mcp-ext-vanilla",
+      prompt: "scenario:mcp-ext-vanilla",
+      toolCall: {
+        id: "mock-ext-vanilla-call",
+        name: "mcp.vanilla.get-time",
+        input: {},
+      },
+      finalPrefix: "MCP App: ",
+      resultPath: ["structuredContent", "time"],
+      requiresAdvertisedTool: true,
+    },
+    {
+      id: "mcp-ext-map",
+      prompt: "scenario:mcp-ext-map",
+      toolCall: {
+        id: "mock-ext-map-call",
+        name: "mcp.map.show-map",
+        input: {},
+      },
+      finalPrefix: "MCP App: ",
+      resultPath: ["content", "0", "text"],
+      requiresAdvertisedTool: true,
+    },
+    {
+      id: "mcp-ext-transcript",
+      prompt: "scenario:mcp-ext-transcript",
+      toolCall: {
+        id: "mock-ext-transcript-call",
+        name: "mcp.transcript.transcribe",
+        input: {},
+      },
+      finalPrefix: "MCP App: ",
+      resultPath: ["content", "0", "text"],
+      requiresAdvertisedTool: true,
+    },
   ]);
