@@ -130,7 +130,12 @@ export class TrustAuthorizer {
     );
     const policyAsk = request.approval === "ask" && !granted;
     const isModelStage = MODEL_FEATURES.has(request.feature);
-    const scanReview = scanAction === "review" && !isModelStage;
+    const scanFindingReview =
+      request.scanReport?.findings.some(
+        (finding) => finding.action === "review",
+      ) === true;
+    const scanReview =
+      scanAction === "review" && (!isModelStage || scanFindingReview);
     const classificationReview =
       classificationReasons.length > 0 && !isModelStage;
     const needsReview = policyAsk || classificationReview || scanReview;
