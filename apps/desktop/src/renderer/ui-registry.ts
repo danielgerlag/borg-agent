@@ -175,6 +175,10 @@ export class UiContributionRegistry implements PluginUiHost<Component> {
         !["primary", "developer"].includes(
           contribution.placement as string,
         )) ||
+      ("group" in contribution &&
+        contribution.group !== undefined &&
+        (typeof contribution.group !== "string" ||
+          !/^[a-z][a-z0-9-]{0,31}$/.test(contribution.group))) ||
       typeof contribution.component !== "function"
     ) {
       throw new Error(`Invalid ${kind} contribution ${contribution.id}`);

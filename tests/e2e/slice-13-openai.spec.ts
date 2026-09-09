@@ -220,10 +220,12 @@ async function connectOpenAI(): Promise<void> {
 
 async function pickGpt5Mini(): Promise<void> {
   await page.getByTestId("settings-section-borg.chat.personas").click();
-  await page.getByTestId("wizard-model-select").selectOption(
+  await expect(page.getByTestId("personas-settings-page")).toBeVisible();
+  await expect(page.getByTestId("persona-editor")).toBeVisible();
+  await page.getByTestId("persona-primary-model").selectOption(
     "borg.openai:gpt-5-mini",
   );
-  await expect(page.getByTestId("wizard-model-select")).toHaveValue(
+  await expect(page.getByTestId("persona-primary-model")).toHaveValue(
     "borg.openai:gpt-5-mini",
   );
 }

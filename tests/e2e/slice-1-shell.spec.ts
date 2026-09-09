@@ -362,6 +362,8 @@ test("renders workspace, settings, and wizard extension points", async () => {
   await enterLoopDebugger();
 
   await page.getByTestId("nav-settings").click();
+  await expect(page.getByTestId("settings-group-security")).toBeVisible();
+  await expect(page.getByTestId("settings-group-agents")).toBeVisible();
   await page
     .getByTestId("settings-section-borg.secrets.dev.settings")
     .click();

@@ -21,7 +21,7 @@ function baseRequest(
 
 async function reportFor(
   findings: readonly Record<string, unknown>[],
-  stage: "tool_result" | "user_input" = "tool_result",
+  stage: "tool_result" | "user_input" | "model_input" = "tool_result",
 ) {
   const registry = new ScannerRegistry();
   registry.register("borg.security", {
@@ -291,6 +291,180 @@ describe("TrustAuthorizer prompts", () => {
       { allowed: true },
       { allowed: true },
     ]);
+  });
+
+  it("does not prompt for model input when classification exceeds provider capacity", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+
+    const result = await authorizer.authorize(
+      baseRequest({
+        feature: "model_input",
+        title: "Review model input safety",
+        payloadClassification: "restricted",
+        capacity: "internal",
+      }),
+    );
+    expect(result.allowed).toBe(true);
+    expect(result.interactionUsed).toBe(false);
+    expect(interactions.listPending()).toEqual([]);
+  });
+
+  it("does not prompt for model input when scanner coverage is missing", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+    const scanReport = await new ScannerRegistry().scan({
+      stage: "model_input",
+      text: "hello",
+      source: { kind: "user", id: "borg.chat" },
+    });
+
+    const result = await authorizer.authorize(
+      baseRequest({
+        feature: "model_input",
+        title: "Review model input safety",
+        scanReport,
+      }),
+    );
+    expect(result.allowed).toBe(true);
+    expect(result.interactionUsed).toBe(false);
+    expect(interactions.listPending()).toEqual([]);
+  });
+
+  it("prompts for model input when a scanner flags a review finding", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+    const scanReport = await reportFor(
+      [
+        {
+          code: "injection.instruction-override",
+          action: "review",
+          reason: "Text asks the agent to ignore or replace its prior instructions",
+        },
+      ],
+      "model_input",
+    );
+
+    const pending = authorizer.authorize(
+      baseRequest({
+        feature: "model_input",
+        title: "Review model input safety",
+        scanReport,
+      }),
+    );
+    await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
+    expect(interactions.listPending()[0]?.kind).toBe("classification");
+    expect(interactions.listPending()[0]?.prompt).toContain(
+      "ignore or replace its prior instructions",
+    );
+    approveFirst(interactions);
+    await expect(pending).resolves.toMatchObject({
+      allowed: true,
+      interactionUsed: true,
+    });
+  });
+
+  it("does not prompt for model output when a scanner flags a review finding", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+    const registry = new ScannerRegistry();
+    registry.register("borg.security", {
+      id: "borg.security.injection",
+      stages: ["model_output"],
+      scan: async () => [
+        {
+          code: "review.output",
+          action: "review",
+          reason: "model output needs review",
+        },
+      ],
+    });
+    const scanReport = await registry.scan({
+      stage: "model_output",
+      text: "approved text",
+      source: { kind: "model", id: "borg.mock-llm" },
+    });
+
+    const result = await authorizer.authorize(
+      baseRequest({
+        feature: "model_output",
+        title: "Review model output safety",
+        scanReport,
+      }),
+    );
+    expect(result.allowed).toBe(true);
+    expect(result.interactionUsed).toBe(false);
+    expect(interactions.listPending()).toEqual([]);
+  });
+
+  it("remembers always allowing a tool", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+    const request = baseRequest({
+      approval: "ask",
+      grantId: "filesystem.write",
+      sessionId: "session-a",
+    });
+
+    const first = authorizer.authorize(request);
+    await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
+    interactions.respond(interactions.listPending()[0]!.id, {
+      kind: "approval",
+      decision: "allow",
+      duration: "always",
+    });
+    await expect(first).resolves.toMatchObject({ allowed: true });
+
+    const second = await authorizer.authorize({
+      ...request,
+      toolCallId: "call-2",
+    });
+    expect(second.allowed).toBe(true);
+    expect(second.interactionUsed).toBe(false);
+    expect(interactions.listPending()).toEqual([]);
+  });
+
+  it("remembers a tool for one chat only", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+    const first = authorizer.authorize(
+      baseRequest({
+        approval: "ask",
+        grantId: "filesystem.write",
+        sessionId: "session-a",
+        toolCallId: "call-1",
+      }),
+    );
+    await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
+    interactions.respond(interactions.listPending()[0]!.id, {
+      kind: "approval",
+      decision: "allow",
+      duration: "session",
+    });
+    await expect(first).resolves.toMatchObject({ allowed: true });
+
+    const sameChat = await authorizer.authorize(
+      baseRequest({
+        approval: "ask",
+        grantId: "filesystem.write",
+        sessionId: "session-a",
+        toolCallId: "call-2",
+      }),
+    );
+    expect(sameChat.interactionUsed).toBe(false);
+    expect(interactions.listPending()).toEqual([]);
+
+    const otherChat = authorizer.authorize(
+      baseRequest({
+        approval: "ask",
+        grantId: "filesystem.write",
+        sessionId: "session-b",
+        toolCallId: "call-3",
+      }),
+    );
+    await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
+    approveFirst(interactions);
+    await expect(otherChat).resolves.toMatchObject({ allowed: true });
   });
 });
 

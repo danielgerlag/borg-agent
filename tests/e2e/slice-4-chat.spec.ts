@@ -78,6 +78,87 @@ test.afterEach(async () => {
   rmSync(profileDirectory, { recursive: true, force: true });
 });
 
+test("scrolls the chat transcript when messages exceed the window", async () => {
+  await expect(page.getByTestId("chat-workspace")).toBeVisible();
+  await expect(page.getByTestId("chat-composer-input")).toBeVisible();
+
+  const emptyMetrics = await page.evaluate(() => {
+    const measure = (element: Element | null | undefined) => {
+      if (!(element instanceof HTMLElement)) {
+        return undefined;
+      }
+      const style = getComputedStyle(element);
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        overflowY: style.overflowY,
+        height: style.height,
+      };
+    };
+    const composer = document.querySelector('[data-testid="chat-composer-input"]');
+    const workspace = document.querySelector('[data-testid="chat-workspace"]');
+    const grid = workspace?.firstElementChild;
+    return {
+      innerHeight: window.innerHeight,
+      workspace: measure(workspace),
+      grid: measure(grid),
+      transcript: measure(document.querySelector('[data-testid="chat-transcript"]')),
+      composerBottom: composer?.getBoundingClientRect().bottom,
+    };
+  });
+
+  expect(
+    emptyMetrics.composerBottom,
+    `composer is clipped on an empty chat ${JSON.stringify(emptyMetrics)}`,
+  ).toBeLessThanOrEqual(emptyMetrics.innerHeight);
+
+  for (let index = 0; index < 12; index += 1) {
+    await sendMessage(`overflow line ${index}`);
+    await expect(
+      page.locator('[data-testid="chat-message"][data-role="assistant"]').last(),
+    ).toContainText(`Mock reply: overflow line ${index}`);
+  }
+
+  const metrics = await page.evaluate(() => {
+    const transcript = document.querySelector('[data-testid="chat-transcript"]');
+    if (!(transcript instanceof HTMLElement)) {
+      return undefined;
+    }
+    const style = getComputedStyle(transcript);
+    const composer = document.querySelector('[data-testid="chat-composer-input"]');
+    return {
+      innerHeight: window.innerHeight,
+      clientHeight: transcript.clientHeight,
+      scrollHeight: transcript.scrollHeight,
+      overflowY: style.overflowY,
+      height: style.height,
+      composerBottom: composer?.getBoundingClientRect().bottom,
+    };
+  });
+
+  expect(metrics, `layout ${JSON.stringify(metrics)}`).toBeDefined();
+  expect(
+    metrics!.composerBottom,
+    `composer is clipped after messages ${JSON.stringify(metrics)}`,
+  ).toBeLessThanOrEqual(metrics!.innerHeight);
+  expect(
+    metrics!.scrollHeight,
+    `transcript is not taller than its box ${JSON.stringify(metrics)}`,
+  ).toBeGreaterThan(metrics!.clientHeight);
+  expect(
+    metrics!.clientHeight,
+    `transcript grew past the window ${JSON.stringify(metrics)}`,
+  ).toBeLessThanOrEqual(metrics!.innerHeight);
+
+  await page
+    .locator('[data-testid="chat-message"][data-role="user"]')
+    .first()
+    .scrollIntoViewIfNeeded();
+  await expect(
+    page.locator('[data-testid="chat-message"][data-role="user"]').first(),
+  ).toBeInViewport();
+});
+
 test("sends a chat message through the persona-backed mock loop", async () => {
   await expect(page.getByTestId("chat-empty-state")).toBeVisible();
   await expect(page.getByTestId("chat-session-list")).toContainText(
@@ -104,6 +185,7 @@ test("sends a chat message through the persona-backed mock loop", async () => {
 
 test("approves a filesystem tool and shows its workspace file", async () => {
   await sendMessage("scenario:file");
+  await expect(page.getByTestId("chat-live-activity")).toBeVisible();
   await expect(page.getByTestId("interaction-overlay")).toBeVisible();
   await expect(page.getByTestId("interaction-overlay")).toContainText(
     "filesystem.write",
@@ -176,6 +258,7 @@ test("keeps new chats ephemeral and confirms deletion", async () => {
 test("keeps a chat turn running while the window is hidden", async () => {
   await sendMessage("scenario:background");
   await expect(page.getByTestId("chat-session-status")).toHaveText("Thinking");
+  await expect(page.getByTestId("chat-live-activity")).toContainText("Working");
   await application.evaluate(() => {
     const api = (
       globalThis as typeof globalThis & {
@@ -256,18 +339,77 @@ test("answers feedback in the shared interaction UI and finishes in thread", asy
   await expect(page.getByTestId("chat-session-status")).toHaveText("Ready");
 });
 
-test("creates an assistant and uses it for new chats", async () => {
+test("scrolls settings when the persona editor exceeds the window", async () => {
   await page.getByTestId("nav-settings").click();
   await page.getByTestId("settings-section-borg.chat.personas").click();
-  await expect(page.getByTestId("wizard-persona-step")).toBeVisible();
-  await page.getByText("Create a custom assistant").click();
+  await expect(page.getByTestId("personas-settings-page")).toBeVisible();
+  await expect(page.getByTestId("persona-editor")).toBeVisible();
+  await expect(page.getByTestId("persona-save")).toBeAttached();
+
+  const metrics = await page.evaluate(() => {
+    const measure = (element: Element | null | undefined) => {
+      if (!(element instanceof HTMLElement)) {
+        return undefined;
+      }
+      const style = getComputedStyle(element);
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        overflowY: style.overflowY,
+        height: style.height,
+      };
+    };
+    const settings = document.querySelector('[data-testid="surface-settings"]');
+    const pane = document.querySelector('[data-testid="settings-page"]');
+    const save = document.querySelector('[data-testid="persona-save"]');
+    return {
+      innerHeight: window.innerHeight,
+      body: measure(document.body),
+      shell: measure(document.querySelector('[data-testid="app-shell"]')),
+      settings: measure(settings),
+      pane: measure(pane),
+      saveBottom: save?.getBoundingClientRect().bottom,
+    };
+  });
+
+  expect(
+    metrics.pane,
+    `layout ${JSON.stringify(metrics)}`,
+  ).toBeDefined();
+  expect(
+    metrics.pane!.scrollHeight,
+    `persona editor is not taller than the pane ${JSON.stringify(metrics)}`,
+  ).toBeGreaterThan(metrics.pane!.clientHeight);
+  expect(
+    metrics.pane!.clientHeight,
+    `settings pane grew past the window ${JSON.stringify(metrics)}`,
+  ).toBeLessThanOrEqual(metrics.innerHeight);
+
+  await page.getByTestId("persona-save").scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("persona-save")).toBeInViewport();
+
+  await page.getByTestId("settings-section-borg.azure.settings").click();
+  const azurePane = await page.getByTestId("settings-page").evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    innerHeight: window.innerHeight,
+  }));
+  expect(
+    azurePane.clientHeight,
+    `Azure settings pane grew past the window ${JSON.stringify(azurePane)}`,
+  ).toBeLessThanOrEqual(azurePane.innerHeight);
+});
+
+test("creates a persona and uses it for new chats", async () => {
+  await page.getByTestId("nav-settings").click();
+  await page.getByTestId("settings-section-borg.chat.personas").click();
+  await expect(page.getByTestId("personas-settings-page")).toBeVisible();
+  await page.getByTestId("persona-new").click();
   await page.getByTestId("settings-persona-name").fill("Code reviewer");
-  await page
-    .getByTestId("settings-persona-instructions")
-    .fill("Review code carefully.");
+  await page.getByTestId("settings-persona-instructions").fill("Review code carefully.");
   await page.getByTestId("settings-persona-create").click();
-  await expect(page.getByTestId("wizard-persona-select")).toHaveValue(
-    "user/code-reviewer",
+  await expect(page.getByTestId("persona-row-user/code-reviewer")).toHaveAttribute(
+    "aria-current",
+    "true",
   );
   await page.getByTestId("nav-chat").click();
   await page.getByTestId("chat-new-session").click();

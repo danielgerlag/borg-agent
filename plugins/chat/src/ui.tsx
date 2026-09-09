@@ -17,7 +17,6 @@ import {
   type EmbeddedContentSnapshot,
   type ChatSession,
   type ChatUsage,
-  type ModelDescriptor,
   type Persona,
   type WorkspaceFile,
 } from "@borg/contracts";
@@ -30,12 +29,13 @@ import {
 import { Button, Panel } from "@borg/ui-kit";
 import {
   Bot,
+  CircleAlert,
   FileText,
   FolderOpen,
+  LoaderCircle,
   MessageSquarePlus,
   Send,
   Trash2,
-  UserRoundCog,
 } from "lucide-solid";
 import {
   For,
@@ -49,7 +49,16 @@ import {
 } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
 import { adoptChatDocument } from "./adopt-document";
-import { displayModelName, matchesModelPreference } from "./model-preference";
+import {
+  activityCopy,
+  describeTurnFailure,
+  isFailureEntry,
+  isToolEntry,
+  toolLabel,
+  type ChatLiveActivity,
+} from "./chat-activity";
+import { createPersonaWizardStep } from "./persona-setup";
+import { createPersonasSettings } from "./personas-settings";
 
 type ChatDocument = z.infer<typeof chatDocumentSchema>;
 
@@ -111,7 +120,9 @@ function addChatUsage(base: ChatUsage, extra: ChatUsage): ChatUsage {
 function activityLabel(entry: ChatEntry): string {
   if (entry.role === "tool") {
     const toolId = entry.metadata?.toolId;
-    return typeof toolId === "string" ? `Used ${toolId}` : "Tool activity";
+    return typeof toolId === "string"
+      ? `Used ${toolLabel(toolId)}`
+      : "Tool activity";
   }
 
   const kind = entry.metadata?.kind;
@@ -198,6 +209,8 @@ export default defineUiPlugin<Component>({
       const [deleteCandidate, setDeleteCandidate] = createSignal<ChatSession>();
       const [initialLoadComplete, setInitialLoadComplete] = createSignal(false);
       const [error, setError] = createSignal<string>();
+      const [liveActivity, setLiveActivity] = createSignal<ChatLiveActivity>();
+      const [activeToolId, setActiveToolId] = createSignal<string>();
       const disposables: Disposable[] = [];
       let loopSubscription: Disposable | undefined;
       let subscribedRunId: string | undefined;
@@ -258,8 +271,35 @@ export default defineUiPlugin<Component>({
         () =>
           initialLoadComplete() &&
           (document()?.entries.length ?? 0) === 0 &&
-          !streaming(),
+          !streaming() &&
+          !liveActivity() &&
+          !sending(),
       );
+
+      const visibleActivity = createMemo((): ChatLiveActivity | undefined => {
+        if (streaming()) {
+          return undefined;
+        }
+        const live = liveActivity();
+        if (live) {
+          return live;
+        }
+        if (sending()) {
+          return { kind: "thinking" };
+        }
+        const status = document()?.session.status;
+        if (status === "running") {
+          return { kind: "thinking" };
+        }
+        if (status === "waiting") {
+          return {
+            kind: "waiting",
+            wait: "tool_approval",
+            toolId: activeToolId(),
+          };
+        }
+        return undefined;
+      });
 
       const focusComposer = (): void => {
         queueMicrotask(() => composerInput?.focus());
@@ -288,6 +328,8 @@ export default defineUiPlugin<Component>({
         subscribedRunId = undefined;
         setStreaming("");
         setLiveUsage(undefined);
+        setLiveActivity(undefined);
+        setActiveToolId(undefined);
         if (subscription) {
           void subscription.dispose();
         }
@@ -352,6 +394,7 @@ export default defineUiPlugin<Component>({
         await previousSubscription?.dispose();
         setStreaming("");
         setLiveUsage(undefined);
+        setLiveActivity({ kind: "thinking" });
         const subscription = await context.loops.subscribe(runId, (event) => {
           if (
             !active ||
@@ -362,6 +405,22 @@ export default defineUiPlugin<Component>({
           }
           if (event.type === "model_start") {
             setStreaming("");
+            setLiveActivity({ kind: "thinking" });
+          }
+          if (event.type === "tool_start") {
+            setActiveToolId(event.toolId);
+            setLiveActivity({ kind: "tool", toolId: event.toolId });
+          }
+          if (event.type === "interaction_wait") {
+            setLiveActivity({
+              kind: "waiting",
+              wait: event.kind,
+              toolId: activeToolId(),
+            });
+          }
+          if (event.type === "tool_result") {
+            setActiveToolId(undefined);
+            setLiveActivity({ kind: "thinking" });
           }
           if (event.type === "model_token") {
             setStreaming((current) => `${current}${event.token}`);
@@ -377,6 +436,8 @@ export default defineUiPlugin<Component>({
           }
           if (event.type === "final" || event.type === "failed") {
             setStreaming("");
+            setLiveActivity(undefined);
+            setActiveToolId(undefined);
             void refreshSelected();
           }
         });
@@ -604,6 +665,7 @@ export default defineUiPlugin<Component>({
         }
         setSending(true);
         setError(undefined);
+        setLiveActivity({ kind: "thinking" });
         setDraft("");
         let sessionId = selectedSessionId;
         let createdSession = false;
@@ -645,6 +707,7 @@ export default defineUiPlugin<Component>({
             initialStartError &&
             document()?.session.id === sessionId
           ) {
+            setLiveActivity(undefined);
             setError(describeError(initialStartError));
           }
         } catch (failure) {
@@ -697,6 +760,7 @@ export default defineUiPlugin<Component>({
             focusComposer();
           }
           if (stillCurrent) {
+            setLiveActivity(undefined);
             setError(describeError(failure));
           }
         } finally {
@@ -745,7 +809,7 @@ export default defineUiPlugin<Component>({
           data-testid="chat-workspace"
         >
           <div
-            class="grid h-full min-h-0 grid-cols-[13rem_minmax(20rem,1fr)]"
+            class="grid h-full min-h-0 grid-cols-[13rem_minmax(20rem,1fr)] grid-rows-[minmax(0,1fr)]"
             inert={deleteCandidate() !== undefined}
           >
             <aside class="flex min-h-0 flex-col border-r border-[var(--border)] bg-[var(--panel-muted)]/45 p-3">
@@ -760,7 +824,7 @@ export default defineUiPlugin<Component>({
                 New chat
               </button>
               <div
-                class="mt-3 grid min-h-0 gap-1 overflow-y-auto"
+                class="mt-3 grid min-h-0 flex-1 gap-1 overflow-y-auto"
                 data-testid="chat-session-list"
               >
                 <For
@@ -805,7 +869,7 @@ export default defineUiPlugin<Component>({
               </div>
             </aside>
 
-            <div class="flex min-w-0 flex-col">
+            <div class="flex min-h-0 min-w-0 flex-col">
               <header class="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
                 <div class="min-w-0">
                   <h2
@@ -818,7 +882,17 @@ export default defineUiPlugin<Component>({
                     {displayTitle(document()?.session.title ?? "New chat")}
                   </h2>
                   <p
-                    class="text-xs text-[var(--text-muted)]"
+                    class="text-xs"
+                    classList={{
+                      "text-[var(--accent)]":
+                        document()?.session.status === "running" ||
+                        document()?.session.status === "waiting",
+                      "text-[var(--danger)]":
+                        document()?.session.status === "error",
+                      "text-[var(--text-muted)]":
+                        document()?.session.status === "idle" ||
+                        document()?.session.status === undefined,
+                    }}
                     data-testid="chat-session-status"
                   >
                     {displayStatus(document()?.session.status ?? "idle")}
@@ -882,9 +956,9 @@ export default defineUiPlugin<Component>({
               </header>
 
               <div class="flex min-h-0 flex-1">
-                <main class="flex min-w-0 flex-1 flex-col">
+                <main class="flex min-h-0 min-w-0 flex-1 flex-col">
                   <div
-                    class="flex-1 space-y-4 overflow-y-auto p-5"
+                    class="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
                     data-testid="chat-transcript"
                   >
                     <Show when={emptyConversation()}>
@@ -932,49 +1006,88 @@ export default defineUiPlugin<Component>({
                     <For each={document()?.entries ?? []}>
                       {(entry) => {
                         const content = embeddedContent(entry);
+                        const failure = isFailureEntry(entry)
+                          ? describeTurnFailure(entry.content)
+                          : undefined;
                         return (
                           <Show
                             when={content}
                             fallback={
                               <Show
-                                when={
-                                  entry.role === "tool" ||
-                                  entry.role === "event"
-                                }
+                                when={failure}
                                 fallback={
+                                  <Show
+                                    when={
+                                      isToolEntry(entry) ||
+                                      entry.role === "event"
+                                    }
+                                    fallback={
+                                      <div
+                                        class="max-w-[85%] rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                                        classList={{
+                                          "ml-auto bg-[var(--accent)]/10":
+                                            entry.role === "user",
+                                          "bg-[var(--panel-muted)]":
+                                            entry.role === "assistant",
+                                          "mx-auto border-transparent bg-transparent text-xs text-[var(--text-muted)]":
+                                            entry.role === "system",
+                                        }}
+                                        data-testid="chat-message"
+                                        data-message-id={entry.id}
+                                        data-role={entry.role}
+                                      >
+                                        <p class="whitespace-pre-wrap">
+                                          {entry.content}
+                                        </p>
+                                      </div>
+                                    }
+                                  >
+                                    <div
+                                      class="mx-auto w-full max-w-[92%] rounded-xl border border-[var(--border)] bg-[var(--panel-muted)]/35 px-3 py-2 text-sm"
+                                      data-testid="chat-message"
+                                      data-message-id={entry.id}
+                                      data-role={entry.role}
+                                    >
+                                      <details class="mt-1">
+                                        <summary class="cursor-pointer text-xs text-[var(--text-subtle)]">
+                                          {activityLabel(entry)}
+                                        </summary>
+                                        <p class="mt-2 whitespace-pre-wrap text-xs text-[var(--text-muted)]">
+                                          {entry.content}
+                                        </p>
+                                      </details>
+                                    </div>
+                                  </Show>
+                                }
+                              >
+                                {(failed) => (
                                   <div
-                                    class="max-w-[85%] rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
-                                    classList={{
-                                      "ml-auto bg-[var(--accent)]/10":
-                                        entry.role === "user",
-                                      "bg-[var(--panel-muted)]":
-                                        entry.role === "assistant",
-                                      "mx-auto border-transparent bg-transparent text-xs text-[var(--text-muted)]":
-                                        entry.role === "system",
-                                    }}
+                                    class="mx-auto w-full max-w-[92%] rounded-xl border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-3 text-sm"
                                     data-testid="chat-message"
                                     data-message-id={entry.id}
                                     data-role={entry.role}
+                                    data-status="failed"
                                   >
-                                    <p class="whitespace-pre-wrap">
-                                      {entry.content}
-                                    </p>
+                                    <div class="flex items-start gap-2 text-[var(--danger)]">
+                                      <CircleAlert
+                                        aria-hidden="true"
+                                        size={16}
+                                        class="mt-0.5 shrink-0"
+                                      />
+                                      <div>
+                                        <p class="font-medium">
+                                          {failed().title}
+                                        </p>
+                                        <p
+                                          class="mt-1 whitespace-pre-wrap text-xs text-[var(--text-muted)]"
+                                          data-testid="chat-turn-error"
+                                        >
+                                          {failed().detail}
+                                        </p>
+                                      </div>
+                                    </div>
                                   </div>
-                                }
-                              >
-                                <details
-                                  class="group mx-auto w-full max-w-[92%] rounded-lg px-2 py-1 text-xs text-[var(--text-subtle)] open:bg-[var(--panel-muted)]/45"
-                                  data-testid="chat-message"
-                                  data-message-id={entry.id}
-                                  data-role={entry.role}
-                                >
-                                  <summary class="cursor-pointer py-1.5 transition hover:text-[var(--text-muted)]">
-                                    {activityLabel(entry)}
-                                  </summary>
-                                  <p class="border-l border-[var(--border)] py-2 pl-3 pr-2 whitespace-pre-wrap text-[var(--text-muted)]">
-                                    {entry.content}
-                                  </p>
-                                </details>
+                                )}
                               </Show>
                             }
                           >
@@ -997,14 +1110,54 @@ export default defineUiPlugin<Component>({
                     </Show>
                   </div>
 
+                  <Show when={visibleActivity()}>
+                    {(activity) => (
+                      <div
+                        class="flex items-center gap-2 border-t border-[var(--border)] px-5 py-3 text-sm"
+                        classList={{
+                          "text-[var(--accent)]":
+                            activity().kind !== "waiting",
+                          "text-[var(--accent)] bg-[var(--accent)]/8":
+                            activity().kind === "waiting",
+                        }}
+                        data-testid="chat-live-activity"
+                        data-activity={activity().kind}
+                      >
+                        <Show
+                          when={activity().kind === "waiting"}
+                          fallback={
+                            <LoaderCircle
+                              aria-hidden="true"
+                              size={16}
+                              class="shrink-0 animate-spin"
+                            />
+                          }
+                        >
+                          <CircleAlert
+                            aria-hidden="true"
+                            size={16}
+                            class="shrink-0"
+                          />
+                        </Show>
+                        <p>{activityCopy(activity())}</p>
+                      </div>
+                    )}
+                  </Show>
+
                   <Show when={error()}>
                     {(message) => (
-                      <p
-                        class="px-5 pb-2 text-xs text-[var(--danger)]"
+                      <div
+                        class="flex items-start gap-2 border-t border-[var(--danger)]/40 bg-[var(--danger)]/10 px-5 py-3 text-sm text-[var(--danger)]"
                         role="alert"
+                        data-testid="chat-composer-error"
                       >
-                        {message()}
-                      </p>
+                        <CircleAlert
+                          aria-hidden="true"
+                          size={16}
+                          class="mt-0.5 shrink-0"
+                        />
+                        <p class="whitespace-pre-wrap">{message()}</p>
+                      </div>
                     )}
                   </Show>
 
@@ -1235,229 +1388,6 @@ export default defineUiPlugin<Component>({
       );
     };
 
-    const PersonaSetup: Component = () => {
-      const [personas, setPersonas] = createSignal<readonly Persona[]>([]);
-      const [models, setModels] = createSignal<readonly ModelDescriptor[]>([]);
-      const [selected, setSelected] = createSignal("");
-      const [selectedModel, setSelectedModel] = createSignal("");
-      const [name, setName] = createSignal("");
-      const [instructions, setInstructions] = createSignal("");
-      const [status, setStatus] = createSignal("Loading personas…");
-
-      const ensureAvailableModel = async (
-        persona: Persona,
-        availableModels: readonly ModelDescriptor[],
-      ): Promise<string | undefined> => {
-        const configured = persona.preferredModels
-          .map((preference) =>
-            availableModels.find((model) =>
-              matchesModelPreference(model, preference),
-            ),
-          )
-          .find((model) => model !== undefined);
-        const fallback = availableModels[0]?.preferenceId;
-        if (!configured && fallback) {
-          await context.personas.update(persona.id, {
-            preferredModels: [
-              fallback,
-              ...persona.preferredModels.filter(
-                (preference) => preference !== fallback,
-              ),
-            ],
-          });
-        }
-        return configured?.preferenceId ?? fallback;
-      };
-
-      const load = async (): Promise<void> => {
-        const [available, current, availableModels] = await Promise.all([
-          context.personas.list(),
-          context.personas.getDefault(),
-          context.models.list(),
-        ]);
-        setPersonas(available);
-        setModels(availableModels);
-        setSelected(current.id);
-        const model = await ensureAvailableModel(current, availableModels);
-        setSelectedModel(model ?? "");
-        setPersonaReady(model !== undefined);
-        setStatus(
-          model ? "Assistant ready" : "Choose an available model to continue",
-        );
-      };
-
-      onMount(() => {
-        void load().catch((error: unknown) => {
-          setPersonaReady(false);
-          setStatus(describeError(error));
-        });
-      });
-
-      const choose = async (personaId: string): Promise<void> => {
-        setSelected(personaId);
-        setStatus("Saving…");
-        try {
-          await context.personas.setDefault(personaId);
-          const persona = await context.personas.get(personaId);
-          const model = persona
-            ? await ensureAvailableModel(persona, models())
-            : undefined;
-          setSelectedModel(model ?? "");
-          setPersonaReady(model !== undefined);
-          setStatus("Default assistant saved");
-        } catch (error) {
-          setPersonaReady(false);
-          setStatus(describeError(error));
-        }
-      };
-
-      const chooseModel = async (preferenceId: string): Promise<void> => {
-        if (!preferenceId || !selected()) {
-          setPersonaReady(false);
-          return;
-        }
-        setSelectedModel(preferenceId);
-        setStatus("Saving model…");
-        try {
-          const persona = await context.personas.get(selected());
-          if (!persona) {
-            throw new Error("Selected persona is unavailable");
-          }
-          await context.personas.update(persona.id, {
-            preferredModels: [
-              preferenceId,
-              ...persona.preferredModels.filter(
-                (preference) => preference !== preferenceId,
-              ),
-            ],
-          });
-          setPersonaReady(true);
-          setStatus("Default model saved");
-        } catch (error) {
-          setPersonaReady(false);
-          setStatus(describeError(error));
-        }
-      };
-
-      const createPersona = async (): Promise<void> => {
-        const slug = name()
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9_-]+/g, "-")
-          .replace(/^-+|-+$/g, "");
-        if (!slug || !instructions().trim()) {
-          setStatus("Name and instructions are required");
-          return;
-        }
-        setStatus("Creating…");
-        try {
-          const persona = await context.personas.create({
-            id: `user/${slug}`,
-            name: name().trim(),
-            instructions: instructions().trim(),
-            preferredModels: [selectedModel()],
-            secondaryModels: [],
-            allowedTools: ["*"],
-            mcpServers: [],
-            loopStrategy: "react",
-            toolExecutionMode: "sequential-partial",
-            skillIds: [],
-            contextMapStrategy: "general",
-            archived: false,
-          });
-          await context.personas.setDefault(persona.id);
-          setName("");
-          setInstructions("");
-          await load();
-          setSelected(persona.id);
-          setStatus("Custom assistant created");
-        } catch (error) {
-          setStatus(describeError(error));
-        }
-      };
-
-      return (
-        <section data-testid="wizard-persona-step">
-          <div class="flex items-center gap-3">
-            <UserRoundCog
-              aria-hidden="true"
-              size={20}
-              class="text-[var(--accent)]"
-            />
-            <div>
-              <h3 class="text-xl font-semibold">Choose your assistant</h3>
-              <p class="text-xs text-[var(--text-muted)]">
-                Pick who Borg should use for new conversations. The recommended
-                defaults are ready to go.
-              </p>
-            </div>
-          </div>
-          <label class="mt-5 block text-sm text-[var(--text-muted)]">
-            Model
-            <select
-              value={selectedModel()}
-              onFocus={() => void load()}
-              onChange={(event) =>
-                void chooseModel(event.currentTarget.value)
-              }
-              class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-              data-testid="wizard-model-select"
-            >
-              <For each={models()}>
-                {(model) => (
-                  <option value={model.preferenceId}>
-                    {displayModelName(model)}
-                  </option>
-                )}
-              </For>
-            </select>
-          </label>
-          <label class="mt-4 block text-sm text-[var(--text-muted)]">
-            Assistant
-            <select
-              value={selected()}
-              onChange={(event) => void choose(event.currentTarget.value)}
-              class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-              data-testid="wizard-persona-select"
-            >
-              <For each={personas()}>
-                {(persona) => <option value={persona.id}>{persona.name}</option>}
-              </For>
-            </select>
-          </label>
-          <details class="mt-5 rounded-xl border border-[var(--border)] p-4">
-            <summary class="cursor-pointer text-sm font-semibold">
-              Create a custom assistant
-            </summary>
-            <input
-              value={name()}
-              onInput={(event) => setName(event.currentTarget.value)}
-              class="mt-4 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-              placeholder="Assistant name"
-              data-testid="settings-persona-name"
-            />
-            <textarea
-              value={instructions()}
-              onInput={(event) => setInstructions(event.currentTarget.value)}
-              class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-              placeholder="Instructions"
-              data-testid="settings-persona-instructions"
-            />
-            <button
-              type="button"
-              class="mt-3 rounded-xl border border-[var(--accent)] px-4 py-2 text-sm text-[var(--accent)]"
-              disabled={!selectedModel()}
-              onClick={() => void createPersona()}
-              data-testid="settings-persona-create"
-            >
-              Create and select
-            </button>
-          </details>
-          <p class="mt-3 text-xs text-[var(--text-muted)]">{status()}</p>
-        </section>
-      );
-    };
-
     const ActiveSessions: Component = () => {
       const [sessions, setSessions] = createSignal<readonly ChatSession[]>([]);
       const activeSessions = createMemo(() =>
@@ -1534,17 +1464,17 @@ export default defineUiPlugin<Component>({
     });
     const wizard = context.ui.registerWizardStep({
       id: "borg.chat.persona",
-      label: "Choose assistant",
+      label: "Choose persona",
       order: 30,
       required: true,
       isComplete: personaReady,
-      component: PersonaSetup,
+      component: createPersonaWizardStep(context, setPersonaReady),
     });
     const settings = context.ui.registerSettingsPage({
       id: "borg.chat.personas",
-      label: "Assistants",
+      label: "Personas",
       order: 10,
-      component: PersonaSetup,
+      component: createPersonasSettings(context),
     });
     const widget = context.ui.registerFlightDeckWidget({
       id: "borg.chat.active-sessions",

@@ -37,6 +37,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { PluginsSettings } from "./plugins-settings";
+import { groupSettingsPages } from "./settings-groups";
 
 type Surface = "chat" | "settings" | "activity" | "developer" | "setup";
 
@@ -161,7 +162,7 @@ export const App: Component<AppProps> = (props) => {
         step.label.toLowerCase().includes("persona") ||
         step.label.toLowerCase().includes("model")
       ) {
-        return "Choose assistant";
+        return "Choose persona";
       }
       return step.label;
     }),
@@ -389,6 +390,7 @@ export const App: Component<AppProps> = (props) => {
                           void props.respondToInteraction(interaction.id, {
                             kind: "approval",
                             decision: "allow",
+                            duration: "once",
                           })
                         }
                         data-testid="interaction-allow"
@@ -396,6 +398,39 @@ export const App: Component<AppProps> = (props) => {
                         Approve once
                       </Button>
                     </div>
+                    <Show when={interaction.kind === "tool_approval"}>
+                      <div class="mt-3 grid grid-cols-2 gap-3">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={!interaction.source.sessionId}
+                          onClick={() =>
+                            void props.respondToInteraction(interaction.id, {
+                              kind: "approval",
+                              decision: "allow",
+                              duration: "session",
+                            })
+                          }
+                          data-testid="interaction-allow-session"
+                        >
+                          Allow for this chat
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() =>
+                            void props.respondToInteraction(interaction.id, {
+                              kind: "approval",
+                              decision: "allow",
+                              duration: "always",
+                            })
+                          }
+                          data-testid="interaction-allow-always"
+                        >
+                          Always allow this tool
+                        </Button>
+                      </div>
+                    </Show>
                   </Show>
                 }
               >
@@ -770,46 +805,56 @@ const SettingsSurface: Component<{
   onOpenSetup(): void;
   onOpenDeveloper(): void;
 }> = (props) => {
-  const navItems = createMemo(() => [
-    { id: "system.plugins", label: "Plugins" },
-    ...props.contributions.map((contribution) => ({
-      id: contribution.id,
-      label: contribution.label,
-    })),
-  ]);
   const [selectedId, setSelectedId] = createSignal(props.initialSectionId);
   const selected = createMemo(
     () =>
       props.contributions.find(({ id }) => id === selectedId()) ??
       props.contributions[0],
   );
+  const groups = createMemo(() =>
+    groupSettingsPages([
+      { id: "system.plugins", label: "Plugins" },
+      ...props.contributions,
+    ]),
+  );
   return (
     <section
-      class="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)]"
+      class="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]"
       data-testid="surface-settings"
     >
-      <aside class="border-r border-[var(--border)] bg-[var(--panel)] p-5">
+      <aside class="min-h-0 overflow-y-auto border-r border-[var(--border)] bg-[var(--panel)] p-5">
         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-subtle)]">
           Settings
         </p>
         <h1 class="mt-2 text-2xl font-semibold">Make Borg yours</h1>
-        <nav class="mt-7 grid gap-1" aria-label="Settings sections">
-          <For each={navItems()}>
-            {(item) => (
-              <button
-                type="button"
-                class="rounded-xl px-3 py-2.5 text-left text-sm transition"
-                classList={{
-                  "bg-[var(--accent)]/12 text-[var(--accent)]":
-                    selectedId() === item.id,
-                  "text-[var(--text-muted)] hover:bg-[var(--panel-muted)] hover:text-[var(--text)]":
-                    selectedId() !== item.id,
-                }}
-                onClick={() => setSelectedId(item.id)}
-                data-testid={`settings-section-${item.id}`}
-              >
-                {item.label}
-              </button>
+        <nav class="mt-7 grid gap-5" aria-label="Settings sections">
+          <For each={groups()}>
+            {(group) => (
+              <div data-testid={`settings-group-${group.id}`}>
+                <p class="mb-2 px-3 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-subtle)]">
+                  {group.label}
+                </p>
+                <div class="grid gap-1">
+                  <For each={group.pages}>
+                    {(contribution) => (
+                      <button
+                        type="button"
+                        class="rounded-xl px-3 py-2.5 text-left text-sm transition"
+                        classList={{
+                          "bg-[var(--accent)]/12 text-[var(--accent)]":
+                            selectedId() === contribution.id,
+                          "text-[var(--text-muted)] hover:bg-[var(--panel-muted)] hover:text-[var(--text)]":
+                            selectedId() !== contribution.id,
+                        }}
+                        onClick={() => setSelectedId(contribution.id)}
+                        data-testid={`settings-section-${contribution.id}`}
+                      >
+                        {contribution.label}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </div>
             )}
           </For>
         </nav>
@@ -836,7 +881,10 @@ const SettingsSurface: Component<{
           </Show>
         </div>
       </aside>
-      <div class="min-h-0 overflow-y-auto p-8">
+      <div
+        class="min-h-0 overflow-y-auto p-8"
+        data-testid="settings-page"
+      >
         <Show
           when={selectedId() !== "system.plugins"}
           fallback={

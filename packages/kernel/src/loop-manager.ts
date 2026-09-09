@@ -637,7 +637,18 @@ export class LoopManager {
                 signal: run.controller.signal,
                 beforeAuthorization: refreshExecutionClassification,
                 beforeCommit: refreshExecutionClassification,
-                onInteraction: () => this.#update(run, { status: "waiting" }),
+                onInteraction: (interactionId) => {
+                  if (!this.#announcedInteractionIds.has(interactionId)) {
+                    this.#announcedInteractionIds.add(interactionId);
+                    this.#update(run, { status: "waiting" });
+                    this.#emit({
+                      type: "interaction_wait",
+                      runId: run.snapshot.id,
+                      interactionId,
+                      kind: "tool_approval",
+                    });
+                  }
+                },
               });
             } finally {
               run.activeToolCallId = undefined;

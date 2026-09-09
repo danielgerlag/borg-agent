@@ -491,7 +491,7 @@ export default definePlugin({
               kind: "chat-session",
               id: document.session.id,
             },
-            classification: "restricted",
+            classification: "internal",
             provenance: {
               kind: "legacy",
               id: `chat-session:${document.session.id}`,

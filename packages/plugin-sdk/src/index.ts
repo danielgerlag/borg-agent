@@ -940,6 +940,7 @@ export interface SettingsPageContribution<TComponent = unknown> {
   readonly label: string;
   readonly order?: number;
   readonly placement?: "primary" | "developer";
+  readonly group?: string;
   readonly component: TComponent;
 }
 
