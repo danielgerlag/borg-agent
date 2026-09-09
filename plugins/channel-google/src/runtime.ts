@@ -1,4 +1,9 @@
-import type { GoogleChannelStatus } from "@borg/contracts";
+import {
+  DEFAULT_CONNECTOR_ACCOUNT_ID,
+  connectorAdapterId,
+  connectorStoreKey,
+  type GoogleChannelStatus,
+} from "@borg/contracts";
 import type {
   ChannelAdapterReceipt,
   ChannelInboundDraft,
@@ -10,8 +15,12 @@ import type {
 } from "@borg/plugin-sdk";
 import {
   buildDestinations,
+  defaultGoogleChannelConfig,
   describeGoogleConfigError,
   parseGoogleChannelConfig,
+  sameGoogleAccountRuntime,
+  sameGoogleChannelConfig,
+  type GoogleChannelAccount,
   type GoogleChannelConfig,
 } from "./config";
 import { GoogleCalendarClient } from "./calendar";
@@ -36,6 +45,7 @@ import {
 import { registerGoogleTools } from "./tools";
 
 export interface GoogleChannelInjectInput {
+  readonly accountId?: string | undefined;
   readonly text: string;
   readonly destinationId?: string | undefined;
   readonly externalId?: string | undefined;
@@ -48,6 +58,24 @@ export interface GoogleChannelInjectResult {
   readonly externalId: string;
 }
 
+interface GoogleApiClients {
+  readonly gmail: GmailClient;
+  readonly calendar: GoogleCalendarClient;
+  readonly drive: GoogleDriveClient;
+  readonly contacts: GoogleContactsClient;
+}
+
+interface GoogleAccountSession {
+  account: GoogleChannelAccount;
+  registration: Disposable | undefined;
+  task: Disposable | undefined;
+  ingest: ((draft: ChannelInboundDraft) => void | Promise<void>) | undefined;
+  signal: AbortSignal | undefined;
+  inboundSequence: number;
+  readonly outbound: Map<string, ChannelAdapterReceipt>;
+  readonly pending: Map<string, Promise<ChannelAdapterReceipt>>;
+}
+
 export class GoogleChannelNotStartedError extends Error {
   constructor(message = "Google channel has no active ingest") {
     super(message);
@@ -57,35 +85,18 @@ export class GoogleChannelNotStartedError extends Error {
 
 export class GoogleChannelController {
   readonly #context: PluginContext;
-  readonly #gmail: GmailClient;
-  readonly #calendar: GoogleCalendarClient;
-  readonly #drive: GoogleDriveClient;
-  readonly #contacts: GoogleContactsClient;
+  readonly #sessions = new Map<string, GoogleAccountSession>();
+  readonly #errors = new Map<string, string>();
   #config: GoogleChannelConfig;
-  #registration: Disposable | undefined;
   #tools: Disposable | undefined;
-  #task: Disposable | undefined;
   #configWatch: Disposable | undefined;
-  #ingest: ((draft: ChannelInboundDraft) => void | Promise<void>) | undefined;
   #queue: Promise<void> = Promise.resolve();
   #configError: string | undefined;
-  #error: string | undefined;
   #disposed = false;
-  #inboundSequence = 0;
-  readonly #outbound = new Map<string, ChannelAdapterReceipt>();
-  readonly #pending = new Map<string, Promise<ChannelAdapterReceipt>>();
 
   constructor(context: PluginContext) {
     this.#context = context;
-    this.#config = parseGoogleChannelConfig({});
-    const tokenOptions = {
-      http: context.http,
-      readToken: (signal?: AbortSignal) => context.oauth.accessToken(signal),
-    };
-    this.#gmail = new GmailClient(tokenOptions);
-    this.#calendar = new GoogleCalendarClient(tokenOptions);
-    this.#drive = new GoogleDriveClient(tokenOptions);
-    this.#contacts = new GoogleContactsClient(tokenOptions);
+    this.#config = defaultGoogleChannelConfig();
   }
 
   async initialize(): Promise<void> {
@@ -96,24 +107,32 @@ export class GoogleChannelController {
     await this.#sync();
   }
 
-  async status(): Promise<GoogleChannelStatus> {
-    const snapshot = await this.#context.oauth.snapshot();
-    const mailbox = this.#config.mailbox.trim();
-    const error = this.#configError ?? this.#error;
+  async status(accountId?: string): Promise<GoogleChannelStatus> {
+    const account = this.#resolve(accountId);
+    const snapshot = await this.#context.oauth.snapshot(account.id);
+    const mailbox = account.mailbox.trim();
+    const error = this.#configError ?? this.#errors.get(account.id);
     return {
+      accountId: account.id,
+      name: account.name,
+      adapterId: connectorAdapterId(GOOGLE_ADAPTER_ID, account.id),
       connected: snapshot.connected,
-      hasClientId: this.#config.clientId.trim().length > 0,
+      hasClientId: account.clientId.trim().length > 0,
       ...(mailbox.length > 0 ? { mailbox } : {}),
       ...(error !== undefined ? { error } : {}),
     };
   }
 
-  async connect(signal?: AbortSignal): Promise<GoogleChannelStatus> {
-    const clientId = this.#config.clientId.trim();
+  async connect(
+    accountId?: string,
+    signal?: AbortSignal,
+  ): Promise<GoogleChannelStatus> {
+    const account = this.#resolve(accountId);
+    const clientId = account.clientId.trim();
     if (clientId.length === 0) {
       throw new Error("Paste a Google public desktop client id before connecting");
     }
-    this.#error = undefined;
+    this.#errors.delete(account.id);
     await this.#context.oauth.connect(
       {
         clientId,
@@ -128,19 +147,29 @@ export class GoogleChannelController {
         },
       },
       signal,
+      account.id,
     );
-    const me = await this.#gmail.getProfile(signal);
-    await this.#context.config.update({ mailbox: me.mailbox });
+    const me = await this.#clientsFor(account.id).gmail.getProfile(signal);
+    await this.#writeAccounts(
+      this.#config.accounts.map((item) =>
+        item.id === account.id ? { ...item, mailbox: me.mailbox } : item,
+      ),
+    );
     await this.#sync();
-    return this.status();
+    return this.status(account.id);
   }
 
-  async disconnect(): Promise<GoogleChannelStatus> {
-    await this.#context.oauth.disconnect();
-    await this.#context.config.update({ mailbox: "" });
-    this.#error = undefined;
+  async disconnect(accountId?: string): Promise<GoogleChannelStatus> {
+    const account = this.#resolve(accountId);
+    await this.#context.oauth.disconnect(account.id);
+    await this.#writeAccounts(
+      this.#config.accounts.map((item) =>
+        item.id === account.id ? { ...item, mailbox: "" } : item,
+      ),
+    );
+    this.#errors.delete(account.id);
     await this.#sync();
-    return this.status();
+    return this.status(account.id);
   }
 
   async inject(
@@ -148,15 +177,17 @@ export class GoogleChannelController {
     signal?: AbortSignal,
   ): Promise<GoogleChannelInjectResult> {
     signal?.throwIfAborted();
-    const ingest = this.#ingest;
-    if (!ingest) {
+    const account = this.#resolve(input.accountId);
+    const session = this.#sessions.get(account.id);
+    const ingest = session?.ingest;
+    if (!session || !ingest) {
       throw new GoogleChannelNotStartedError();
     }
     const externalId =
-      input.externalId ?? `google-in:${String((this.#inboundSequence += 1))}`;
+      input.externalId ?? `google-in:${String((session.inboundSequence += 1))}`;
     const draft: ChannelInboundDraft = {
       text: input.text,
-      destinationId: input.destinationId ?? this.#mailboxOrFallback(),
+      destinationId: input.destinationId ?? this.#mailboxOrFallback(account),
       externalId,
       receivedAt: new Date().toISOString(),
       ...(input.sender !== undefined ? { sender: input.sender } : {}),
@@ -169,22 +200,25 @@ export class GoogleChannelController {
     return Object.freeze({ accepted: true as const, externalId });
   }
 
-  async send(request: ChannelSendRequest): Promise<ChannelAdapterReceipt> {
-    const existing = this.#outbound.get(request.idempotencyKey);
+  async #send(
+    session: GoogleAccountSession,
+    request: ChannelSendRequest,
+  ): Promise<ChannelAdapterReceipt> {
+    const existing = session.outbound.get(request.idempotencyKey);
     if (existing) {
       return existing;
     }
-    const pending = this.#pending.get(request.idempotencyKey);
+    const pending = session.pending.get(request.idempotencyKey);
     if (pending) {
       return pending;
     }
-    const created = this.#dispatchSend(request);
-    this.#pending.set(request.idempotencyKey, created);
+    const created = this.#dispatchSend(session, request);
+    session.pending.set(request.idempotencyKey, created);
     try {
       return await created;
     } finally {
-      if (this.#pending.get(request.idempotencyKey) === created) {
-        this.#pending.delete(request.idempotencyKey);
+      if (session.pending.get(request.idempotencyKey) === created) {
+        session.pending.delete(request.idempotencyKey);
       }
     }
   }
@@ -194,6 +228,79 @@ export class GoogleChannelController {
     this.#configWatch?.dispose();
     this.#configWatch = undefined;
     await this.#sync();
+  }
+
+  #resolve(accountId?: string): GoogleChannelAccount {
+    const accounts = this.#config.accounts;
+    if (accountId !== undefined && accountId.length > 0) {
+      const match = accounts.find((account) => account.id === accountId);
+      if (!match) {
+        throw new Error(`Unknown Google account ${accountId}`);
+      }
+      return match;
+    }
+    const fallback =
+      accounts.find((account) => account.id === DEFAULT_CONNECTOR_ACCOUNT_ID) ??
+      (accounts.length === 1 ? accounts[0] : undefined);
+    if (fallback === undefined) {
+      throw new Error(
+        accounts.length === 0
+          ? "No Google account is configured"
+          : "Specify accountId when multiple Google accounts exist",
+      );
+    }
+    return fallback;
+  }
+
+  async #resolveToolAccount(accountId?: string): Promise<string> {
+    const connected: string[] = [];
+    for (const account of this.#config.accounts) {
+      if ((await this.#context.oauth.snapshot(account.id)).connected) {
+        connected.push(account.id);
+      }
+    }
+    if (accountId !== undefined && accountId.length > 0) {
+      const match = this.#config.accounts.find(
+        (account) => account.id === accountId,
+      );
+      if (!match) {
+        throw new Error(`Unknown Google account ${accountId}`);
+      }
+      if (!connected.includes(accountId)) {
+        throw new Error(`Google account ${accountId} is not connected`);
+      }
+      return accountId;
+    }
+    const [sole] = connected;
+    if (connected.length === 1 && sole !== undefined) {
+      return sole;
+    }
+    if (connected.length === 0) {
+      throw new Error("No Google account is connected");
+    }
+    throw new Error("Pass accountId; more than one account is connected");
+  }
+
+  #clientsFor(accountId: string): GoogleApiClients {
+    const tokenOptions = {
+      http: this.#context.http,
+      readToken: (signal?: AbortSignal) =>
+        this.#context.oauth.accessToken(signal, accountId),
+    };
+    return {
+      gmail: new GmailClient(tokenOptions),
+      calendar: new GoogleCalendarClient(tokenOptions),
+      drive: new GoogleDriveClient(tokenOptions),
+      contacts: new GoogleContactsClient(tokenOptions),
+    };
+  }
+
+  async #writeAccounts(
+    accounts: readonly GoogleChannelAccount[],
+  ): Promise<void> {
+    this.#config = parseGoogleChannelConfig(
+      await this.#context.config.update({ accounts: [...accounts] }),
+    );
   }
 
   #read(candidate: unknown): GoogleChannelConfig {
@@ -206,12 +313,16 @@ export class GoogleChannelController {
       this.#context.logger.warn("Google settings are invalid", {
         reason: this.#configError,
       });
-      return parseGoogleChannelConfig({});
+      return defaultGoogleChannelConfig();
     }
   }
 
   async #onConfigChanged(candidate: unknown): Promise<void> {
-    this.#config = this.#read(candidate);
+    const next = this.#read(candidate);
+    if (sameGoogleChannelConfig(this.#config, next)) {
+      return;
+    }
+    this.#config = next;
     await this.#sync();
   }
 
@@ -222,69 +333,114 @@ export class GoogleChannelController {
   }
 
   async #syncNow(): Promise<void> {
-    await this.#teardown();
-    this.#error = undefined;
     if (this.#disposed) {
+      for (const accountId of [...this.#sessions.keys()]) {
+        await this.#stopSession(accountId);
+      }
+      await this.#clearTools();
       return;
     }
-    if (!this.#config.enabled || this.#config.clientId.trim().length === 0) {
+    const wanted = new Set(this.#config.accounts.map((account) => account.id));
+    for (const accountId of [...this.#sessions.keys()]) {
+      if (!wanted.has(accountId)) {
+        await this.#stopSession(accountId);
+        this.#errors.delete(accountId);
+      }
+    }
+    for (const account of this.#config.accounts) {
+      await this.#syncAccount(account);
+    }
+    await this.#syncTools();
+  }
+
+  async #syncAccount(account: GoogleChannelAccount): Promise<void> {
+    const shouldRun =
+      account.enabled && account.clientId.trim().length > 0;
+    if (!shouldRun) {
+      await this.#stopSession(account.id);
       return;
     }
-    const destinations = buildDestinations(
-      this.#config.mailbox,
-      this.#config.allowedRecipients,
-    );
-    this.#registration = this.#context.channels.register({
-      id: GOOGLE_ADAPTER_ID,
+    const existing = this.#sessions.get(account.id);
+    if (
+      existing?.registration !== undefined &&
+      sameGoogleAccountRuntime(existing.account, account)
+    ) {
+      existing.account = account;
+      await this.#syncPoll(existing);
+      return;
+    }
+    await this.#stopSession(account.id);
+    this.#errors.delete(account.id);
+    this.#startSession(account);
+  }
+
+  #startSession(account: GoogleChannelAccount): void {
+    const session: GoogleAccountSession = {
+      account,
+      registration: undefined,
+      task: undefined,
+      ingest: undefined,
+      signal: undefined,
+      inboundSequence: 0,
+      outbound: new Map(),
+      pending: new Map(),
+    };
+    this.#sessions.set(account.id, session);
+    session.registration = this.#context.channels.register({
+      id: connectorAdapterId(GOOGLE_ADAPTER_ID, account.id),
       capacity: "private",
-      destinations,
-      start: ({ ingest, signal }) => this.#start(ingest, signal),
-      send: (request) => this.send(request),
+      destinations: buildDestinations(account.mailbox, account.allowedRecipients),
+      start: ({ ingest, signal }) => this.#start(session, ingest, signal),
+      send: (request) => this.#send(session, request),
     });
-    const snapshot = await this.#context.oauth.snapshot();
-    if (snapshot.connected) {
-      this.#tools = registerGoogleTools(
-        this.#context,
-        this.#calendar,
-        this.#drive,
-        this.#contacts,
-      );
-    }
   }
 
   #start(
+    session: GoogleAccountSession,
     ingest: (draft: ChannelInboundDraft) => void | Promise<void>,
     signal: AbortSignal,
   ): Disposable {
-    this.#ingest = ingest;
+    session.ingest = ingest;
+    session.signal = signal;
     const onAbort = (): void => {
-      if (this.#ingest === ingest) {
-        this.#ingest = undefined;
+      if (session.ingest === ingest) {
+        session.ingest = undefined;
+      }
+      if (session.signal === signal) {
+        session.signal = undefined;
       }
     };
     signal.addEventListener("abort", onAbort, { once: true });
-    void this.#maybePoll(signal);
+    void this.#syncPoll(session);
     return {
       dispose: () => {
         signal.removeEventListener("abort", onAbort);
         onAbort();
-        this.#task?.dispose();
-        this.#task = undefined;
+        this.#stopPoll(session);
       },
     };
   }
 
-  async #maybePoll(signal: AbortSignal): Promise<void> {
-    const snapshot = await this.#context.oauth.snapshot();
-    if (!snapshot.connected || signal.aborted) {
+  async #syncPoll(session: GoogleAccountSession): Promise<void> {
+    const signal = session.signal;
+    if (!signal || signal.aborted) {
+      this.#stopPoll(session);
+      return;
+    }
+    const snapshot = await this.#context.oauth.snapshot(session.account.id);
+    if (!snapshot.connected) {
+      this.#stopPoll(session);
+      return;
+    }
+    if (session.task !== undefined) {
       return;
     }
     try {
-      this.#task = this.#context.runtime.spawn((taskSignal) =>
-        this.#pollLoop(AbortSignal.any([taskSignal, signal])),
+      session.task = this.#context.runtime.spawn((taskSignal) =>
+        this.#pollLoop(session, AbortSignal.any([taskSignal, signal])),
       );
     } catch {
-      void this.#pollLoop(signal).catch((error: unknown) => {
+      void this.#pollLoop(session, signal).catch((error: unknown) => {
         this.#context.logger.error("Gmail poll failed", {
           reason: describeError(error),
         });
@@ -292,15 +448,24 @@ export class GoogleChannelController {
     }
   }
 
-  async #pollLoop(signal: AbortSignal): Promise<void> {
+  #stopPoll(session: GoogleAccountSession): void {
+    const task = session.task;
+    session.task = undefined;
+    task?.dispose();
+  }
+
+  async #pollLoop(
+    session: GoogleAccountSession,
+    signal: AbortSignal,
+  ): Promise<void> {
     while (!signal.aborted) {
       try {
-        await this.#pollOnce(signal);
+        await this.#pollOnce(session, signal);
       } catch (error) {
         if (!signal.aborted) {
-          this.#error = describeError(error);
+          this.#errors.set(session.account.id, describeError(error));
           this.#context.logger.warn("Gmail inbox poll failed", {
-            reason: this.#error,
+            reason: this.#errors.get(session.account.id),
           });
         }
       }
@@ -308,13 +473,18 @@ export class GoogleChannelController {
     }
   }
 
-  async #pollOnce(signal: AbortSignal): Promise<void> {
-    const ingest = this.#ingest;
+  async #pollOnce(
+    session: GoogleAccountSession,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const ingest = session.ingest;
     if (!ingest) {
       return;
     }
-    const messages = await this.#gmail.listInbox(signal);
-    const seen = await this.#loadSeen();
+    const messages = await this.#clientsFor(session.account.id).gmail.listInbox(
+      signal,
+    );
+    const seen = await this.#loadSeen(session.account.id);
     const nextSeen = [...seen];
     for (const message of [...messages].reverse()) {
       if (seen.has(message.id)) {
@@ -323,61 +493,74 @@ export class GoogleChannelController {
       nextSeen.push(message.id);
       await ingest({
         text: message.text,
-        destinationId: this.#mailboxOrFallback(),
+        destinationId: this.#mailboxOrFallback(session.account),
         externalId: message.id,
         receivedAt: message.receivedAt ?? new Date().toISOString(),
         ...(message.sender ? { sender: message.sender } : {}),
       });
     }
-    await this.#saveSeen(nextSeen);
+    await this.#saveSeen(session.account.id, nextSeen);
   }
 
-  async #dispatchSend(request: ChannelSendRequest): Promise<ChannelAdapterReceipt> {
+  async #dispatchSend(
+    session: GoogleAccountSession,
+    request: ChannelSendRequest,
+  ): Promise<ChannelAdapterReceipt> {
     if (request.attachments !== undefined && request.attachments.length > 0) {
       throw new Error("Gmail attachment sending is not supported");
     }
-    const snapshot = await this.#context.oauth.snapshot();
+    const snapshot = await this.#context.oauth.snapshot(session.account.id);
     if (!snapshot.connected) {
       throw new Error("Google is not connected");
     }
-    const mailbox = this.#config.mailbox.trim();
+    const mailbox = session.account.mailbox.trim();
     if (mailbox.length === 0) {
       throw new Error("Google mailbox is unavailable");
     }
-    if (!this.#isAllowedOutbound(request.destinationId)) {
+    if (!this.#isAllowedOutbound(session.account, request.destinationId)) {
       throw new Error("Google destination is not allow-listed");
     }
-    const { messageId } = await this.#gmail.sendMail({
-      from: mailbox,
-      to: request.destinationId,
-      text: request.text,
-      ...(request.signal ? { signal: request.signal } : {}),
-    });
+    const { messageId } = await this.#clientsFor(session.account.id).gmail.sendMail(
+      {
+        from: mailbox,
+        to: request.destinationId,
+        text: request.text,
+        ...(request.signal ? { signal: request.signal } : {}),
+      },
+    );
     const receipt = Object.freeze({
       externalId: messageId,
       sentAt: new Date().toISOString(),
     });
-    this.#outbound.set(request.idempotencyKey, receipt);
+    session.outbound.set(request.idempotencyKey, receipt);
     return receipt;
   }
 
-  #isAllowedOutbound(destinationId: string): boolean {
+  #isAllowedOutbound(
+    account: GoogleChannelAccount,
+    destinationId: string,
+  ): boolean {
     const key = emailKey(destinationId);
-    if (emailKey(this.#config.mailbox) === key && this.#config.mailbox.trim().length > 0) {
+    if (
+      emailKey(account.mailbox) === key &&
+      account.mailbox.trim().length > 0
+    ) {
       return true;
     }
-    return this.#config.allowedRecipients.some(
+    return account.allowedRecipients.some(
       (recipient) => emailKey(recipient) === key,
     );
   }
 
-  #mailboxOrFallback(): string {
-    const mailbox = this.#config.mailbox.trim();
+  #mailboxOrFallback(account: GoogleChannelAccount): string {
+    const mailbox = account.mailbox.trim();
     return mailbox.length > 0 ? mailbox : FALLBACK_DESTINATION;
   }
 
-  async #loadSeen(): Promise<Set<string>> {
-    const value = await this.#context.store.get(SEEN_STORE_KEY);
+  async #loadSeen(accountId: string): Promise<Set<string>> {
+    const value = await this.#context.store.get(
+      connectorStoreKey(accountId, SEEN_STORE_KEY),
+    );
     if (!Array.isArray(value)) {
       return new Set();
     }
@@ -386,28 +569,57 @@ export class GoogleChannelController {
     );
   }
 
-  async #saveSeen(ids: readonly string[]): Promise<void> {
+  async #saveSeen(accountId: string, ids: readonly string[]): Promise<void> {
     const trimmed: JsonValue = ids.slice(-MAX_SEEN_IDS);
-    await this.#context.store.set(SEEN_STORE_KEY, trimmed);
+    await this.#context.store.set(
+      connectorStoreKey(accountId, SEEN_STORE_KEY),
+      trimmed,
+    );
   }
 
-  async #teardown(): Promise<void> {
-    const tools = this.#tools;
-    this.#tools = undefined;
-    if (tools) {
-      try {
-        await tools.dispose();
-      } catch (error) {
-        this.#context.logger.warn("Google tool teardown failed", {
-          reason: describeError(error),
-        });
+  async #syncTools(): Promise<void> {
+    let anyConnected = false;
+    for (const account of this.#config.accounts) {
+      if ((await this.#context.oauth.snapshot(account.id)).connected) {
+        anyConnected = true;
+        break;
       }
     }
-    const registration = this.#registration;
-    this.#registration = undefined;
-    this.#task?.dispose();
-    this.#task = undefined;
-    this.#ingest = undefined;
+    if (!anyConnected) {
+      await this.#clearTools();
+      return;
+    }
+    if (this.#tools) {
+      return;
+    }
+    this.#tools = registerGoogleTools(this.#context, async (accountId) =>
+      this.#clientsFor(await this.#resolveToolAccount(accountId)),
+    );
+  }
+
+  async #clearTools(): Promise<void> {
+    const tools = this.#tools;
+    this.#tools = undefined;
+    if (!tools) {
+      return;
+    }
+    try {
+      await tools.dispose();
+    } catch (error) {
+      this.#context.logger.warn("Google tool teardown failed", {
+        reason: describeError(error),
+      });
+    }
+  }
+
+  async #stopSession(accountId: string): Promise<void> {
+    const session = this.#sessions.get(accountId);
+    if (!session) {
+      return;
+    }
+    this.#sessions.delete(accountId);
+    const registration = session.registration;
+    session.registration = undefined;
     if (registration) {
       try {
         await registration.dispose();
@@ -417,6 +629,9 @@ export class GoogleChannelController {
         });
       }
     }
+    this.#stopPoll(session);
+    session.ingest = undefined;
+    session.signal = undefined;
   }
 }
 

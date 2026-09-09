@@ -1,3 +1,4 @@
+import { oauthGrantKey } from "@borg/contracts";
 import { createHash, randomBytes as nodeRandomBytes } from "node:crypto";
 import {
   createServer,
@@ -563,6 +564,7 @@ export class OAuthService {
     pluginId: string,
     request: PluginOAuthConnectRequest,
     signal?: AbortSignal,
+    accountId?: string,
   ): Promise<OAuthSessionSnapshot> {
     if (this.#shutdown.signal.aborted) {
       this.#record({
@@ -581,7 +583,8 @@ export class OAuthService {
       throw abortError(signal, false);
     }
 
-    const generation = this.#generation.get(pluginId) ?? 0;
+    const grantKey = this.#grantKey(pluginId, accountId);
+    const generation = this.#generation.get(grantKey) ?? 0;
     let authorizationOrigin: string | undefined;
     let tokenOrigin: string | undefined;
     let parsed: ParsedConnectRequest;
@@ -606,7 +609,7 @@ export class OAuthService {
     }
 
     const owned: OwnedConnect = { controller: new AbortController() };
-    this.#addOwned(pluginId, owned);
+    this.#addOwned(grantKey, owned);
     const combined = AbortSignal.any([
       ...(signal ? [signal] : []),
       owned.controller.signal,
@@ -615,7 +618,7 @@ export class OAuthService {
 
     try {
       const snapshot = await this.#runConnect({
-        pluginId,
+        grantKey,
         generation,
         parsed,
         signal: combined,
@@ -638,12 +641,15 @@ export class OAuthService {
       });
       throw this.#connectThrow(failure, error);
     } finally {
-      this.#release(pluginId, owned);
+      this.#release(grantKey, owned);
     }
   }
 
-  async snapshot(pluginId: string): Promise<OAuthSessionSnapshot> {
-    const grant = await this.#loadGrant(pluginId);
+  async snapshot(
+    pluginId: string,
+    accountId?: string,
+  ): Promise<OAuthSessionSnapshot> {
+    const grant = await this.#loadGrant(this.#grantKey(pluginId, accountId));
     if (!grant) {
       return { connected: false };
     }
@@ -653,31 +659,37 @@ export class OAuthService {
     };
   }
 
-  async accessToken(pluginId: string, signal?: AbortSignal): Promise<string> {
+  async accessToken(
+    pluginId: string,
+    signal?: AbortSignal,
+    accountId?: string,
+  ): Promise<string> {
     if (this.#shutdown.signal.aborted) {
       throw new OAuthError("unavailable", "OAuth service is shut down");
     }
     if (signal?.aborted) {
       throw abortError(signal, false);
     }
-    const grant = await this.#loadGrant(pluginId);
+    const grantKey = this.#grantKey(pluginId, accountId);
+    const grant = await this.#loadGrant(grantKey);
     if (!grant) {
       throw new OAuthError("unavailable", "OAuth grant is unavailable");
     }
     if (this.#isFresh(grant)) {
       return grant.accessToken;
     }
-    return this.#refreshGrant(pluginId, grant, signal);
+    return this.#refreshGrant(pluginId, grantKey, grant, signal);
   }
 
-  async disconnect(pluginId: string): Promise<void> {
-    this.#bump(pluginId);
-    this.#abortOwned(pluginId, "deactivated");
-    const grant = await this.#loadGrant(pluginId);
+  async disconnect(pluginId: string, accountId?: string): Promise<void> {
+    const grantKey = this.#grantKey(pluginId, accountId);
+    this.#bump(grantKey);
+    this.#abortOwnedKey(grantKey, "deactivated");
+    const grant = await this.#loadGrant(grantKey);
     if (grant?.revocationEndpoint) {
       await this.#revoke(pluginId, grant);
     }
-    await this.#secrets.delete(OAUTH_VAULT_NAMESPACE, pluginId);
+    await this.#secrets.delete(OAUTH_VAULT_NAMESPACE, grantKey);
     this.#record({
       pluginId,
       outcome: "disconnected",
@@ -693,22 +705,30 @@ export class OAuthService {
   }
 
   abortOwned(pluginId: string): void {
-    this.#bump(pluginId);
-    this.#abortOwned(pluginId, "deactivated");
+    for (const grantKey of this.#grantKeysForPlugin(pluginId)) {
+      this.#bump(grantKey);
+      this.#abortOwnedKey(grantKey, "deactivated");
+    }
   }
 
   shutdown(): void {
     if (!this.#shutdown.signal.aborted) {
       this.#shutdown.abort(new Error("OAuth service is shutting down"));
     }
-    for (const pluginId of [...this.#owned.keys()]) {
-      this.#bump(pluginId);
-      this.#abortOwned(pluginId, "shutdown");
+    for (const grantKey of [...this.#owned.keys()]) {
+      this.#bump(grantKey);
+      this.#abortOwnedKey(grantKey, "shutdown");
     }
   }
 
   countOwned(pluginId: string): number {
-    return this.#owned.get(pluginId)?.size ?? 0;
+    let total = 0;
+    for (const [grantKey, owned] of this.#owned) {
+      if (this.#grantBelongsToPlugin(grantKey, pluginId)) {
+        total += owned.size;
+      }
+    }
+    return total;
   }
 
   listAudit(): readonly OAuthAuditRecord[] {
@@ -773,12 +793,12 @@ export class OAuthService {
   }
 
   async #runConnect(input: {
-    readonly pluginId: string;
+    readonly grantKey: string;
     readonly generation: number;
     readonly parsed: ParsedConnectRequest;
     readonly signal: AbortSignal;
   }): Promise<OAuthSessionSnapshot> {
-    const { pluginId, generation, parsed, signal } = input;
+    const { grantKey, generation, parsed, signal } = input;
     const state = base64Url(this.#randomBytes(32));
     const verifier = base64Url(this.#randomBytes(32));
     const challenge = pkceChallenge(verifier);
@@ -933,7 +953,7 @@ export class OAuthService {
         requireRefresh: true,
         signal,
       });
-      if ((this.#generation.get(pluginId) ?? 0) !== generation) {
+      if ((this.#generation.get(grantKey) ?? 0) !== generation) {
         throw new OAuthError("unavailable", "OAuth connect was aborted");
       }
       const refreshToken = tokens.refreshToken;
@@ -954,7 +974,7 @@ export class OAuthService {
       };
       await this.#secrets.set(
         OAUTH_VAULT_NAMESPACE,
-        pluginId,
+        grantKey,
         JSON.stringify(grant),
       );
       return {
@@ -972,32 +992,34 @@ export class OAuthService {
 
   async #refreshGrant(
     pluginId: string,
+    grantKey: string,
     grant: StoredGrant,
     signal?: AbortSignal,
   ): Promise<string> {
-    const existing = this.#refresh.get(pluginId);
+    const existing = this.#refresh.get(grantKey);
     if (existing) {
       return existing;
     }
-    const run = this.#refreshNow(pluginId, grant, signal);
-    this.#refresh.set(pluginId, run);
+    const run = this.#refreshNow(pluginId, grantKey, grant, signal);
+    this.#refresh.set(grantKey, run);
     try {
       return await run;
     } finally {
-      if (this.#refresh.get(pluginId) === run) {
-        this.#refresh.delete(pluginId);
+      if (this.#refresh.get(grantKey) === run) {
+        this.#refresh.delete(grantKey);
       }
     }
   }
 
   async #refreshNow(
     pluginId: string,
+    grantKey: string,
     grant: StoredGrant,
     signal?: AbortSignal,
   ): Promise<string> {
-    const generation = this.#generation.get(pluginId) ?? 0;
+    const generation = this.#generation.get(grantKey) ?? 0;
     const owned: OwnedConnect = { controller: new AbortController() };
-    this.#addOwned(pluginId, owned);
+    this.#addOwned(grantKey, owned);
     const combined = AbortSignal.any([
       ...(signal ? [signal] : []),
       owned.controller.signal,
@@ -1021,7 +1043,7 @@ export class OAuthService {
         requireRefresh: false,
         signal: combined,
       });
-      if ((this.#generation.get(pluginId) ?? 0) !== generation) {
+      if ((this.#generation.get(grantKey) ?? 0) !== generation) {
         throw new OAuthError("unavailable", "OAuth refresh was aborted");
       }
       const next: StoredGrant = {
@@ -1032,7 +1054,7 @@ export class OAuthService {
       };
       await this.#secrets.set(
         OAUTH_VAULT_NAMESPACE,
-        pluginId,
+        grantKey,
         JSON.stringify(next),
       );
       this.#record({
@@ -1051,7 +1073,7 @@ export class OAuthService {
       });
       throw this.#connectThrow(failure, error);
     } finally {
-      this.#release(pluginId, owned);
+      this.#release(grantKey, owned);
     }
   }
 
@@ -1140,8 +1162,8 @@ export class OAuthService {
     }
   }
 
-  async #loadGrant(pluginId: string): Promise<StoredGrant | undefined> {
-    const raw = await this.#secrets.get(OAUTH_VAULT_NAMESPACE, pluginId);
+  async #loadGrant(grantKey: string): Promise<StoredGrant | undefined> {
+    const raw = await this.#secrets.get(OAUTH_VAULT_NAMESPACE, grantKey);
     if (typeof raw !== "string" || raw.length === 0) {
       return undefined;
     }
@@ -1184,29 +1206,63 @@ export class OAuthService {
     }
   }
 
-  #addOwned(pluginId: string, owned: OwnedConnect): void {
-    const set = this.#owned.get(pluginId) ?? new Set<OwnedConnect>();
-    set.add(owned);
-    this.#owned.set(pluginId, set);
+  #grantKey(pluginId: string, accountId?: string): string {
+    try {
+      return oauthGrantKey(pluginId, accountId);
+    } catch (error) {
+      throw new OAuthError("invalid", "OAuth account id is invalid", {
+        cause: error,
+      });
+    }
   }
 
-  #release(pluginId: string, owned: OwnedConnect): void {
-    const set = this.#owned.get(pluginId);
+  #grantBelongsToPlugin(grantKey: string, pluginId: string): boolean {
+    return grantKey === pluginId || grantKey.startsWith(`${pluginId}.`);
+  }
+
+  #grantKeysForPlugin(pluginId: string): string[] {
+    const keys = new Set<string>([pluginId]);
+    for (const grantKey of this.#owned.keys()) {
+      if (this.#grantBelongsToPlugin(grantKey, pluginId)) {
+        keys.add(grantKey);
+      }
+    }
+    for (const grantKey of this.#refresh.keys()) {
+      if (this.#grantBelongsToPlugin(grantKey, pluginId)) {
+        keys.add(grantKey);
+      }
+    }
+    for (const grantKey of this.#generation.keys()) {
+      if (this.#grantBelongsToPlugin(grantKey, pluginId)) {
+        keys.add(grantKey);
+      }
+    }
+    return [...keys];
+  }
+
+  #addOwned(grantKey: string, owned: OwnedConnect): void {
+    const set = this.#owned.get(grantKey) ?? new Set<OwnedConnect>();
+    set.add(owned);
+    this.#owned.set(grantKey, set);
+  }
+
+  #release(grantKey: string, owned: OwnedConnect): void {
+    const set = this.#owned.get(grantKey);
     if (!set) {
       return;
     }
     set.delete(owned);
     if (set.size === 0) {
-      this.#owned.delete(pluginId);
+      this.#owned.delete(grantKey);
     }
   }
 
-  #abortOwned(pluginId: string, reason: "deactivated" | "shutdown"): void {
-    const owned = this.#owned.get(pluginId);
+  #abortOwnedKey(grantKey: string, reason: "deactivated" | "shutdown"): void {
+    const owned = this.#owned.get(grantKey);
     if (!owned) {
       return;
     }
-    this.#owned.delete(pluginId);
+    this.#owned.delete(grantKey);
     for (const item of owned) {
       if (!item.controller.signal.aborted) {
         item.controller.abort(
@@ -1221,8 +1277,8 @@ export class OAuthService {
     }
   }
 
-  #bump(pluginId: string): void {
-    this.#generation.set(pluginId, (this.#generation.get(pluginId) ?? 0) + 1);
+  #bump(grantKey: string): void {
+    this.#generation.set(grantKey, (this.#generation.get(grantKey) ?? 0) + 1);
   }
 
   #record(record: OAuthAuditRecord): void {

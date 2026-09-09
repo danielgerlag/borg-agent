@@ -22,11 +22,27 @@ import {
 
 const BOT_TOKEN = "xoxb-super-secret-bot-token";
 const APP_TOKEN = "xapp-super-secret-app-token";
+const WORK_BOT_TOKEN = "xoxb-work-bot-token";
+const WORK_APP_TOKEN = "xapp-work-app-token";
 const CHANNEL_ID = "C01234567";
 const OTHER_CHANNEL_ID = "C01234568";
 const BOT_USER_ID = "U0BOTUSER1";
 const USER_ID = "U01234567";
 const SOCKET_URL = "wss://wss-primary.slack.com/link?ticket=test-ticket";
+
+function defaultAccount(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "default",
+    name: "Slack",
+    enabled: true,
+    ignoreBots: true,
+    allowedChannelIds: [CHANNEL_ID],
+    defaultSendChannelId: "",
+    ...overrides,
+  };
+}
 
 function slackRoutes(
   overrides: Readonly<
@@ -119,14 +135,9 @@ describe("borg.channel.slack plugin", () => {
   it("stays unregistered until it is enabled with both tokens and a channel", async () => {
     const harness = await activate();
     expect(harness.registrations).toHaveLength(0);
-    expect(
-      await harness.invoke<SlackChannelStatus>(slackChannelGetStatus, {}),
-    ).toEqual({
-      hasBotToken: false,
-      hasAppToken: false,
-      connected: false,
-      socketState: "idle",
-    });
+    await expect(
+      harness.invoke<SlackChannelStatus>(slackChannelGetStatus, {}),
+    ).rejects.toThrow("No Slack account is configured");
   });
 
   it("explains itself when the channel is enabled without tokens", async () => {
@@ -137,6 +148,9 @@ describe("borg.channel.slack plugin", () => {
     expect(
       await harness.invoke<SlackChannelStatus>(slackChannelGetStatus, {}),
     ).toEqual({
+      accountId: "default",
+      name: "Slack",
+      adapterId: SLACK_ADAPTER_ID,
       hasBotToken: false,
       hasAppToken: false,
       connected: false,
@@ -177,6 +191,80 @@ describe("borg.channel.slack plugin", () => {
     });
   });
 
+  it("registers a second account without disposing the default adapter", async () => {
+    const harness = await activate({
+      secrets: {
+        [SLACK_BOT_TOKEN_SECRET_KEY]: BOT_TOKEN,
+        [SLACK_APP_TOKEN_SECRET_KEY]: APP_TOKEN,
+        [`work.${SLACK_BOT_TOKEN_SECRET_KEY}`]: WORK_BOT_TOKEN,
+        [`work.${SLACK_APP_TOKEN_SECRET_KEY}`]: WORK_APP_TOKEN,
+      },
+      config: {
+        accounts: [
+          defaultAccount(),
+          {
+            id: "work",
+            name: "Work",
+            enabled: true,
+            ignoreBots: true,
+            allowedChannelIds: [OTHER_CHANNEL_ID],
+            defaultSendChannelId: "",
+          },
+        ],
+      },
+    });
+
+    const live = harness.registrations.filter((entry) => !entry.disposed);
+    expect(live.map((entry) => entry.adapter.id).sort()).toEqual([
+      SLACK_ADAPTER_ID,
+      `${SLACK_ADAPTER_ID}.work`,
+    ]);
+    const defaultRegistration = live.find(
+      (entry) => entry.adapter.id === SLACK_ADAPTER_ID,
+    );
+    const workRegistration = live.find(
+      (entry) => entry.adapter.id === `${SLACK_ADAPTER_ID}.work`,
+    );
+    expect(defaultRegistration?.adapter.destinations).toEqual([CHANNEL_ID]);
+    expect(workRegistration?.adapter.destinations).toEqual([OTHER_CHANNEL_ID]);
+    expect(
+      harness.requests.some(
+        (request) => request.headers.Authorization === `Bearer ${APP_TOKEN}`,
+      ),
+    ).toBe(true);
+    expect(
+      harness.requests.some(
+        (request) =>
+          request.headers.Authorization === `Bearer ${WORK_APP_TOKEN}`,
+      ),
+    ).toBe(true);
+
+    await harness.updateConfig({
+      accounts: [
+        defaultAccount(),
+        {
+          id: "work",
+          name: "Work",
+          enabled: true,
+          ignoreBots: true,
+          allowedChannelIds: [CHANNEL_ID, OTHER_CHANNEL_ID],
+          defaultSendChannelId: "",
+        },
+      ],
+    });
+    await settle();
+
+    expect(defaultRegistration?.disposed).toBe(false);
+    const nextLive = harness.registrations.filter((entry) => !entry.disposed);
+    expect(
+      nextLive.find((entry) => entry.adapter.id === SLACK_ADAPTER_ID),
+    ).toBe(defaultRegistration);
+    expect(
+      nextLive.find((entry) => entry.adapter.id === `${SLACK_ADAPTER_ID}.work`)
+        ?.adapter.destinations,
+    ).toEqual([CHANNEL_ID, OTHER_CHANNEL_ID]);
+  });
+
   it("re-registers when the channel list changes", async () => {
     const harness = await activate({
       secrets: {
@@ -189,7 +277,11 @@ describe("borg.channel.slack plugin", () => {
     const firstSocket = harness.webSockets.last.socket;
 
     await harness.updateConfig({
-      allowedChannelIds: [CHANNEL_ID, OTHER_CHANNEL_ID],
+      accounts: [
+        defaultAccount({
+          allowedChannelIds: [CHANNEL_ID, OTHER_CHANNEL_ID],
+        }),
+      ],
     });
     await settle();
 
@@ -214,7 +306,9 @@ describe("borg.channel.slack plugin", () => {
     });
     const socket = harness.webSockets.last.socket;
 
-    await harness.updateConfig({ enabled: false });
+    await harness.updateConfig({
+      accounts: [defaultAccount({ enabled: false })],
+    });
     await settle();
 
     expect(harness.registrations.every((entry) => entry.disposed)).toBe(true);
@@ -391,6 +485,7 @@ describe("borg.channel.slack plugin", () => {
         [SLACK_BOT_TOKEN_SECRET_KEY]: BOT_TOKEN,
         [SLACK_APP_TOKEN_SECRET_KEY]: APP_TOKEN,
       },
+      config: { enabled: true, allowedChannelIds: [CHANNEL_ID] },
       fetch: slackRoutes({
         "/auth.test": () =>
           jsonResponse(200, { ok: false, error: "invalid_auth" }),
@@ -421,6 +516,9 @@ describe("borg.channel.slack plugin", () => {
     await expect(
       harness.invoke<SlackChannelStatus>(slackChannelDisconnect, {}),
     ).resolves.toEqual({
+      accountId: "default",
+      name: "Slack",
+      adapterId: SLACK_ADAPTER_ID,
       hasBotToken: true,
       hasAppToken: true,
       connected: false,

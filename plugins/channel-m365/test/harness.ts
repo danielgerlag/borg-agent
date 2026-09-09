@@ -1,3 +1,4 @@
+import { oauthGrantKey } from "@borg/contracts";
 import type {
   ChannelAdapter,
   ChannelInboundDraft,
@@ -14,6 +15,8 @@ import type {
   ToolContribution,
 } from "@borg/plugin-sdk";
 import { m365ChannelConfigSchema } from "../src/config";
+
+const PLUGIN_ID = "borg.channel.m365";
 
 export interface RecordedRequest {
   readonly url: string;
@@ -68,6 +71,7 @@ export interface RegisteredChannel {
 
 export interface FakeOauthOptions {
   readonly connected?: boolean | undefined;
+  readonly connectedAccountIds?: readonly string[] | undefined;
   readonly mailboxToken?: string | undefined;
 }
 
@@ -77,32 +81,62 @@ export function createFakeOauth(options: FakeOauthOptions = {}): {
   connects: number;
   disconnects: number;
   readonly requests: PluginOAuthConnectRequest[];
+  readonly usedGrantKeys: string[];
+  readonly connectAccountIds: Array<string | undefined>;
 } {
+  const grants = new Set<string>();
+  if (options.connected === true) {
+    grants.add(oauthGrantKey(PLUGIN_ID));
+  }
+  for (const accountId of options.connectedAccountIds ?? []) {
+    grants.add(oauthGrantKey(PLUGIN_ID, accountId));
+  }
   const state = {
-    connected: options.connected === true,
     connects: 0,
     disconnects: 0,
     requests: [] as PluginOAuthConnectRequest[],
+    usedGrantKeys: [] as string[],
+    connectAccountIds: [] as Array<string | undefined>,
     oauth: {} as PluginOAuth,
+    get connected(): boolean {
+      return grants.has(oauthGrantKey(PLUGIN_ID));
+    },
   };
-  const snapshot = (): OAuthSessionSnapshot => ({
-    connected: state.connected,
-    ...(state.connected
-      ? { expiresAt: new Date(Date.now() + 3_600_000).toISOString() }
-      : {}),
-  });
+  const noteGrant = (accountId?: string): string => {
+    const key = oauthGrantKey(PLUGIN_ID, accountId);
+    if (!state.usedGrantKeys.includes(key)) {
+      state.usedGrantKeys.push(key);
+    }
+    return key;
+  };
+  const snapshotFor = (accountId?: string): OAuthSessionSnapshot => {
+    const connected = grants.has(noteGrant(accountId));
+    return {
+      connected,
+      ...(connected
+        ? { expiresAt: new Date(Date.now() + 3_600_000).toISOString() }
+        : {}),
+    };
+  };
   state.oauth = {
-    connect: async (request) => {
+    connect: async (request, _signal, accountId) => {
       state.connects += 1;
       state.requests.push(request);
-      state.connected = true;
-      return snapshot();
+      state.connectAccountIds.push(accountId);
+      grants.add(noteGrant(accountId));
+      return snapshotFor(accountId);
     },
-    snapshot: async () => snapshot(),
-    accessToken: async () => options.mailboxToken ?? "m365-access-token",
-    disconnect: async () => {
+    snapshot: async (accountId) => snapshotFor(accountId),
+    accessToken: async (_signal, accountId) => {
+      const key = noteGrant(accountId);
+      if (!grants.has(key)) {
+        throw new Error("Microsoft 365 is not connected");
+      }
+      return options.mailboxToken ?? "m365-access-token";
+    },
+    disconnect: async (accountId) => {
       state.disconnects += 1;
-      state.connected = false;
+      grants.delete(noteGrant(accountId));
     },
   };
   return state;
@@ -159,7 +193,7 @@ export function createM365Harness(options: M365HarnessOptions = {}) {
   } as unknown as PluginBus;
 
   const context = {
-    pluginId: "borg.channel.m365",
+    pluginId: PLUGIN_ID,
     signal: new AbortController().signal,
     bus,
     config: {

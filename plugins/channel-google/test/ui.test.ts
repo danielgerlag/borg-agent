@@ -11,6 +11,8 @@ describe("Google settings UI contract", () => {
     expect(source).toContain('label: "Google"');
     expect(source).toContain("order: 48");
     expect(source).toContain('data-testid="google-settings-page"');
+    expect(source).toContain("google-account-row-");
+    expect(source).toContain('data-testid="google-account-new"');
     expect(source).toContain('data-testid="google-client-id"');
     expect(source).toContain('data-testid="google-enabled"');
     expect(source).toContain('data-testid="google-allowed-recipients"');

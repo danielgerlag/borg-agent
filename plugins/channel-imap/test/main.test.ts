@@ -37,17 +37,27 @@ function createImapFixture(options?: {
   readonly host?: string;
   readonly username?: string;
   readonly password?: string;
+  readonly secrets?: Readonly<Record<string, string>>;
+  readonly config?: Record<string, unknown>;
   readonly tls?: PluginTls;
   readonly runtime?: PluginRuntime;
   readonly logger?: PluginLogger;
 }) {
   const handlers = new Map<string, CommandHandler>();
-  let adapter: ChannelAdapter | undefined;
-  const secrets = new Map<string, string>();
+  const adapters: ChannelAdapter[] = [];
+  const secrets = new Map<string, string>(
+    Object.entries(options?.secrets ?? {}),
+  );
   if (options?.password) {
     secrets.set(IMAP_PASSWORD_SECRET_KEY, options.password);
   }
-  let config: Record<string, unknown> = {
+  const silentLogger: PluginLogger = {
+    debug: () => undefined,
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+  };
+  let config: Record<string, unknown> = options?.config ?? {
     enabled: options?.enabled === true,
     host: options?.host ?? "",
     username: options?.username ?? "",
@@ -117,11 +127,12 @@ function createImapFixture(options?: {
     },
     channels: {
       register: (registered: ChannelAdapter) => {
-        adapter = registered;
+        adapters.push(registered);
         return {
           dispose: () => {
-            if (adapter === registered) {
-              adapter = undefined;
+            const index = adapters.indexOf(registered);
+            if (index >= 0) {
+              adapters.splice(index, 1);
             }
           },
         };
@@ -132,13 +143,14 @@ function createImapFixture(options?: {
         throw new Error("Sandbox runs are unused");
       },
     },
+    logger: options?.logger ?? silentLogger,
     ...(options?.tls ? { tls: options.tls } : {}),
     ...(options?.runtime ? { runtime: options.runtime } : {}),
-    ...(options?.logger ? { logger: options.logger } : {}),
   } as unknown as PluginContext;
   return {
     context,
-    adapter: () => adapter,
+    adapter: () => adapters.at(-1),
+    adapters: () => [...adapters],
     invoke: <T>(
       command: CommandDefinition,
       input: unknown,
@@ -150,7 +162,10 @@ function createImapFixture(options?: {
 
 describe("ImapFakeTransport", () => {
   it("injects inbound drafts into the active ingest", async () => {
-    const runtime = new ImapFakeTransport();
+    const runtime = new ImapFakeTransport({
+      id: IMAP_CHANNEL_ADAPTER_ID,
+      readPassword: async () => undefined,
+    });
     const drafts: ChannelInboundDraft[] = [];
     runtime.start({
       ingest: (draft) => {
@@ -200,13 +215,62 @@ describe("borg.channel.imap", () => {
   });
 
   it("fills IMAP config defaults", () => {
-    expect(parseImapChannelConfig({})).toEqual({
-      enabled: false,
-      host: "",
-      port: 993,
-      username: "",
-      mailbox: IMAP_DEFAULT_MAILBOX,
+    expect(parseImapChannelConfig({})).toEqual({ accounts: [] });
+  });
+
+  it("lifts a stored singleton into the default account", () => {
+    expect(
+      parseImapChannelConfig({
+        enabled: true,
+        host: "imap.example.com",
+        username: "borg@example.com",
+      }),
+    ).toEqual({
+      accounts: [
+        {
+          id: "default",
+          name: "IMAP",
+          enabled: true,
+          host: "imap.example.com",
+          port: 993,
+          username: "borg@example.com",
+          mailbox: IMAP_DEFAULT_MAILBOX,
+        },
+      ],
     });
+  });
+
+  it("refuses unknown keys", () => {
+    expect(() =>
+      parseImapChannelConfig({ enabled: false, password: "leak" }),
+    ).toThrow();
+  });
+
+  it("requires unique ids and at most eight accounts", () => {
+    expect(() =>
+      parseImapChannelConfig({
+        accounts: [
+          { id: "work", name: "Work" },
+          { id: "work", name: "Also work" },
+        ],
+      }),
+    ).toThrow();
+    expect(
+      parseImapChannelConfig({
+        accounts: Array.from({ length: 8 }, (_value, index) => ({
+          id: `acct-${index}`,
+          name: `Account ${index}`,
+        })),
+      }).accounts,
+    ).toHaveLength(8);
+    expect(() =>
+      parseImapChannelConfig({
+        accounts: Array.from({ length: 9 }, (_value, index) => ({
+          id: `acct-${index}`,
+          name: `Account ${index}`,
+        })),
+      }),
+    ).toThrow();
   });
 
   it("describes config errors without exposing secrets", () => {
@@ -218,6 +282,87 @@ describe("borg.channel.imap", () => {
     } catch (error) {
       expect(describeImapConfigError(error).length).toBeGreaterThan(0);
     }
+  });
+
+  it("registers a second account without disposing the default adapter", async () => {
+    const fixture = createImapFixture({
+      secrets: {
+        [IMAP_PASSWORD_SECRET_KEY]: "secret",
+        [`work.${IMAP_PASSWORD_SECRET_KEY}`]: "work-secret",
+      },
+      config: {
+        accounts: [
+          {
+            id: "default",
+            name: "IMAP",
+            enabled: true,
+            host: "imap.example.com",
+            port: 993,
+            username: "borg@example.com",
+            mailbox: IMAP_DEFAULT_MAILBOX,
+          },
+          {
+            id: "work",
+            name: "Work",
+            enabled: true,
+            host: "imap.work.example.com",
+            port: 993,
+            username: "work@example.com",
+            mailbox: "Archive",
+          },
+        ],
+      },
+    });
+    const harness = await createTestHarness(plugin, fixture.context);
+    expect(fixture.adapters().map((adapter) => adapter.id).sort()).toEqual([
+      IMAP_CHANNEL_ADAPTER_ID,
+      `${IMAP_CHANNEL_ADAPTER_ID}.work`,
+    ]);
+    const defaultAdapter = fixture
+      .adapters()
+      .find((adapter) => adapter.id === IMAP_CHANNEL_ADAPTER_ID);
+    expect(defaultAdapter?.destinations).toEqual([IMAP_DEFAULT_MAILBOX]);
+    expect(
+      fixture
+        .adapters()
+        .find((adapter) => adapter.id === `${IMAP_CHANNEL_ADAPTER_ID}.work`)
+        ?.destinations,
+    ).toEqual(["Archive"]);
+
+    await fixture.context.config.update({
+      accounts: [
+        {
+          id: "default",
+          name: "IMAP",
+          enabled: true,
+          host: "imap.example.com",
+          port: 993,
+          username: "borg@example.com",
+          mailbox: IMAP_DEFAULT_MAILBOX,
+        },
+        {
+          id: "work",
+          name: "Work",
+          enabled: true,
+          host: "imap.work.example.com",
+          port: 993,
+          username: "work@example.com",
+          mailbox: "Sent",
+        },
+      ],
+    });
+    expect(defaultAdapter).toBe(
+      fixture
+        .adapters()
+        .find((adapter) => adapter.id === IMAP_CHANNEL_ADAPTER_ID),
+    );
+    expect(
+      fixture
+        .adapters()
+        .find((adapter) => adapter.id === `${IMAP_CHANNEL_ADAPTER_ID}.work`)
+        ?.destinations,
+    ).toEqual(["Sent"]);
+    await harness.deactivate();
   });
 
   it("stays unregistered until enabled with host, username, and password", async () => {

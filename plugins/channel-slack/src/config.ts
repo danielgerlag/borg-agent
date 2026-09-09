@@ -1,3 +1,9 @@
+import {
+  DEFAULT_CONNECTOR_ACCOUNT_ID,
+  MAX_CONNECTOR_ACCOUNTS,
+  connectorAccountIdSchema,
+  connectorAccountNameSchema,
+} from "@borg/contracts";
 import { z } from "@borg/plugin-sdk";
 import {
   CHANNEL_ID_PATTERN,
@@ -22,14 +28,46 @@ const channelIdsSchema = z
 
 const defaultSendChannelIdSchema = z.union([z.literal(""), channelIdSchema]);
 
-/**
- * Plugin configuration. The host parses `{}` during activation and persists the
- * parsed document on every update, so the stored shape has to survive a
- * defaults-only round trip. The "at least one channel" rule is therefore
- * expressed as a condition of being enabled rather than as an array minimum.
- */
-export const slackChannelConfigSchema = z
+const SLACK_SINGLETON_KEYS = new Set([
+  "enabled",
+  "ignoreBots",
+  "allowedChannelIds",
+  "defaultSendChannelId",
+]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function liftSlackChannelConfig(value: unknown): unknown {
+  if (!isPlainObject(value)) {
+    return value;
+  }
+  if (Array.isArray(value.accounts)) {
+    return { accounts: value.accounts };
+  }
+  const keys = Object.keys(value);
+  if (keys.length === 0) {
+    return { accounts: [] };
+  }
+  if (keys.every((key) => SLACK_SINGLETON_KEYS.has(key))) {
+    return {
+      accounts: [
+        {
+          ...value,
+          id: DEFAULT_CONNECTOR_ACCOUNT_ID,
+          name: "Slack",
+        },
+      ],
+    };
+  }
+  return value;
+}
+
+export const slackChannelAccountSchema = z
   .object({
+    id: connectorAccountIdSchema,
+    name: connectorAccountNameSchema,
     enabled: z.boolean().default(false),
     ignoreBots: z.boolean().default(true),
     allowedChannelIds: channelIdsSchema.default([]),
@@ -37,17 +75,35 @@ export const slackChannelConfigSchema = z
   })
   .strict()
   .refine(
-    (config) =>
-      !config.enabled ||
-      config.allowedChannelIds.length >= MIN_ALLOWED_CHANNEL_IDS,
+    (account) =>
+      !account.enabled ||
+      account.allowedChannelIds.length >= MIN_ALLOWED_CHANNEL_IDS,
     "Enable Slack only after allowing at least one channel id",
   )
   .refine(
-    (config) =>
-      config.defaultSendChannelId.length === 0 ||
-      config.allowedChannelIds.includes(config.defaultSendChannelId),
+    (account) =>
+      account.defaultSendChannelId.length === 0 ||
+      account.allowedChannelIds.includes(account.defaultSendChannelId),
     "Default send channel must be in the allow-list",
   );
+
+export const slackChannelConfigSchema = z.preprocess(
+  liftSlackChannelConfig,
+  z
+    .object({
+      accounts: z
+        .array(slackChannelAccountSchema)
+        .max(MAX_CONNECTOR_ACCOUNTS)
+        .default([]),
+    })
+    .strict()
+    .refine(
+      (config) =>
+        new Set(config.accounts.map((account) => account.id)).size ===
+        config.accounts.length,
+      "Connector account ids must be unique",
+    ),
+);
 
 export const slackChannelSettingsSchema = z
   .object({
@@ -70,6 +126,7 @@ export const slackChannelSettingsSchema = z
     "Default send channel must be in the allow-list",
   );
 
+export type SlackChannelAccount = z.infer<typeof slackChannelAccountSchema>;
 export type SlackChannelConfig = z.infer<typeof slackChannelConfigSchema>;
 
 export function defaultSlackChannelConfig(): SlackChannelConfig {
@@ -82,15 +139,42 @@ export function parseSlackChannelConfig(
   return slackChannelConfigSchema.parse(candidate);
 }
 
-export function sameSlackChannelConfig(
-  left: SlackChannelConfig,
-  right: SlackChannelConfig,
+export function sameSlackAccount(
+  left: SlackChannelAccount,
+  right: SlackChannelAccount,
+): boolean {
+  return (
+    left.id === right.id &&
+    left.name === right.name &&
+    left.enabled === right.enabled &&
+    left.ignoreBots === right.ignoreBots &&
+    left.defaultSendChannelId === right.defaultSendChannelId &&
+    sameIdList(left.allowedChannelIds, right.allowedChannelIds)
+  );
+}
+
+export function sameSlackAccountRuntime(
+  left: SlackChannelAccount,
+  right: SlackChannelAccount,
 ): boolean {
   return (
     left.enabled === right.enabled &&
     left.ignoreBots === right.ignoreBots &&
     left.defaultSendChannelId === right.defaultSendChannelId &&
     sameIdList(left.allowedChannelIds, right.allowedChannelIds)
+  );
+}
+
+export function sameSlackChannelConfig(
+  left: SlackChannelConfig,
+  right: SlackChannelConfig,
+): boolean {
+  return (
+    left.accounts.length === right.accounts.length &&
+    left.accounts.every((account, index) => {
+      const other = right.accounts[index];
+      return other !== undefined && sameSlackAccount(account, other);
+    })
   );
 }
 

@@ -51,21 +51,22 @@ export class ImapChannelNotStartedError extends Error {
 }
 
 export interface ImapTransportLiveOptions {
+  readonly id: string;
+  readonly readPassword: () => Promise<string | undefined>;
   readonly tls?: PluginTls | undefined;
   readonly runtime?: PluginRuntime | undefined;
   readonly logger?: PluginLogger | undefined;
-  readonly readPassword?: (() => Promise<string | undefined>) | undefined;
 }
 
 export class ImapFakeTransport implements ChannelAdapter {
-  readonly id = IMAP_CHANNEL_ADAPTER_ID;
+  readonly id: string;
   readonly capacity = "private" as const;
   destinations: readonly string[] = [IMAP_DEFAULT_MAILBOX];
 
   readonly #tls: PluginTls | undefined;
   readonly #runtime: PluginRuntime | undefined;
   readonly #logger: PluginLogger | undefined;
-  readonly #readPassword: (() => Promise<string | undefined>) | undefined;
+  readonly #readPassword: () => Promise<string | undefined>;
   #host = "";
   #port = 993;
   #username = "";
@@ -77,7 +78,8 @@ export class ImapFakeTransport implements ChannelAdapter {
   readonly #pending = new Map<string, Promise<ChannelAdapterReceipt>>();
   #inboundSequence = 0;
 
-  constructor(options: ImapTransportLiveOptions = {}) {
+  constructor(options: ImapTransportLiveOptions) {
+    this.id = options.id;
     this.#tls = options.tls;
     this.#runtime = options.runtime;
     this.#logger = options.logger;

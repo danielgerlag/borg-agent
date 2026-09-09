@@ -1450,7 +1450,7 @@ export class PluginManager {
           },
         },
         oauth: {
-          connect: (request, signal) => {
+          connect: (request, signal, accountId) => {
             assertPermission("oauth.connect");
             const operation = this.#operationContext.getStore();
             return trackOperation(
@@ -1462,14 +1462,15 @@ export class PluginManager {
                   ...(operation ? [operation.signal] : []),
                   controller.signal,
                 ]),
+                accountId,
               ),
             );
           },
-          snapshot: () => {
+          snapshot: (accountId) => {
             assertPermission("oauth.connect");
-            return requireOauth().snapshot(manifest.id);
+            return requireOauth().snapshot(manifest.id, accountId);
           },
-          accessToken: (signal) => {
+          accessToken: (signal, accountId) => {
             assertPermission("oauth.connect");
             const operation = this.#operationContext.getStore();
             return trackOperation(
@@ -1480,12 +1481,15 @@ export class PluginManager {
                   ...(operation ? [operation.signal] : []),
                   controller.signal,
                 ]),
+                accountId,
               ),
             );
           },
-          disconnect: () => {
+          disconnect: (accountId) => {
             assertPermission("oauth.connect");
-            return trackOperation(requireOauth().disconnect(manifest.id));
+            return trackOperation(
+              requireOauth().disconnect(manifest.id, accountId),
+            );
           },
         },
         runtime: {

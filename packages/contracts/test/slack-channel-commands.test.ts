@@ -15,12 +15,28 @@ describe("slack channel commands", () => {
     expect(slackChannelVerify.timeoutMs).toBe(30_000);
   });
 
+  it("parses optional accountId on the shared command input", () => {
+    expect(slackChannelGetStatus.input.parse({})).toEqual({});
+    expect(slackChannelVerify.input.parse({ accountId: "work" })).toEqual({
+      accountId: "work",
+    });
+    expect(slackChannelDisconnect.input.parse({ accountId: "default" })).toEqual({
+      accountId: "default",
+    });
+    expect(() =>
+      slackChannelGetStatus.input.parse({ accountId: "Work" }),
+    ).toThrow();
+  });
+
   it("parses status without secret fields", () => {
     for (const state of ["idle", "connecting", "ready", "backoff", "fatal"] as const) {
       expect(slackSocketStateSchema.parse(state)).toBe(state);
     }
     expect(
       slackChannelGetStatus.output.parse({
+        accountId: "default",
+        name: "Slack",
+        adapterId: "borg.channel.slack",
         hasBotToken: true,
         hasAppToken: true,
         connected: true,
@@ -28,6 +44,9 @@ describe("slack channel commands", () => {
         socketState: "ready",
       }),
     ).toEqual({
+      accountId: "default",
+      name: "Slack",
+      adapterId: "borg.channel.slack",
       hasBotToken: true,
       hasAppToken: true,
       connected: true,
@@ -36,6 +55,9 @@ describe("slack channel commands", () => {
     });
     expect(() =>
       slackChannelStatusSchema.parse({
+        accountId: "default",
+        name: "Slack",
+        adapterId: "borg.channel.slack",
         hasBotToken: true,
         hasAppToken: true,
         connected: false,
@@ -48,8 +70,20 @@ describe("slack channel commands", () => {
         hasBotToken: true,
         hasAppToken: true,
         connected: false,
+        socketState: "idle",
+      }),
+    ).toThrow();
+    expect(() =>
+      slackChannelStatusSchema.parse({
+        accountId: "default",
+        name: "Slack",
+        adapterId: "borg.channel.slack",
+        hasBotToken: true,
+        hasAppToken: true,
+        connected: false,
         socketState: "identifying",
       }),
     ).toThrow();
   });
 });
+

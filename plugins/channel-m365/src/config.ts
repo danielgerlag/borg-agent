@@ -1,3 +1,9 @@
+import {
+  DEFAULT_CONNECTOR_ACCOUNT_ID,
+  MAX_CONNECTOR_ACCOUNTS,
+  connectorAccountIdSchema,
+  connectorAccountNameSchema,
+} from "@borg/contracts";
 import { z } from "@borg/plugin-sdk";
 import {
   EMAIL_PATTERN,
@@ -27,8 +33,47 @@ const recipientsSchema = z
   .max(MAX_ALLOWED_RECIPIENTS)
   .refine(isDuplicateFree, "Recipients must be unique");
 
-export const m365ChannelConfigSchema = z
+const M365_SINGLETON_KEYS = new Set([
+  "enabled",
+  "clientId",
+  "tenant",
+  "allowedRecipients",
+  "mailbox",
+]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function liftM365ChannelConfig(value: unknown): unknown {
+  if (!isPlainObject(value)) {
+    return value;
+  }
+  if (Array.isArray(value.accounts)) {
+    return { accounts: value.accounts };
+  }
+  const keys = Object.keys(value);
+  if (keys.length === 0) {
+    return { accounts: [] };
+  }
+  if (keys.every((key) => M365_SINGLETON_KEYS.has(key))) {
+    return {
+      accounts: [
+        {
+          ...value,
+          id: DEFAULT_CONNECTOR_ACCOUNT_ID,
+          name: "Microsoft 365",
+        },
+      ],
+    };
+  }
+  return value;
+}
+
+export const m365ChannelAccountSchema = z
   .object({
+    id: connectorAccountIdSchema,
+    name: connectorAccountNameSchema,
     enabled: z.boolean().default(false),
     clientId: z.string().max(256).default(""),
     tenant: z
@@ -42,10 +87,97 @@ export const m365ChannelConfigSchema = z
   })
   .strict();
 
+export const m365ChannelConfigSchema = z.preprocess(
+  liftM365ChannelConfig,
+  z
+    .object({
+      accounts: z
+        .array(m365ChannelAccountSchema)
+        .max(MAX_CONNECTOR_ACCOUNTS)
+        .default([]),
+    })
+    .strict()
+    .refine(
+      (config) =>
+        new Set(config.accounts.map((account) => account.id)).size ===
+        config.accounts.length,
+      "Connector account ids must be unique",
+    ),
+);
+
+export const m365ChannelSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    clientId: z.string().max(256),
+    tenant: z
+      .string()
+      .min(1)
+      .max(MAX_TENANT_LENGTH)
+      .regex(TENANT_PATTERN, "Microsoft tenant is invalid"),
+    allowedRecipients: recipientsSchema,
+  })
+  .strict();
+
+export type M365ChannelAccount = z.infer<typeof m365ChannelAccountSchema>;
 export type M365ChannelConfig = z.infer<typeof m365ChannelConfigSchema>;
+
+export function defaultM365ChannelConfig(): M365ChannelConfig {
+  return m365ChannelConfigSchema.parse({});
+}
 
 export function parseM365ChannelConfig(candidate: unknown): M365ChannelConfig {
   return m365ChannelConfigSchema.parse(candidate);
+}
+
+export function sameM365Account(
+  left: M365ChannelAccount,
+  right: M365ChannelAccount,
+): boolean {
+  return (
+    left.id === right.id &&
+    left.name === right.name &&
+    left.enabled === right.enabled &&
+    left.clientId === right.clientId &&
+    left.tenant === right.tenant &&
+    left.mailbox === right.mailbox &&
+    sameIdList(left.allowedRecipients, right.allowedRecipients)
+  );
+}
+
+export function sameM365AccountRuntime(
+  left: M365ChannelAccount,
+  right: M365ChannelAccount,
+): boolean {
+  return (
+    left.enabled === right.enabled &&
+    left.clientId === right.clientId &&
+    left.tenant === right.tenant &&
+    left.mailbox === right.mailbox &&
+    sameIdList(left.allowedRecipients, right.allowedRecipients)
+  );
+}
+
+export function sameM365ChannelConfig(
+  left: M365ChannelConfig,
+  right: M365ChannelConfig,
+): boolean {
+  return (
+    left.accounts.length === right.accounts.length &&
+    left.accounts.every((account, index) => {
+      const other = right.accounts[index];
+      return other !== undefined && sameM365Account(account, other);
+    })
+  );
+}
+
+function sameIdList(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 export function parseRecipientList(text: string): string[] {

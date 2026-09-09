@@ -18,6 +18,8 @@ describe("coinbase commands", () => {
   it("parses status without secret fields", () => {
     expect(
       coinbaseGetStatus.output.parse({
+        accountId: "default",
+        name: "Coinbase",
         hasPrivateKey: true,
         hasKeyName: true,
         enabled: true,
@@ -25,14 +27,22 @@ describe("coinbase commands", () => {
         connected: true,
       }),
     ).toEqual({
+      accountId: "default",
+      name: "Coinbase",
       hasPrivateKey: true,
       hasKeyName: true,
       enabled: true,
       sandbox: false,
       connected: true,
     });
+    expect(coinbaseGetStatus.input.parse({})).toEqual({});
+    expect(coinbaseGetStatus.input.parse({ accountId: "work" })).toEqual({
+      accountId: "work",
+    });
     expect(() =>
       coinbaseStatusSchema.parse({
+        accountId: "default",
+        name: "Coinbase",
         hasPrivateKey: true,
         hasKeyName: true,
         enabled: true,

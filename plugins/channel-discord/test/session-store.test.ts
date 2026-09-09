@@ -5,19 +5,22 @@ import {
   createGatewaySessionStore,
 } from "../src/session-store";
 
-function createStore(initial: JsonValue | undefined) {
+function createStore(
+  initial: JsonValue | undefined,
+  key: string = GATEWAY_SESSION_KEY,
+) {
   const values = new Map<string, JsonValue>();
   if (initial !== undefined) {
-    values.set(GATEWAY_SESSION_KEY, initial);
+    values.set(key, initial);
   }
   const warnings: string[] = [];
   const store = {
-    get: async (key: string) => values.get(key),
-    set: async (key: string, value: JsonValue) => {
-      values.set(key, value);
+    get: async (storeKey: string) => values.get(storeKey),
+    set: async (storeKey: string, value: JsonValue) => {
+      values.set(storeKey, value);
     },
-    delete: async (key: string) => {
-      values.delete(key);
+    delete: async (storeKey: string) => {
+      values.delete(storeKey);
     },
     list: async () => [],
     transaction: async () => undefined,
@@ -31,7 +34,7 @@ function createStore(initial: JsonValue | undefined) {
   return {
     values,
     warnings,
-    sessions: createGatewaySessionStore(store, logger),
+    sessions: createGatewaySessionStore(store, logger, key),
   };
 }
 
@@ -87,5 +90,22 @@ describe("discord gateway session store", () => {
     });
     await sessions.save(null);
     expect(values.has(GATEWAY_SESSION_KEY)).toBe(false);
+  });
+
+  it("persists under a caller-supplied key", async () => {
+    const key = "work/gateway/session";
+    const { sessions, values } = createStore(undefined, key);
+    await sessions.save({
+      sessionId: "session-work",
+      sequence: 3,
+      resumeGatewayUrl: "wss://gateway-us-east1-b.discord.gg",
+    });
+    expect(values.get(GATEWAY_SESSION_KEY)).toBeUndefined();
+    expect(values.get(key)).toEqual({
+      version: 1,
+      sessionId: "session-work",
+      sequence: 3,
+      resumeGatewayUrl: "wss://gateway-us-east1-b.discord.gg",
+    });
   });
 });

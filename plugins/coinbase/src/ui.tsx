@@ -1,54 +1,86 @@
 import {
+  CONNECTOR_ACCOUNT_NAME_MAX,
+  MAX_CONNECTOR_ACCOUNTS,
+  allocateConnectorAccountId,
   coinbaseDisconnect,
   coinbaseGetStatus,
   coinbaseVerify,
+  connectorSecretKey,
   type CoinbaseStatus,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Panel } from "@borg/ui-kit";
-import { Coins, KeyRound, Save } from "lucide-solid";
-import { Show, createSignal, onMount, type Component } from "solid-js";
+import { Coins, KeyRound, Plus, Save, Trash2 } from "lucide-solid";
+import { For, Show, createSignal, onMount, type Component } from "solid-js";
 import {
   coinbaseSettingsSchema,
   describeConfigError,
   parseCoinbaseConfig,
   parseKeyName,
+  type CoinbaseConnectorAccount,
 } from "./config";
 import { COINBASE_PRIVATE_KEY_SECRET } from "./protocol";
-
-const IDLE_STATUS: CoinbaseStatus = {
-  hasPrivateKey: false,
-  hasKeyName: false,
-  enabled: false,
-  sandbox: false,
-  connected: false,
-};
 
 export default defineUiPlugin<Component>({
   id: "borg.coinbase",
   activate(context) {
     const CoinbaseSettings: Component = () => {
-      const [status, setStatus] = createSignal<CoinbaseStatus>(IDLE_STATUS);
+      const [accounts, setAccounts] = createSignal<CoinbaseConnectorAccount[]>(
+        [],
+      );
+      const [selectedId, setSelectedId] = createSignal("");
+      const [status, setStatus] = createSignal<CoinbaseStatus>();
+      const [accountName, setAccountName] = createSignal("");
       const [keyName, setKeyName] = createSignal("");
       const [privateKeyDraft, setPrivateKeyDraft] = createSignal("");
       const [enabled, setEnabled] = createSignal(false);
       const [sandbox, setSandbox] = createSignal(false);
       const [busy, setBusy] = createSignal(false);
+      const [creating, setCreating] = createSignal(false);
+      const [newName, setNewName] = createSignal("");
       const [notice, setNotice] = createSignal(
-        "Save a Coinbase CDP API key name and EC private key, then verify.",
+        "Add a Coinbase account, save a CDP API key name and EC private key, then verify.",
       );
       const [error, setError] = createSignal<string>();
 
-      const refresh = async (): Promise<void> => {
-        const [config, current] = await Promise.all([
-          context.config.get(),
-          context.bus.invoke(coinbaseGetStatus, {}),
-        ]);
-        const parsed = parseCoinbaseConfig(config);
-        setEnabled(parsed.enabled);
-        setSandbox(parsed.sandbox);
-        setKeyName(parsed.keyName);
-        setStatus(current);
+      const selected = (): CoinbaseConnectorAccount | undefined =>
+        accounts().find((account) => account.id === selectedId());
+
+      const loadAccount = (
+        account: CoinbaseConnectorAccount,
+        current?: CoinbaseStatus,
+      ): void => {
+        setSelectedId(account.id);
+        setAccountName(account.name);
+        setEnabled(account.enabled);
+        setSandbox(account.sandbox);
+        setKeyName(account.keyName);
+        setPrivateKeyDraft("");
+        if (current) {
+          setStatus(current);
+        }
+      };
+
+      const refresh = async (selectId?: string): Promise<void> => {
+        const config = parseCoinbaseConfig(await context.config.get());
+        setAccounts([...config.accounts]);
+        const next =
+          config.accounts.find((account) => account.id === selectId) ??
+          config.accounts.find((account) => account.id === selectedId()) ??
+          config.accounts[0];
+        if (!next) {
+          setSelectedId("");
+          setAccountName("");
+          setEnabled(false);
+          setSandbox(false);
+          setKeyName("");
+          setStatus(undefined);
+          return;
+        }
+        const current = await context.bus.invoke(coinbaseGetStatus, {
+          accountId: next.id,
+        });
+        loadAccount(next, current);
       };
 
       onMount(() => {
@@ -57,7 +89,9 @@ export default defineUiPlugin<Component>({
         );
       });
 
-      const withBusy = async (operation: () => Promise<void>): Promise<void> => {
+      const withBusy = async (
+        operation: () => Promise<void>,
+      ): Promise<void> => {
         setBusy(true);
         setError(undefined);
         try {
@@ -69,42 +103,135 @@ export default defineUiPlugin<Component>({
         }
       };
 
+      const createAccount = (): Promise<void> =>
+        withBusy(async () => {
+          const name = newName().trim();
+          if (name.length === 0) {
+            throw new Error("Account name is required.");
+          }
+          if (name.length > CONNECTOR_ACCOUNT_NAME_MAX) {
+            throw new Error(
+              `Account name must be at most ${CONNECTOR_ACCOUNT_NAME_MAX} characters.`,
+            );
+          }
+          if (accounts().length >= MAX_CONNECTOR_ACCOUNTS) {
+            throw new Error("Coinbase supports at most 8 accounts.");
+          }
+          const id = allocateConnectorAccountId(
+            name,
+            accounts().map((account) => account.id),
+          );
+          const next = [
+            ...accounts(),
+            {
+              id,
+              name,
+              enabled: false,
+              sandbox: false,
+              keyName: "",
+            },
+          ];
+          await context.config.update({ accounts: next });
+          setNewName("");
+          setCreating(false);
+          setNotice(
+            `Added ${name}. Save a CDP API key name and private key, then verify.`,
+          );
+          await refresh(id);
+        });
+
+      const deleteAccount = (): Promise<void> =>
+        withBusy(async () => {
+          const account = selected();
+          if (!account) {
+            return;
+          }
+          await context.bus.invoke(coinbaseDisconnect, {
+            accountId: account.id,
+          });
+          await context.secrets.delete(
+            connectorSecretKey(account.id, COINBASE_PRIVATE_KEY_SECRET),
+          );
+          const next = accounts().filter((item) => item.id !== account.id);
+          await context.config.update({ accounts: next });
+          setNotice(`Removed ${account.name}.`);
+          await refresh(next[0]?.id);
+        });
+
       const savePrivateKey = (): Promise<void> =>
         withBusy(async () => {
+          const account = selected();
+          if (!account) {
+            throw new Error("Select a Coinbase account first.");
+          }
           const value = privateKeyDraft().trim();
           if (value.length === 0) {
             throw new Error("Enter an EC private key to save.");
           }
-          await context.secrets.set(COINBASE_PRIVATE_KEY_SECRET, value);
+          await context.secrets.set(
+            connectorSecretKey(account.id, COINBASE_PRIVATE_KEY_SECRET),
+            value,
+          );
           setPrivateKeyDraft("");
           setNotice("Private key saved. Verify to test the connection.");
-          await refresh();
+          await refresh(account.id);
         });
 
       const deletePrivateKey = (): Promise<void> =>
         withBusy(async () => {
-          await context.bus.invoke(coinbaseDisconnect, {});
-          await context.secrets.delete(COINBASE_PRIVATE_KEY_SECRET);
+          const account = selected();
+          if (!account) {
+            return;
+          }
+          await context.bus.invoke(coinbaseDisconnect, {
+            accountId: account.id,
+          });
+          await context.secrets.delete(
+            connectorSecretKey(account.id, COINBASE_PRIVATE_KEY_SECRET),
+          );
           setPrivateKeyDraft("");
           setNotice("Private key removed.");
-          await refresh();
+          await refresh(account.id);
         });
 
       const saveSettings = (): Promise<void> =>
         withBusy(async () => {
+          const account = selected();
+          if (!account) {
+            return;
+          }
+          const name = accountName().trim();
+          if (name.length === 0) {
+            throw new Error("Account name is required.");
+          }
           const settings = coinbaseSettingsSchema.parse({
             enabled: enabled(),
             sandbox: sandbox(),
             keyName: parseKeyName(keyName()),
           });
-          await context.config.update(settings);
+          const next = accounts().map((item) =>
+            item.id === account.id
+              ? {
+                  ...item,
+                  name,
+                  ...settings,
+                }
+              : item,
+          );
+          await context.config.update({ accounts: next });
           setNotice("Coinbase settings saved.");
-          await refresh();
+          await refresh(account.id);
         });
 
       const verify = (): Promise<void> =>
         withBusy(async () => {
-          const next = await context.bus.invoke(coinbaseVerify, {});
+          const account = selected();
+          if (!account) {
+            return;
+          }
+          const next = await context.bus.invoke(coinbaseVerify, {
+            accountId: account.id,
+          });
           setStatus(next);
           setNotice(
             next.connected && next.error === undefined
@@ -115,13 +242,19 @@ export default defineUiPlugin<Component>({
 
       const disconnect = (): Promise<void> =>
         withBusy(async () => {
-          const next = await context.bus.invoke(coinbaseDisconnect, {});
+          const account = selected();
+          if (!account) {
+            return;
+          }
+          const next = await context.bus.invoke(coinbaseDisconnect, {
+            accountId: account.id,
+          });
           setStatus(next);
           setNotice("Disconnected from Coinbase.");
         });
 
       return (
-        <Panel data-testid="coinbase-settings-page">
+        <section data-testid="coinbase-settings-page">
           <div class="flex items-start gap-4">
             <div class="rounded-xl bg-[var(--accent)]/10 p-2.5 text-[var(--accent)]">
               <Coins aria-hidden="true" size={20} />
@@ -129,146 +262,267 @@ export default defineUiPlugin<Component>({
             <div class="min-w-0 flex-1">
               <h3 class="text-xl font-semibold">Coinbase</h3>
               <p class="mt-2 text-sm text-[var(--text-muted)]">
-                Borg talks to Coinbase Advanced Trade with a CDP API key.
-                Create an ECDSA key at portal.cdp.coinbase.com. Buy, sell, and
-                send require approval.
+                Each account is a separate Coinbase CDP API key. Borg talks to
+                Coinbase Advanced Trade with that key. Create an ECDSA key at
+                portal.cdp.coinbase.com. Buy, sell, and send require approval.
               </p>
-
-              <label
-                class="mt-5 block text-sm text-[var(--text-muted)]"
-                for="coinbase-key-name"
-              >
-                API key name
-              </label>
-              <input
-                id="coinbase-key-name"
-                type="text"
-                autocomplete="off"
-                spellcheck={false}
-                value={keyName()}
-                onInput={(event) => setKeyName(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
-                placeholder="organizations/{org_id}/apiKeys/{key_id}"
-                data-testid="coinbase-key-name"
-              />
-
-              <label
-                class="mt-5 block text-sm text-[var(--text-muted)]"
-                for="coinbase-private-key"
-              >
-                Private key (PEM)
-              </label>
-              <textarea
-                id="coinbase-private-key"
-                rows={5}
-                autocomplete="off"
-                spellcheck={false}
-                value={privateKeyDraft()}
-                onInput={(event) =>
-                  setPrivateKeyDraft(event.currentTarget.value)
-                }
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
-                placeholder={
-                  status().hasPrivateKey
-                    ? "Key saved. Paste a new PEM to replace it."
-                    : "-----BEGIN EC PRIVATE KEY-----"
-                }
-                data-testid="coinbase-private-key"
-              />
-              <div class="mt-3 flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  disabled={busy() || privateKeyDraft().trim().length === 0}
-                  onClick={() => void savePrivateKey()}
-                  data-testid="coinbase-save-private-key"
-                >
-                  <KeyRound aria-hidden="true" size={16} />
-                  Save private key
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={busy() || !status().hasPrivateKey}
-                  onClick={() => void deletePrivateKey()}
-                  data-testid="coinbase-delete-private-key"
-                >
-                  Remove private key
-                </Button>
-              </div>
-
-              <label class="mt-6 flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={enabled()}
-                  onChange={(event) => setEnabled(event.currentTarget.checked)}
-                  data-testid="coinbase-enabled"
-                />
-                Enable Coinbase trading tools
-              </label>
-              <label class="mt-2 flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={sandbox()}
-                  onChange={(event) => setSandbox(event.currentTarget.checked)}
-                  data-testid="coinbase-sandbox"
-                />
-                Use the Coinbase sandbox API
-              </label>
-
-              <div class="mt-4 flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  disabled={busy()}
-                  onClick={() => void saveSettings()}
-                  data-testid="coinbase-save-settings"
-                >
-                  <Save aria-hidden="true" size={16} />
-                  Save settings
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={
-                    busy() || !status().hasPrivateKey || !status().hasKeyName
-                  }
-                  onClick={() => void verify()}
-                  data-testid="coinbase-verify"
-                >
-                  Verify
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={busy() || !status().connected}
-                  onClick={() => void disconnect()}
-                  data-testid="coinbase-disconnect"
-                >
-                  Disconnect
-                </Button>
-              </div>
-
-              <p
-                class="mt-4 text-xs"
-                classList={{
-                  "text-[var(--success)]": status().connected && !error(),
-                  "text-[var(--text-muted)]": !status().connected && !error(),
-                  "text-[var(--danger)]": Boolean(error()),
-                }}
-                data-testid="coinbase-status"
-              >
-                {error() ?? status().error ?? notice()}
-              </p>
-              <Show when={error()}>
-                <p
-                  class="mt-1 text-xs text-[var(--danger)]"
-                  data-testid="coinbase-error"
-                >
-                  {error()}
-                </p>
-              </Show>
             </div>
           </div>
-        </Panel>
+
+          <div class="mt-5 flex flex-wrap gap-2">
+            <For each={accounts()}>
+              {(account) => (
+                <button
+                  type="button"
+                  class="rounded-xl border px-3 py-2 text-left text-sm"
+                  classList={{
+                    "border-[var(--accent)] bg-[var(--accent)]/12 text-[var(--accent)]":
+                      account.id === selectedId(),
+                    "border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)]":
+                      account.id !== selectedId(),
+                  }}
+                  aria-current={account.id === selectedId() ? "true" : undefined}
+                  data-testid={`coinbase-account-row-${account.id}`}
+                  onClick={() => {
+                    setCreating(false);
+                    void refresh(account.id).catch((failure: unknown) =>
+                      setError(describeConfigError(failure)),
+                    );
+                  }}
+                >
+                  <span class="font-medium">{account.name}</span>
+                </button>
+              )}
+            </For>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={busy() || accounts().length >= MAX_CONNECTOR_ACCOUNTS}
+              data-testid="coinbase-account-new"
+              onClick={() => {
+                setCreating(true);
+                setError(undefined);
+                setStatus(undefined);
+                setNotice("");
+              }}
+            >
+              <Plus aria-hidden="true" size={14} />
+              New account
+            </Button>
+          </div>
+
+          <Show when={creating()}>
+            <Panel class="mt-5">
+              <p class="text-sm font-semibold">New Coinbase account</p>
+              <input
+                value={newName()}
+                onInput={(event) => setNewName(event.currentTarget.value)}
+                class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                placeholder="Account name"
+                data-testid="coinbase-new-account-name"
+              />
+              <div class="mt-3 flex gap-2">
+                <Button
+                  type="button"
+                  disabled={busy() || newName().trim().length === 0}
+                  onClick={() => void createAccount()}
+                >
+                  Add account
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy()}
+                  onClick={() => setCreating(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </Panel>
+          </Show>
+
+          <Show when={!creating() && selected()}>
+            {(account) => (
+              <Panel class="mt-5">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p
+                      class="font-mono text-xs text-[var(--text-muted)]"
+                      data-testid="coinbase-account-id"
+                    >
+                      {account().id}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    disabled={busy()}
+                    data-testid="coinbase-account-delete"
+                    onClick={() => void deleteAccount()}
+                  >
+                    <Trash2 aria-hidden="true" size={14} />
+                    Delete account
+                  </Button>
+                </div>
+
+                <label class="mt-4 block text-sm text-[var(--text-muted)]">
+                  Name
+                  <input
+                    value={accountName()}
+                    onInput={(event) =>
+                      setAccountName(event.currentTarget.value)
+                    }
+                    class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
+                    data-testid="coinbase-account-name"
+                  />
+                </label>
+
+                <label
+                  class="mt-5 block text-sm text-[var(--text-muted)]"
+                  for="coinbase-key-name"
+                >
+                  API key name
+                </label>
+                <input
+                  id="coinbase-key-name"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck={false}
+                  value={keyName()}
+                  onInput={(event) => setKeyName(event.currentTarget.value)}
+                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
+                  placeholder="organizations/{org_id}/apiKeys/{key_id}"
+                  data-testid="coinbase-key-name"
+                />
+
+                <label
+                  class="mt-5 block text-sm text-[var(--text-muted)]"
+                  for="coinbase-private-key"
+                >
+                  Private key (PEM)
+                </label>
+                <textarea
+                  id="coinbase-private-key"
+                  rows={5}
+                  autocomplete="off"
+                  spellcheck={false}
+                  value={privateKeyDraft()}
+                  onInput={(event) =>
+                    setPrivateKeyDraft(event.currentTarget.value)
+                  }
+                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
+                  placeholder={
+                    status()?.hasPrivateKey
+                      ? "Key saved. Paste a new PEM to replace it."
+                      : "-----BEGIN EC PRIVATE KEY-----"
+                  }
+                  data-testid="coinbase-private-key"
+                />
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    disabled={busy() || privateKeyDraft().trim().length === 0}
+                    onClick={() => void savePrivateKey()}
+                    data-testid="coinbase-save-private-key"
+                  >
+                    <KeyRound aria-hidden="true" size={16} />
+                    Save private key
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy() || !status()?.hasPrivateKey}
+                    onClick={() => void deletePrivateKey()}
+                    data-testid="coinbase-delete-private-key"
+                  >
+                    Remove private key
+                  </Button>
+                </div>
+
+                <label class="mt-6 flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={enabled()}
+                    onChange={(event) =>
+                      setEnabled(event.currentTarget.checked)
+                    }
+                    data-testid="coinbase-enabled"
+                  />
+                  Enable Coinbase trading tools
+                </label>
+                <label class="mt-2 flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={sandbox()}
+                    onChange={(event) =>
+                      setSandbox(event.currentTarget.checked)
+                    }
+                    data-testid="coinbase-sandbox"
+                  />
+                  Use the Coinbase sandbox API
+                </label>
+
+                <div class="mt-4 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    disabled={busy()}
+                    onClick={() => void saveSettings()}
+                    data-testid="coinbase-save-settings"
+                  >
+                    <Save aria-hidden="true" size={16} />
+                    Save settings
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={
+                      busy() ||
+                      !status()?.hasPrivateKey ||
+                      !status()?.hasKeyName
+                    }
+                    onClick={() => void verify()}
+                    data-testid="coinbase-verify"
+                  >
+                    Verify
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy() || !status()?.connected}
+                    onClick={() => void disconnect()}
+                    data-testid="coinbase-disconnect"
+                  >
+                    Disconnect
+                  </Button>
+                </div>
+
+                <p
+                  class="mt-4 text-xs"
+                  classList={{
+                    "text-[var(--success)]":
+                      Boolean(status()?.connected) && !error(),
+                    "text-[var(--text-muted)]":
+                      !status()?.connected && !error(),
+                    "text-[var(--danger)]": Boolean(error()),
+                  }}
+                  data-testid="coinbase-status"
+                >
+                  {error() ?? status()?.error ?? notice()}
+                </p>
+                <Show when={error()}>
+                  <p
+                    class="mt-1 text-xs text-[var(--danger)]"
+                    data-testid="coinbase-error"
+                  >
+                    {error()}
+                  </p>
+                </Show>
+              </Panel>
+            )}
+          </Show>
+        </section>
       );
     };
 

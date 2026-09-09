@@ -17,9 +17,24 @@ import {
 } from "./harness";
 
 const TOKEN = "MTIzNDU2Nzg5.super-secret-token";
+const WORK_TOKEN = "MTIzNDU2Nzg5.work-secret-token";
 const CHANNEL_ID = "100000000000000001";
 const OTHER_CHANNEL_ID = "100000000000000002";
 const BOT_USER_ID = "300000000000000001";
+
+function defaultAccount(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "default",
+    name: "Discord",
+    enabled: true,
+    ignoreBots: true,
+    allowedGuildIds: [],
+    allowedChannelIds: [CHANNEL_ID],
+    ...overrides,
+  };
+}
 
 function discordRoutes(
   overrides: Readonly<
@@ -94,13 +109,9 @@ describe("borg.channel.discord plugin", () => {
   it("stays unregistered until it is enabled with a token and a channel", async () => {
     const harness = await activate();
     expect(harness.registrations).toHaveLength(0);
-    expect(
-      await harness.invoke<DiscordChannelStatus>(discordChannelGetStatus, {}),
-    ).toEqual({
-      hasToken: false,
-      connected: false,
-      gatewayState: "idle",
-    });
+    await expect(
+      harness.invoke<DiscordChannelStatus>(discordChannelGetStatus, {}),
+    ).rejects.toThrow("No Discord account is configured");
   });
 
   it("explains itself when the channel is enabled without a token", async () => {
@@ -111,6 +122,9 @@ describe("borg.channel.discord plugin", () => {
     expect(
       await harness.invoke<DiscordChannelStatus>(discordChannelGetStatus, {}),
     ).toEqual({
+      accountId: "default",
+      name: "Discord",
+      adapterId: DISCORD_ADAPTER_ID,
       hasToken: false,
       connected: false,
       gatewayState: "idle",
@@ -132,6 +146,77 @@ describe("borg.channel.discord plugin", () => {
     });
   });
 
+  it("registers a second account without disposing the default adapter", async () => {
+    const harness = await activate({
+      secrets: {
+        [DISCORD_TOKEN_SECRET_KEY]: TOKEN,
+        [`work.${DISCORD_TOKEN_SECRET_KEY}`]: WORK_TOKEN,
+      },
+      config: {
+        accounts: [
+          defaultAccount(),
+          {
+            id: "work",
+            name: "Work",
+            enabled: true,
+            ignoreBots: true,
+            allowedGuildIds: [],
+            allowedChannelIds: [OTHER_CHANNEL_ID],
+          },
+        ],
+      },
+    });
+
+    const live = harness.registrations.filter((entry) => !entry.disposed);
+    expect(live.map((entry) => entry.adapter.id).sort()).toEqual([
+      DISCORD_ADAPTER_ID,
+      `${DISCORD_ADAPTER_ID}.work`,
+    ]);
+    const defaultRegistration = live.find(
+      (entry) => entry.adapter.id === DISCORD_ADAPTER_ID,
+    );
+    const workRegistration = live.find(
+      (entry) => entry.adapter.id === `${DISCORD_ADAPTER_ID}.work`,
+    );
+    expect(defaultRegistration?.adapter.destinations).toEqual([CHANNEL_ID]);
+    expect(workRegistration?.adapter.destinations).toEqual([OTHER_CHANNEL_ID]);
+    expect(
+      harness.requests.some(
+        (request) => request.headers.Authorization === `Bot ${TOKEN}`,
+      ),
+    ).toBe(true);
+    expect(
+      harness.requests.some(
+        (request) => request.headers.Authorization === `Bot ${WORK_TOKEN}`,
+      ),
+    ).toBe(true);
+
+    await harness.updateConfig({
+      accounts: [
+        defaultAccount(),
+        {
+          id: "work",
+          name: "Work",
+          enabled: true,
+          ignoreBots: true,
+          allowedGuildIds: [],
+          allowedChannelIds: [CHANNEL_ID, OTHER_CHANNEL_ID],
+        },
+      ],
+    });
+    await settle();
+
+    expect(defaultRegistration?.disposed).toBe(false);
+    const nextLive = harness.registrations.filter((entry) => !entry.disposed);
+    expect(
+      nextLive.find((entry) => entry.adapter.id === DISCORD_ADAPTER_ID),
+    ).toBe(defaultRegistration);
+    expect(
+      nextLive.find((entry) => entry.adapter.id === `${DISCORD_ADAPTER_ID}.work`)
+        ?.adapter.destinations,
+    ).toEqual([CHANNEL_ID, OTHER_CHANNEL_ID]);
+  });
+
   it("re-registers and restarts the gateway when the channel list changes", async () => {
     const harness = await activate({
       secrets: { [DISCORD_TOKEN_SECRET_KEY]: TOKEN },
@@ -141,7 +226,11 @@ describe("borg.channel.discord plugin", () => {
     const firstSocket = harness.webSockets.last.socket;
 
     await harness.updateConfig({
-      allowedChannelIds: [CHANNEL_ID, OTHER_CHANNEL_ID],
+      accounts: [
+        defaultAccount({
+          allowedChannelIds: [CHANNEL_ID, OTHER_CHANNEL_ID],
+        }),
+      ],
     });
     await settle();
 
@@ -179,7 +268,9 @@ describe("borg.channel.discord plugin", () => {
     });
     const socket = harness.webSockets.last.socket;
 
-    await harness.updateConfig({ enabled: false });
+    await harness.updateConfig({
+      accounts: [defaultAccount({ enabled: false })],
+    });
     await settle();
 
     expect(harness.registrations.every((entry) => entry.disposed)).toBe(true);
@@ -348,6 +439,7 @@ describe("borg.channel.discord plugin", () => {
   it("surfaces a rejected token from verify without leaking it", async () => {
     const harness = await activate({
       secrets: { [DISCORD_TOKEN_SECRET_KEY]: TOKEN },
+      config: { enabled: false },
       fetch: discordRoutes({
         "/users/@me": () => jsonResponse(401, { message: "401: Unauthorized" }),
       }),
@@ -386,6 +478,9 @@ describe("borg.channel.discord plugin", () => {
     await expect(
       harness.invoke<DiscordChannelStatus>(discordChannelDisconnect, {}),
     ).resolves.toEqual({
+      accountId: "default",
+      name: "Discord",
+      adapterId: DISCORD_ADAPTER_ID,
       hasToken: true,
       connected: false,
       gatewayState: "idle",
