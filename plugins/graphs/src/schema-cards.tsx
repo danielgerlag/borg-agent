@@ -1,4 +1,4 @@
-import { For, Show, createMemo, type Component } from "solid-js";
+import { For, Index, Show, createMemo, type Component } from "solid-js";
 import { Button } from "@borg/ui-kit";
 import { Plus, Trash2 } from "lucide-solid";
 import {
@@ -58,16 +58,16 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
 
   return (
     <div class="grid gap-2" data-testid={props.testId}>
-      <For each={cards()}>
+      <Index each={cards()}>
         {(card, index) => (
           <div class="rounded-xl border border-[var(--border)] bg-[var(--background)] p-2.5">
             <div class="flex items-start gap-2">
               <label class={`${labelClass} min-w-0 flex-1`}>
                 Name
                 <input
-                  value={card.name}
+                  value={card().name}
                   onInput={(event) =>
-                    update(index(), { name: event.currentTarget.value })
+                    update(index, { name: event.currentTarget.value })
                   }
                   class={fieldClass}
                 />
@@ -75,7 +75,7 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
               <label class={`${labelClass} w-28 shrink-0`}>
                 Type
                 <select
-                  value={card.type}
+                  value={card().type}
                   onChange={(event) => {
                     const type = event.currentTarget.value;
                     if (
@@ -87,10 +87,10 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
                     ) {
                       return;
                     }
-                    const { xUi: _removed, ...rest } = card;
+                    const { xUi: _removed, ...rest } = card();
                     replace(
                       cards().map((item, cardIndex) =>
-                        cardIndex === index() ? { ...rest, type } : item,
+                        cardIndex === index ? { ...rest, type } : item,
                       ),
                     );
                   }}
@@ -106,9 +106,9 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
               <button
                 type="button"
                 class="mt-5 rounded p-1 text-[var(--text-subtle)] hover:bg-[var(--danger)]/10 hover:text-[var(--danger)]"
-                aria-label={`Remove field ${card.name}`}
+                aria-label={`Remove field ${card().name}`}
                 onClick={() =>
-                  replace(cards().filter((_, cardIndex) => cardIndex !== index()))
+                  replace(cards().filter((_, cardIndex) => cardIndex !== index))
                 }
               >
                 <Trash2 aria-hidden="true" size={12} />
@@ -117,9 +117,9 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
             <label class={`${labelClass} mt-2`}>
               Description
               <input
-                value={card.description}
+                value={card().description}
                 onInput={(event) =>
-                  update(index(), { description: event.currentTarget.value })
+                  update(index, { description: event.currentTarget.value })
                 }
                 class={fieldClass}
               />
@@ -128,9 +128,9 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
               <label class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
                 <input
                   type="checkbox"
-                  checked={card.required}
+                  checked={card().required}
                   onChange={(event) =>
-                    update(index(), { required: event.currentTarget.checked })
+                    update(index, { required: event.currentTarget.checked })
                   }
                 />
                 Required
@@ -138,13 +138,13 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
               <label class={labelClass}>
                 Default
                 <Show
-                  when={card.type === "boolean"}
+                  when={card().type === "boolean"}
                   fallback={
                     <input
-                      type={card.type === "number" ? "number" : "text"}
-                      value={card.defaultValue}
+                      type={card().type === "number" ? "number" : "text"}
+                      value={card().defaultValue}
                       onInput={(event) =>
-                        update(index(), {
+                        update(index, {
                           defaultValue: event.currentTarget.value,
                         })
                       }
@@ -153,9 +153,9 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
                   }
                 >
                   <select
-                    value={card.defaultValue || "false"}
+                    value={card().defaultValue || "false"}
                     onChange={(event) =>
-                      update(index(), {
+                      update(index, {
                         defaultValue: event.currentTarget.value,
                       })
                     }
@@ -170,10 +170,10 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
             <label class={`${labelClass} mt-2`}>
               Allowed values
               <input
-                value={card.enumValues.join(", ")}
+                value={card().enumValues.join(", ")}
                 placeholder="one, two, three"
                 onInput={(event) =>
-                  update(index(), {
+                  update(index, {
                     enumValues: event.currentTarget.value
                       .split(",")
                       .map((item) => item.trim())
@@ -183,36 +183,36 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
                 class={fieldClass}
               />
             </label>
-            <Show when={widgetsFor(card.type).length > 0}>
+            <Show when={widgetsFor(card().type).length > 0}>
               <label class={`${labelClass} mt-2`}>
                 Widget
                 <select
-                  value={card.xUi?.widget ?? ""}
+                  value={card().xUi?.widget ?? ""}
                   onChange={(event) => {
                     const widget = event.currentTarget.value;
                     if (!widget) {
-                      const { xUi: _removed, ...rest } = card;
+                      const { xUi: _removed, ...rest } = card();
                       replace(
                         cards().map((item, cardIndex) =>
-                          cardIndex === index() ? rest : item,
+                          cardIndex === index ? rest : item,
                         ),
                       );
                       return;
                     }
-                    const parsed = widgetsFor(card.type).find(
+                    const parsed = widgetsFor(card().type).find(
                       (item) => item.value === widget,
                     )?.value;
                     if (!parsed) {
                       return;
                     }
-                    update(index(), {
-                      xUi: { ...card.xUi, widget: parsed },
+                    update(index, {
+                      xUi: { ...card().xUi, widget: parsed },
                     });
                   }}
                   class={fieldClass}
                 >
                   <option value="">Default</option>
-                  <For each={widgetsFor(card.type)}>
+                  <For each={widgetsFor(card().type)}>
                     {(item) => <option value={item.value}>{item.label}</option>}
                   </For>
                 </select>
@@ -220,8 +220,8 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
             </Show>
             <Show
               when={
-                card.xUi?.widget === "textarea" ||
-                card.xUi?.widget === "code-editor"
+                card().xUi?.widget === "textarea" ||
+                card().xUi?.widget === "code-editor"
               }
             >
               <label class={`${labelClass} mt-2`}>
@@ -230,13 +230,13 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
                   type="number"
                   min={1}
                   max={50}
-                  value={card.xUi?.rows ?? ""}
+                  value={card().xUi?.rows ?? ""}
                   onInput={(event) => {
                     const rows = Number(event.currentTarget.value);
-                    const widget = card.xUi?.widget;
-                    update(index(), {
+                    const widget = card().xUi?.widget;
+                    update(index, {
                       xUi: {
-                        ...card.xUi,
+                        ...card().xUi,
                         ...(widget ? { widget } : {}),
                         ...(Number.isFinite(rows) && rows > 0 ? { rows } : {}),
                       },
@@ -246,18 +246,18 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
                 />
               </label>
             </Show>
-            <Show when={card.xUi?.widget === "slider"}>
+            <Show when={card().xUi?.widget === "slider"}>
               <label class={`${labelClass} mt-2`}>
                 Step
                 <input
                   type="number"
                   min={0}
-                  value={card.xUi?.step ?? ""}
+                  value={card().xUi?.step ?? ""}
                   onInput={(event) => {
                     const step = Number(event.currentTarget.value);
-                    update(index(), {
+                    update(index, {
                       xUi: {
-                        ...card.xUi,
+                        ...card().xUi,
                         widget: "slider",
                         ...(Number.isFinite(step) ? { step } : {}),
                       },
@@ -269,7 +269,7 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
             </Show>
           </div>
         )}
-      </For>
+      </Index>
       <Button
         type="button"
         variant="secondary"

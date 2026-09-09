@@ -1,5 +1,12 @@
 import { graphValueMapSchema, type GraphNode, type Persona } from "@borg/contracts";
-import { For, Show, createMemo, createSignal, type Component } from "solid-js";
+import {
+  For,
+  Index,
+  Show,
+  createMemo,
+  createSignal,
+  type Component,
+} from "solid-js";
 import {
   assignmentRows,
   choiceRows,
@@ -379,27 +386,27 @@ const AssignmentEditor: Component<{
   };
   return (
     <div class="mt-1 grid gap-2">
-      <For each={rows()}>
+      <Index each={rows()}>
         {(row, index) => (
           <div class="flex gap-2">
             <input
-              value={row.name}
+              value={row().name}
               placeholder="name"
-              data-testid={`graph-assignment-name-${index()}`}
+              data-testid={`graph-assignment-name-${index}`}
               onInput={(event) => {
                 const next = [...rows()];
-                next[index()] = { ...row, name: event.currentTarget.value };
+                next[index] = { ...row(), name: event.currentTarget.value };
                 replace(next);
               }}
               class={fieldClass}
             />
             <input
-              value={row.value}
+              value={row().value}
               placeholder="value or $vars.x"
-              data-testid={`graph-assignment-value-${index()}`}
+              data-testid={`graph-assignment-value-${index}`}
               onInput={(event) => {
                 const next = [...rows()];
-                next[index()] = { ...row, value: event.currentTarget.value };
+                next[index] = { ...row(), value: event.currentTarget.value };
                 replace(next);
               }}
               class={fieldClass}
@@ -407,16 +414,16 @@ const AssignmentEditor: Component<{
             <button
               type="button"
               class="mt-1 rounded px-2 text-[var(--text-subtle)] hover:text-[var(--danger)]"
-              aria-label={`Remove assignment ${row.name}`}
+              aria-label={`Remove assignment ${row().name}`}
               onClick={() =>
-                replace(rows().filter((_, rowIndex) => rowIndex !== index()))
+                replace(rows().filter((_, rowIndex) => rowIndex !== index))
               }
             >
               ✕
             </button>
           </div>
         )}
-      </For>
+      </Index>
       <button
         type="button"
         class="rounded-lg border border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-muted)]"
@@ -435,25 +442,25 @@ const ChoiceListEditor: Component<{
   const rows = createMemo(() => choiceRows(props.value));
   return (
     <div class="mt-1 grid gap-2">
-      <For each={rows()}>
+      <Index each={rows()}>
         {(row, index) => (
           <div class="flex gap-2">
             <input
-              value={row.id}
+              value={row().id}
               placeholder="id"
               onInput={(event) => {
                 const next = [...rows()];
-                next[index()] = { ...row, id: event.currentTarget.value };
+                next[index] = { ...row(), id: event.currentTarget.value };
                 props.onChange(next);
               }}
               class={fieldClass}
             />
             <input
-              value={row.label}
+              value={row().label}
               placeholder="label"
               onInput={(event) => {
                 const next = [...rows()];
-                next[index()] = { ...row, label: event.currentTarget.value };
+                next[index] = { ...row(), label: event.currentTarget.value };
                 props.onChange(next);
               }}
               class={fieldClass}
@@ -461,10 +468,10 @@ const ChoiceListEditor: Component<{
             <button
               type="button"
               class="mt-1 rounded px-2 text-[var(--text-subtle)] hover:text-[var(--danger)]"
-              aria-label={`Remove choice ${row.id}`}
+              aria-label={`Remove choice ${row().id}`}
               onClick={() =>
                 props.onChange(
-                  rows().filter((_, rowIndex) => rowIndex !== index()),
+                  rows().filter((_, rowIndex) => rowIndex !== index),
                 )
               }
             >
@@ -472,7 +479,7 @@ const ChoiceListEditor: Component<{
             </button>
           </div>
         )}
-      </For>
+      </Index>
       <button
         type="button"
         class="rounded-lg border border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-muted)]"
