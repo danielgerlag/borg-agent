@@ -211,6 +211,7 @@ describe("LoopManager", () => {
       }
     });
     await vi.waitFor(() => expect(interactions.listPending()).toHaveLength(1));
+    await vi.waitFor(() => expect(eventTypes).toContain("interaction_wait"));
     const approval = interactions.listPending()[0];
     expect(approval?.kind).toBe("tool_approval");
     expect(approval?.prompt).not.toContain("hello");

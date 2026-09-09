@@ -185,6 +185,7 @@ test("sends a chat message through the persona-backed mock loop", async () => {
 
 test("approves a filesystem tool and shows its workspace file", async () => {
   await sendMessage("scenario:file");
+  await expect(page.getByTestId("chat-live-activity")).toBeVisible();
   await expect(page.getByTestId("interaction-overlay")).toBeVisible();
   await expect(page.getByTestId("interaction-overlay")).toContainText(
     "filesystem.write",
@@ -257,6 +258,7 @@ test("keeps new chats ephemeral and confirms deletion", async () => {
 test("keeps a chat turn running while the window is hidden", async () => {
   await sendMessage("scenario:background");
   await expect(page.getByTestId("chat-session-status")).toHaveText("Thinking");
+  await expect(page.getByTestId("chat-live-activity")).toContainText("Working");
   await application.evaluate(() => {
     const api = (
       globalThis as typeof globalThis & {

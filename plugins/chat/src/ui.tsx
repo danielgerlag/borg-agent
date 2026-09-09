@@ -29,8 +29,10 @@ import {
 import { Button, Panel } from "@borg/ui-kit";
 import {
   Bot,
+  CircleAlert,
   FileText,
   FolderOpen,
+  LoaderCircle,
   MessageSquarePlus,
   Send,
   Trash2,
@@ -47,6 +49,14 @@ import {
 } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
 import { adoptChatDocument } from "./adopt-document";
+import {
+  activityCopy,
+  describeTurnFailure,
+  isFailureEntry,
+  isToolEntry,
+  toolLabel,
+  type ChatLiveActivity,
+} from "./chat-activity";
 import { createPersonaWizardStep } from "./persona-setup";
 import { createPersonasSettings } from "./personas-settings";
 
@@ -110,7 +120,9 @@ function addChatUsage(base: ChatUsage, extra: ChatUsage): ChatUsage {
 function activityLabel(entry: ChatEntry): string {
   if (entry.role === "tool") {
     const toolId = entry.metadata?.toolId;
-    return typeof toolId === "string" ? `Used ${toolId}` : "Tool activity";
+    return typeof toolId === "string"
+      ? `Used ${toolLabel(toolId)}`
+      : "Tool activity";
   }
 
   const kind = entry.metadata?.kind;
@@ -197,6 +209,8 @@ export default defineUiPlugin<Component>({
       const [deleteCandidate, setDeleteCandidate] = createSignal<ChatSession>();
       const [initialLoadComplete, setInitialLoadComplete] = createSignal(false);
       const [error, setError] = createSignal<string>();
+      const [liveActivity, setLiveActivity] = createSignal<ChatLiveActivity>();
+      const [activeToolId, setActiveToolId] = createSignal<string>();
       const disposables: Disposable[] = [];
       let loopSubscription: Disposable | undefined;
       let subscribedRunId: string | undefined;
@@ -257,8 +271,35 @@ export default defineUiPlugin<Component>({
         () =>
           initialLoadComplete() &&
           (document()?.entries.length ?? 0) === 0 &&
-          !streaming(),
+          !streaming() &&
+          !liveActivity() &&
+          !sending(),
       );
+
+      const visibleActivity = createMemo((): ChatLiveActivity | undefined => {
+        if (streaming()) {
+          return undefined;
+        }
+        const live = liveActivity();
+        if (live) {
+          return live;
+        }
+        if (sending()) {
+          return { kind: "thinking" };
+        }
+        const status = document()?.session.status;
+        if (status === "running") {
+          return { kind: "thinking" };
+        }
+        if (status === "waiting") {
+          return {
+            kind: "waiting",
+            wait: "tool_approval",
+            toolId: activeToolId(),
+          };
+        }
+        return undefined;
+      });
 
       const focusComposer = (): void => {
         queueMicrotask(() => composerInput?.focus());
@@ -287,6 +328,8 @@ export default defineUiPlugin<Component>({
         subscribedRunId = undefined;
         setStreaming("");
         setLiveUsage(undefined);
+        setLiveActivity(undefined);
+        setActiveToolId(undefined);
         if (subscription) {
           void subscription.dispose();
         }
@@ -351,6 +394,7 @@ export default defineUiPlugin<Component>({
         await previousSubscription?.dispose();
         setStreaming("");
         setLiveUsage(undefined);
+        setLiveActivity({ kind: "thinking" });
         const subscription = await context.loops.subscribe(runId, (event) => {
           if (
             !active ||
@@ -361,6 +405,22 @@ export default defineUiPlugin<Component>({
           }
           if (event.type === "model_start") {
             setStreaming("");
+            setLiveActivity({ kind: "thinking" });
+          }
+          if (event.type === "tool_start") {
+            setActiveToolId(event.toolId);
+            setLiveActivity({ kind: "tool", toolId: event.toolId });
+          }
+          if (event.type === "interaction_wait") {
+            setLiveActivity({
+              kind: "waiting",
+              wait: event.kind,
+              toolId: activeToolId(),
+            });
+          }
+          if (event.type === "tool_result") {
+            setActiveToolId(undefined);
+            setLiveActivity({ kind: "thinking" });
           }
           if (event.type === "model_token") {
             setStreaming((current) => `${current}${event.token}`);
@@ -376,6 +436,8 @@ export default defineUiPlugin<Component>({
           }
           if (event.type === "final" || event.type === "failed") {
             setStreaming("");
+            setLiveActivity(undefined);
+            setActiveToolId(undefined);
             void refreshSelected();
           }
         });
@@ -603,6 +665,7 @@ export default defineUiPlugin<Component>({
         }
         setSending(true);
         setError(undefined);
+        setLiveActivity({ kind: "thinking" });
         setDraft("");
         let sessionId = selectedSessionId;
         let createdSession = false;
@@ -644,6 +707,7 @@ export default defineUiPlugin<Component>({
             initialStartError &&
             document()?.session.id === sessionId
           ) {
+            setLiveActivity(undefined);
             setError(describeError(initialStartError));
           }
         } catch (failure) {
@@ -696,6 +760,7 @@ export default defineUiPlugin<Component>({
             focusComposer();
           }
           if (stillCurrent) {
+            setLiveActivity(undefined);
             setError(describeError(failure));
           }
         } finally {
@@ -817,7 +882,17 @@ export default defineUiPlugin<Component>({
                     {displayTitle(document()?.session.title ?? "New chat")}
                   </h2>
                   <p
-                    class="text-xs text-[var(--text-muted)]"
+                    class="text-xs"
+                    classList={{
+                      "text-[var(--accent)]":
+                        document()?.session.status === "running" ||
+                        document()?.session.status === "waiting",
+                      "text-[var(--danger)]":
+                        document()?.session.status === "error",
+                      "text-[var(--text-muted)]":
+                        document()?.session.status === "idle" ||
+                        document()?.session.status === undefined,
+                    }}
                     data-testid="chat-session-status"
                   >
                     {displayStatus(document()?.session.status ?? "idle")}
@@ -931,49 +1006,91 @@ export default defineUiPlugin<Component>({
                     <For each={document()?.entries ?? []}>
                       {(entry) => {
                         const content = embeddedContent(entry);
+                        const failure = isFailureEntry(entry)
+                          ? describeTurnFailure(entry.content)
+                          : undefined;
                         return (
                           <Show
                             when={content}
                             fallback={
                               <Show
-                                when={
-                                  entry.role === "tool" ||
-                                  entry.role === "event"
-                                }
+                                when={failure}
                                 fallback={
+                                  <Show
+                                    when={
+                                      isToolEntry(entry) ||
+                                      entry.role === "event"
+                                    }
+                                    fallback={
+                                      <div
+                                        class="max-w-[85%] rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                                        classList={{
+                                          "ml-auto bg-[var(--accent)]/10":
+                                            entry.role === "user",
+                                          "bg-[var(--panel-muted)]":
+                                            entry.role === "assistant",
+                                          "mx-auto border-transparent bg-transparent text-xs text-[var(--text-muted)]":
+                                            entry.role === "system",
+                                        }}
+                                        data-testid="chat-message"
+                                        data-message-id={entry.id}
+                                        data-role={entry.role}
+                                      >
+                                        <p class="whitespace-pre-wrap">
+                                          {entry.content}
+                                        </p>
+                                      </div>
+                                    }
+                                  >
+                                    <div
+                                      class="mx-auto w-full max-w-[92%] rounded-xl border border-[var(--border)] bg-[var(--panel-muted)]/35 px-3 py-2 text-sm"
+                                      data-testid="chat-message"
+                                      data-message-id={entry.id}
+                                      data-role={entry.role}
+                                    >
+                                      <p class="text-[var(--text-muted)]">
+                                        {activityLabel(entry)}
+                                      </p>
+                                      <details class="mt-1">
+                                        <summary class="cursor-pointer text-xs text-[var(--text-subtle)]">
+                                          Details
+                                        </summary>
+                                        <p class="mt-2 whitespace-pre-wrap text-xs text-[var(--text-muted)]">
+                                          {entry.content}
+                                        </p>
+                                      </details>
+                                    </div>
+                                  </Show>
+                                }
+                              >
+                                {(failed) => (
                                   <div
-                                    class="max-w-[85%] rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
-                                    classList={{
-                                      "ml-auto bg-[var(--accent)]/10":
-                                        entry.role === "user",
-                                      "bg-[var(--panel-muted)]":
-                                        entry.role === "assistant",
-                                      "mx-auto border-transparent bg-transparent text-xs text-[var(--text-muted)]":
-                                        entry.role === "system",
-                                    }}
+                                    class="mx-auto w-full max-w-[92%] rounded-xl border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-3 text-sm"
                                     data-testid="chat-message"
                                     data-message-id={entry.id}
                                     data-role={entry.role}
+                                    data-status="failed"
                                   >
-                                    <p class="whitespace-pre-wrap">
-                                      {entry.content}
-                                    </p>
+                                    <div class="flex items-start gap-2 text-[var(--danger)]">
+                                      <CircleAlert
+                                        aria-hidden="true"
+                                        size={16}
+                                        class="mt-0.5 shrink-0"
+                                      />
+                                      <div>
+                                        <p class="font-medium">
+                                          {failed().title}
+                                        </p>
+                                        <p
+                                          class="mt-1 whitespace-pre-wrap text-xs text-[var(--text-muted)]"
+                                          data-testid="chat-turn-error"
+                                        >
+                                          {failed().detail}
+                                        </p>
+                                      </div>
+                                    </div>
                                   </div>
-                                }
-                              >
-                                <details
-                                  class="group mx-auto w-full max-w-[92%] rounded-lg px-2 py-1 text-xs text-[var(--text-subtle)] open:bg-[var(--panel-muted)]/45"
-                                  data-testid="chat-message"
-                                  data-message-id={entry.id}
-                                  data-role={entry.role}
-                                >
-                                  <summary class="cursor-pointer py-1.5 transition hover:text-[var(--text-muted)]">
-                                    {activityLabel(entry)}
-                                  </summary>
-                                  <p class="border-l border-[var(--border)] py-2 pl-3 pr-2 whitespace-pre-wrap text-[var(--text-muted)]">
-                                    {entry.content}
-                                  </p>
-                                </details>
+                                )}
                               </Show>
                             }
                           >
@@ -996,14 +1113,54 @@ export default defineUiPlugin<Component>({
                     </Show>
                   </div>
 
+                  <Show when={visibleActivity()}>
+                    {(activity) => (
+                      <div
+                        class="flex items-center gap-2 border-t border-[var(--border)] px-5 py-3 text-sm"
+                        classList={{
+                          "text-[var(--accent)]":
+                            activity().kind !== "waiting",
+                          "text-[var(--accent)] bg-[var(--accent)]/8":
+                            activity().kind === "waiting",
+                        }}
+                        data-testid="chat-live-activity"
+                        data-activity={activity().kind}
+                      >
+                        <Show
+                          when={activity().kind === "waiting"}
+                          fallback={
+                            <LoaderCircle
+                              aria-hidden="true"
+                              size={16}
+                              class="shrink-0 animate-spin"
+                            />
+                          }
+                        >
+                          <CircleAlert
+                            aria-hidden="true"
+                            size={16}
+                            class="shrink-0"
+                          />
+                        </Show>
+                        <p>{activityCopy(activity())}</p>
+                      </div>
+                    )}
+                  </Show>
+
                   <Show when={error()}>
                     {(message) => (
-                      <p
-                        class="px-5 pb-2 text-xs text-[var(--danger)]"
+                      <div
+                        class="flex items-start gap-2 border-t border-[var(--danger)]/40 bg-[var(--danger)]/10 px-5 py-3 text-sm text-[var(--danger)]"
                         role="alert"
+                        data-testid="chat-composer-error"
                       >
-                        {message()}
-                      </p>
+                        <CircleAlert
+                          aria-hidden="true"
+                          size={16}
+                          class="mt-0.5 shrink-0"
+                        />
+                        <p class="whitespace-pre-wrap">{message()}</p>
+                      </div>
                     )}
                   </Show>
 

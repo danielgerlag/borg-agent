@@ -12,6 +12,7 @@
     "src/ui.tsx",
     "src/persona-setup.tsx",
     "src/personas-settings.tsx",
-    "src/model-preference.ts"
+    "src/model-preference.ts",
+    "src/chat-activity.ts"
   ]
 }
