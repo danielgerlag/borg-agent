@@ -293,6 +293,23 @@ describe("TrustAuthorizer prompts", () => {
     ]);
   });
 
+  it("does not prompt for model input when classification exceeds provider capacity", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+
+    const result = await authorizer.authorize(
+      baseRequest({
+        feature: "model_input",
+        title: "Review model input safety",
+        payloadClassification: "restricted",
+        capacity: "internal",
+      }),
+    );
+    expect(result.allowed).toBe(true);
+    expect(result.interactionUsed).toBe(false);
+    expect(interactions.listPending()).toEqual([]);
+  });
+
   it("does not prompt for model input when scanner coverage is missing", async () => {
     const interactions = new InteractionService();
     const authorizer = new TrustAuthorizer(interactions);

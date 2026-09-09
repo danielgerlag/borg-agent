@@ -129,10 +129,11 @@ export class TrustAuthorizer {
       snapshot,
     );
     const policyAsk = request.approval === "ask" && !granted;
-    const scanReview =
-      scanAction === "review" && !MODEL_FEATURES.has(request.feature);
-    const needsReview =
-      policyAsk || classificationReasons.length > 0 || scanReview;
+    const isModelStage = MODEL_FEATURES.has(request.feature);
+    const scanReview = scanAction === "review" && !isModelStage;
+    const classificationReview =
+      classificationReasons.length > 0 && !isModelStage;
+    const needsReview = policyAsk || classificationReview || scanReview;
     if (!needsReview) {
       return freezeResult({
         allowed: true,
