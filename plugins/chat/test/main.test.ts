@@ -422,6 +422,8 @@ function createChatHarnessContext(
       },
       get: (sessionId) => workspaces.get(sessionId),
       listFiles: async () => [],
+      readFile: async () => unavailable("workspace.readFile"),
+      importNativePaths: async () => unavailable("workspace.importNativePaths"),
       release,
     },
     loops: {

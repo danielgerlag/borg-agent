@@ -1128,6 +1128,23 @@ export class PluginManager {
             assertPermission("workspace.manage");
             return requireWorkspaces().listFiles(manifest.id, sessionId);
           },
+          readFile: (sessionId, relativePath) => {
+            assertPermission("workspace.manage");
+            return requireWorkspaces().readFile(
+              manifest.id,
+              sessionId,
+              relativePath,
+            );
+          },
+          importNativePaths: (sessionId, nativePaths, destDir) => {
+            assertPermission("workspace.manage");
+            return requireWorkspaces().importNativePaths(
+              manifest.id,
+              sessionId,
+              nativePaths,
+              destDir,
+            );
+          },
           release: (sessionId) => {
             assertPermission("workspace.manage");
             return requireWorkspaces().release(manifest.id, sessionId);

@@ -36,6 +36,8 @@ import type {
   ReleasedModelCompletion,
   ToolSecurityMetadata,
   WorkspaceFile,
+  WorkspaceImportResult,
+  WorkspacePreview,
   DynamicToolDefinition,
   ToolApproval,
 } from "@borg/contracts";
@@ -67,6 +69,8 @@ export type {
   ReleasedModelCompletion,
   ToolApproval,
   ToolSecurityMetadata,
+  WorkspaceImportResult,
+  WorkspacePreview,
 } from "@borg/contracts";
 
 export interface Disposable {
@@ -405,6 +409,12 @@ export interface PluginWorkspace {
       }
     | undefined;
   listFiles(sessionId: string): Promise<readonly WorkspaceFile[]>;
+  readFile(sessionId: string, relativePath: string): Promise<WorkspacePreview>;
+  importNativePaths(
+    sessionId: string,
+    nativePaths: readonly string[],
+    destDir?: string,
+  ): Promise<WorkspaceImportResult>;
   release(sessionId: string): Promise<void>;
 }
 
