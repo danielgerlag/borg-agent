@@ -1,4 +1,7 @@
 import {
+  DEFAULT_CONNECTOR_ACCOUNT_ID,
+  connectorAdapterId,
+  connectorSecretKey,
   slackChannelDisconnect,
   slackChannelGetStatus,
   slackChannelVerify,
@@ -15,8 +18,10 @@ import {
 import {
   defaultSlackChannelConfig,
   parseSlackChannelConfig,
+  sameSlackAccountRuntime,
   sameSlackChannelConfig,
   slackChannelConfigSchema,
+  type SlackChannelAccount,
   type SlackChannelConfig,
 } from "./config";
 import {
@@ -35,30 +40,30 @@ export interface SlackControllerOptions {
   readonly random?: (() => number) | undefined;
 }
 
+interface SlackAccountSession {
+  account: SlackChannelAccount;
+  rest: SlackRestClient;
+  registration: Disposable | undefined;
+  runtime: SlackSocketRuntime | undefined;
+  task: Disposable | undefined;
+}
+
 export class SlackChannelController {
   readonly #context: PluginContext;
-  readonly #rest: SlackRestClient;
   readonly #options: SlackControllerOptions;
+  readonly #sessions = new Map<string, SlackAccountSession>();
+  readonly #paused = new Set<string>();
+  readonly #errors = new Map<string, string>();
+  readonly #botUserIds = new Map<string, string>();
   #config: SlackChannelConfig = defaultSlackChannelConfig();
-  #registration: Disposable | undefined;
-  #runtime: SlackSocketRuntime | undefined;
-  #task: Disposable | undefined;
   #configWatch: Disposable | undefined;
   #queue: Promise<void> = Promise.resolve();
   #configError: string | undefined;
-  #error: string | undefined;
-  #botUserId: string | undefined;
-  #paused = false;
   #disposed = false;
 
   constructor(context: PluginContext, options: SlackControllerOptions = {}) {
     this.#context = context;
     this.#options = options;
-    this.#rest = new SlackRestClient({
-      http: context.http,
-      readBotToken: () => context.secrets.get(SLACK_BOT_TOKEN_SECRET_KEY),
-      readAppToken: () => context.secrets.get(SLACK_APP_TOKEN_SECRET_KEY),
-    });
   }
 
   get config(): SlackChannelConfig {
@@ -73,15 +78,25 @@ export class SlackChannelController {
     await this.#sync();
   }
 
-  async status(): Promise<SlackChannelStatus> {
+  async status(accountId?: string): Promise<SlackChannelStatus> {
+    const account = this.#resolve(accountId);
     const [hasBotToken, hasAppToken] = await Promise.all([
-      this.#context.secrets.has(SLACK_BOT_TOKEN_SECRET_KEY),
-      this.#context.secrets.has(SLACK_APP_TOKEN_SECRET_KEY),
+      this.#context.secrets.has(
+        connectorSecretKey(account.id, SLACK_BOT_TOKEN_SECRET_KEY),
+      ),
+      this.#context.secrets.has(
+        connectorSecretKey(account.id, SLACK_APP_TOKEN_SECRET_KEY),
+      ),
     ]);
-    const snapshot = this.#runtime?.snapshot();
-    const error = this.#configError ?? snapshot?.error ?? this.#error;
-    const botUserId = this.#botUserId;
+    const session = this.#sessions.get(account.id);
+    const snapshot = session?.runtime?.snapshot();
+    const error =
+      this.#configError ?? snapshot?.error ?? this.#errors.get(account.id);
+    const botUserId = this.#botUserIds.get(account.id);
     return {
+      accountId: account.id,
+      name: account.name,
+      adapterId: connectorAdapterId(SLACK_ADAPTER_ID, account.id),
       hasBotToken,
       hasAppToken,
       connected: snapshot?.connected ?? false,
@@ -91,57 +106,38 @@ export class SlackChannelController {
     };
   }
 
-  async verify(signal?: AbortSignal | undefined): Promise<SlackChannelStatus> {
-    const identity = await this.#rest.authTest(signal);
-    await this.#rest.openConnection(signal);
-    this.#botUserId = identity.botUserId;
-    this.#error = undefined;
-    this.#paused = false;
+  async verify(
+    accountId?: string,
+    signal?: AbortSignal | undefined,
+  ): Promise<SlackChannelStatus> {
+    const account = this.#resolve(accountId);
+    const rest = this.#restFor(account);
+    const identity = await rest.authTest(signal);
+    await rest.openConnection(signal);
+    this.#botUserIds.set(account.id, identity.botUserId);
+    this.#errors.delete(account.id);
+    this.#paused.delete(account.id);
     await this.#sync();
-    const runtime = this.#runtime;
+    const runtime = this.#sessions.get(account.id)?.runtime;
     if (runtime) {
       try {
         await runtime.whenReady(READY_TIMEOUT_MS);
       } catch (error) {
-        this.#error = describeError(error);
+        this.#errors.set(account.id, describeError(error));
       }
     }
-    const status = await this.status();
+    const status = await this.status(account.id);
     return status.botUserId === undefined
       ? { ...status, botUserId: identity.botUserId }
       : status;
   }
 
-  async disconnect(): Promise<SlackChannelStatus> {
-    this.#paused = true;
+  async disconnect(accountId?: string): Promise<SlackChannelStatus> {
+    const account = this.#resolve(accountId);
+    this.#paused.add(account.id);
     await this.#sync();
-    this.#error = undefined;
-    return this.status();
-  }
-
-  async send(request: ChannelSendRequest): Promise<ChannelAdapterReceipt> {
-    if (request.attachments !== undefined && request.attachments.length > 0) {
-      throw new Error("Slack attachment sending is not supported");
-    }
-    if (this.#runtime?.snapshot().connected !== true) {
-      throw new Error("Slack is not connected");
-    }
-    const destination =
-      request.destinationId.trim().length > 0
-        ? request.destinationId.trim()
-        : this.#config.defaultSendChannelId;
-    if (destination.length === 0) {
-      throw new Error("Slack destination is not configured");
-    }
-    if (!this.#config.allowedChannelIds.includes(destination)) {
-      throw new Error("Slack destination is not allow-listed");
-    }
-    const { ts } = await this.#rest.postMessage({
-      channel: destination,
-      text: request.text,
-      ...(request.signal ? { signal: request.signal } : {}),
-    });
-    return { externalId: ts, sentAt: new Date().toISOString() };
+    this.#errors.delete(account.id);
+    return this.status(account.id);
   }
 
   async dispose(): Promise<void> {
@@ -149,6 +145,42 @@ export class SlackChannelController {
     this.#configWatch?.dispose();
     this.#configWatch = undefined;
     await this.#sync();
+  }
+
+  #resolve(accountId?: string): SlackChannelAccount {
+    const accounts = this.#config.accounts;
+    if (accountId !== undefined && accountId.length > 0) {
+      const match = accounts.find((account) => account.id === accountId);
+      if (!match) {
+        throw new Error(`Unknown Slack account ${accountId}`);
+      }
+      return match;
+    }
+    const fallback =
+      accounts.find((account) => account.id === DEFAULT_CONNECTOR_ACCOUNT_ID) ??
+      (accounts.length === 1 ? accounts[0] : undefined);
+    if (fallback === undefined) {
+      throw new Error(
+        accounts.length === 0
+          ? "No Slack account is configured"
+          : "Specify accountId when multiple Slack accounts exist",
+      );
+    }
+    return fallback;
+  }
+
+  #restFor(account: SlackChannelAccount): SlackRestClient {
+    return new SlackRestClient({
+      http: this.#context.http,
+      readBotToken: () =>
+        this.#context.secrets.get(
+          connectorSecretKey(account.id, SLACK_BOT_TOKEN_SECRET_KEY),
+        ),
+      readAppToken: () =>
+        this.#context.secrets.get(
+          connectorSecretKey(account.id, SLACK_APP_TOKEN_SECRET_KEY),
+        ),
+    });
   }
 
   #read(candidate: unknown): SlackChannelConfig {
@@ -171,7 +203,6 @@ export class SlackChannelController {
       return;
     }
     this.#config = next;
-    this.#paused = false;
     await this.#sync();
   }
 
@@ -182,48 +213,129 @@ export class SlackChannelController {
   }
 
   async #syncNow(): Promise<void> {
-    await this.#teardown();
-    this.#error = undefined;
-    if (this.#disposed || this.#paused) {
+    if (this.#disposed) {
+      for (const accountId of [...this.#sessions.keys()]) {
+        await this.#stopSession(accountId);
+      }
       return;
     }
-    if (!this.#config.enabled || this.#config.allowedChannelIds.length === 0) {
+    const wanted = new Set(this.#config.accounts.map((account) => account.id));
+    for (const accountId of [...this.#sessions.keys()]) {
+      if (!wanted.has(accountId)) {
+        await this.#stopSession(accountId);
+        this.#paused.delete(accountId);
+        this.#errors.delete(accountId);
+        this.#botUserIds.delete(accountId);
+      }
+    }
+    for (const account of this.#config.accounts) {
+      await this.#syncAccount(account);
+    }
+  }
+
+  async #syncAccount(account: SlackChannelAccount): Promise<void> {
+    const shouldRun =
+      !this.#paused.has(account.id) &&
+      account.enabled &&
+      account.allowedChannelIds.length > 0;
+    if (!shouldRun) {
+      await this.#stopSession(account.id);
       return;
     }
-    if (!(await this.#context.secrets.has(SLACK_BOT_TOKEN_SECRET_KEY))) {
-      this.#error = "Slack bot token is not saved";
+    if (
+      !(await this.#context.secrets.has(
+        connectorSecretKey(account.id, SLACK_BOT_TOKEN_SECRET_KEY),
+      ))
+    ) {
+      this.#errors.set(account.id, "Slack bot token is not saved");
+      await this.#stopSession(account.id);
       return;
     }
-    if (!(await this.#context.secrets.has(SLACK_APP_TOKEN_SECRET_KEY))) {
-      this.#error = "Slack app-level token is not saved";
+    if (
+      !(await this.#context.secrets.has(
+        connectorSecretKey(account.id, SLACK_APP_TOKEN_SECRET_KEY),
+      ))
+    ) {
+      this.#errors.set(account.id, "Slack app-level token is not saved");
+      await this.#stopSession(account.id);
       return;
     }
-    const destinations = [...this.#config.allowedChannelIds];
-    this.#registration = this.#context.channels.register({
-      id: SLACK_ADAPTER_ID,
+    const existing = this.#sessions.get(account.id);
+    if (
+      existing?.registration !== undefined &&
+      sameSlackAccountRuntime(existing.account, account)
+    ) {
+      existing.account = account;
+      return;
+    }
+    await this.#stopSession(account.id);
+    this.#errors.delete(account.id);
+    this.#startSession(account);
+  }
+
+  #startSession(account: SlackChannelAccount): void {
+    const session: SlackAccountSession = {
+      account,
+      rest: this.#restFor(account),
+      registration: undefined,
+      runtime: undefined,
+      task: undefined,
+    };
+    this.#sessions.set(account.id, session);
+    session.registration = this.#context.channels.register({
+      id: connectorAdapterId(SLACK_ADAPTER_ID, account.id),
       capacity: "private",
-      destinations,
-      start: ({ ingest, signal }) => this.#startSocket(ingest, signal),
-      send: (request) => this.send(request),
+      destinations: [...account.allowedChannelIds],
+      start: ({ ingest, signal }) => this.#startSocket(session, ingest, signal),
+      send: (request) => this.#send(session, request),
     });
   }
 
+  async #send(
+    session: SlackAccountSession,
+    request: ChannelSendRequest,
+  ): Promise<ChannelAdapterReceipt> {
+    if (request.attachments !== undefined && request.attachments.length > 0) {
+      throw new Error("Slack attachment sending is not supported");
+    }
+    if (session.runtime?.snapshot().connected !== true) {
+      throw new Error("Slack is not connected");
+    }
+    const destination =
+      request.destinationId.trim().length > 0
+        ? request.destinationId.trim()
+        : session.account.defaultSendChannelId;
+    if (destination.length === 0) {
+      throw new Error("Slack destination is not configured");
+    }
+    if (!session.account.allowedChannelIds.includes(destination)) {
+      throw new Error("Slack destination is not allow-listed");
+    }
+    const { ts } = await session.rest.postMessage({
+      channel: destination,
+      text: request.text,
+      ...(request.signal ? { signal: request.signal } : {}),
+    });
+    return { externalId: ts, sentAt: new Date().toISOString() };
+  }
+
   #startSocket(
+    session: SlackAccountSession,
     ingest: (draft: ChannelInboundDraft) => void | Promise<void>,
     signal: AbortSignal,
   ): Disposable {
     const runtime = new SlackSocketRuntime({
       webSockets: this.#context.webSockets,
-      rest: this.#rest,
+      rest: session.rest,
       ingest,
       policy: {
-        allowedChannelIds: [...this.#config.allowedChannelIds],
+        allowedChannelIds: [...session.account.allowedChannelIds],
       },
       logger: this.#context.logger,
       ...(this.#options.clock ? { clock: this.#options.clock } : {}),
       ...(this.#options.random ? { random: this.#options.random } : {}),
     });
-    this.#runtime = runtime;
+    session.runtime = runtime;
     let task: Disposable | undefined;
     try {
       task = this.#context.runtime.spawn((taskSignal) =>
@@ -236,14 +348,14 @@ export class SlackChannelController {
         });
       });
     }
-    this.#task = task;
+    session.task = task;
     return {
       dispose: async () => {
-        if (this.#runtime === runtime) {
-          this.#runtime = undefined;
+        if (session.runtime === runtime) {
+          session.runtime = undefined;
         }
-        if (task !== undefined && this.#task === task) {
-          this.#task = undefined;
+        if (task !== undefined && session.task === task) {
+          session.task = undefined;
         }
         task?.dispose();
         await runtime.stop();
@@ -251,9 +363,14 @@ export class SlackChannelController {
     };
   }
 
-  async #teardown(): Promise<void> {
-    const registration = this.#registration;
-    this.#registration = undefined;
+  async #stopSession(accountId: string): Promise<void> {
+    const session = this.#sessions.get(accountId);
+    if (!session) {
+      return;
+    }
+    this.#sessions.delete(accountId);
+    const registration = session.registration;
+    session.registration = undefined;
     if (registration) {
       try {
         await registration.dispose();
@@ -263,10 +380,10 @@ export class SlackChannelController {
         });
       }
     }
-    const runtime = this.#runtime;
-    this.#runtime = undefined;
-    const task = this.#task;
-    this.#task = undefined;
+    const runtime = session.runtime;
+    session.runtime = undefined;
+    const task = session.task;
+    session.task = undefined;
     task?.dispose();
     if (runtime) {
       await runtime.stop();
@@ -307,12 +424,14 @@ export default definePlugin({
   async activate(context) {
     const controller = new SlackChannelController(context);
     const handles = [
-      context.bus.handle(slackChannelGetStatus, () => controller.status()),
-      context.bus.handle(slackChannelVerify, (_input, signal) =>
-        controller.verify(signal),
+      context.bus.handle(slackChannelGetStatus, (input) =>
+        controller.status(input.accountId),
       ),
-      context.bus.handle(slackChannelDisconnect, () =>
-        controller.disconnect(),
+      context.bus.handle(slackChannelVerify, (input, signal) =>
+        controller.verify(input.accountId, signal),
+      ),
+      context.bus.handle(slackChannelDisconnect, (input) =>
+        controller.disconnect(input.accountId),
       ),
     ];
     await controller.initialize();

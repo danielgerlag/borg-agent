@@ -21,16 +21,53 @@ function channelIds(count: number): string[] {
   );
 }
 
+function defaultAccount(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "default",
+    name: "Slack",
+    enabled: false,
+    ignoreBots: true,
+    allowedChannelIds: [],
+    defaultSendChannelId: "",
+    ...overrides,
+  };
+}
+
 describe("slack channel settings", () => {
-  it("survives the defaults-only round trip the host performs at activation", () => {
+  it("parses empty config as no accounts", () => {
     const defaults = defaultSlackChannelConfig();
-    expect(defaults).toEqual({
-      enabled: false,
-      ignoreBots: true,
-      allowedChannelIds: [],
-      defaultSendChannelId: "",
-    });
+    expect(defaults).toEqual({ accounts: [] });
+    expect(slackChannelConfigSchema.parse({})).toEqual({ accounts: [] });
     expect(slackChannelConfigSchema.parse(defaults)).toEqual(defaults);
+  });
+
+  it("lifts a stored singleton into the default account", () => {
+    expect(
+      slackChannelConfigSchema.parse({
+        enabled: true,
+        allowedChannelIds: [CHANNEL_ID],
+      }),
+    ).toEqual({
+      accounts: [
+        defaultAccount({
+          enabled: true,
+          allowedChannelIds: [CHANNEL_ID],
+        }),
+      ],
+    });
+  });
+
+  it("drops leftover singleton keys when accounts is present", () => {
+    expect(
+      slackChannelConfigSchema.parse({
+        accounts: [{ id: "work", name: "Work" }],
+        enabled: true,
+      }),
+    ).toEqual({
+      accounts: [defaultAccount({ id: "work", name: "Work" })],
+    });
   });
 
   it("refuses unknown keys", () => {
@@ -41,6 +78,33 @@ describe("slack channel settings", () => {
     expect(
       slackChannelConfigSchema.safeParse({ enabled: false, appToken: "leak" })
         .success,
+    ).toBe(false);
+  });
+
+  it("requires unique ids and at most eight accounts", () => {
+    expect(
+      slackChannelConfigSchema.safeParse({
+        accounts: [
+          { id: "work", name: "Work" },
+          { id: "work", name: "Also work" },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      slackChannelConfigSchema.safeParse({
+        accounts: Array.from({ length: 8 }, (_value, index) => ({
+          id: `acct-${index}`,
+          name: `Account ${index}`,
+        })),
+      }).success,
+    ).toBe(true);
+    expect(
+      slackChannelConfigSchema.safeParse({
+        accounts: Array.from({ length: 9 }, (_value, index) => ({
+          id: `acct-${index}`,
+          name: `Account ${index}`,
+        })),
+      }).success,
     ).toBe(false);
   });
 
