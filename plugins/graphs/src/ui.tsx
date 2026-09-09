@@ -21,6 +21,18 @@ import { defineUiPlugin, type Disposable } from "@borg/plugin-sdk";
 import { Button, EmptyState, Panel } from "@borg/ui-kit";
 import cytoscape from "cytoscape";
 import {
+  connectNodes,
+  nextUniqueId,
+  type BranchHandle,
+} from "./connect";
+import {
+  attachEdgeDrawing,
+  isGhostElementId,
+  isPortNodeId,
+  outputPortId,
+  portPosition,
+} from "./draw-edges";
+import {
   Activity,
   CircleAlert,
   GitBranch,
@@ -142,6 +154,47 @@ const cytoscapeStyles: cytoscape.StylesheetJson = [
       width: 3,
     },
   },
+  {
+    selector: "node.port",
+    style: {
+      "background-color": "#22d3ee",
+      "border-color": "#e2e8f0",
+      "border-width": 2,
+      height: 14,
+      label: "",
+      "overlay-opacity": 0,
+      shape: "ellipse",
+      width: 14,
+    },
+  },
+  {
+    selector: "node.port.branch-true",
+    style: { "background-color": "#34d399" },
+  },
+  {
+    selector: "node.port.branch-false",
+    style: { "background-color": "#f87171" },
+  },
+  {
+    selector: "node.edge-ghost",
+    style: {
+      height: 1,
+      opacity: 0,
+      "overlay-opacity": 0,
+      width: 1,
+    },
+  },
+  {
+    selector: "edge.edge-ghost",
+    style: {
+      "curve-style": "bezier",
+      "line-color": "#22d3ee",
+      "line-style": "dashed",
+      "target-arrow-color": "#22d3ee",
+      "target-arrow-shape": "triangle",
+      width: 2,
+    },
+  },
 ];
 
 let graphSequence = 0;
@@ -258,17 +311,6 @@ function createDefaultGraph(): GraphDefinition {
   };
 }
 
-function nextUniqueId(base: string, ids: ReadonlySet<string>): string {
-  if (!ids.has(base)) {
-    return base;
-  }
-  let suffix = 2;
-  while (ids.has(`${base}-${suffix}`)) {
-    suffix += 1;
-  }
-  return `${base}-${suffix}`;
-}
-
 function isJsonObject(value: unknown): value is GraphNode["config"] {
   return (
     typeof value === "object" &&
@@ -281,23 +323,64 @@ function graphElements(
   definition: GraphDefinition,
 ): cytoscape.ElementDefinition[] {
   const fallbackY = 120;
+  const nodes: cytoscape.ElementDefinition[] = [];
+  for (const [index, node] of definition.nodes.entries()) {
+    const position = node.designer ?? {
+      x: 140 + index * 210,
+      y: fallbackY,
+    };
+    nodes.push({
+      group: "nodes",
+      data: {
+        id: node.id,
+        kind: node.kind,
+        label: formatKind(node.kind),
+        type: node.type,
+      },
+      classes: `${node.type} step`,
+      position,
+      selectable: true,
+      grabbable: true,
+    });
+    if (node.kind === "end") {
+      continue;
+    }
+    if (node.kind === "branch") {
+      for (const handle of ["true", "false"] as const) {
+        nodes.push({
+          group: "nodes",
+          data: {
+            id: outputPortId(node.id, handle),
+            kind: "port",
+            label: "",
+            sourceHandle: handle,
+            sourceNode: node.id,
+          },
+          classes: `port branch-${handle}`,
+          position: portPosition(position, handle),
+          selectable: false,
+          grabbable: false,
+        });
+      }
+      continue;
+    }
+    nodes.push({
+      group: "nodes",
+      data: {
+        id: outputPortId(node.id),
+        kind: "port",
+        label: "",
+        sourceHandle: "",
+        sourceNode: node.id,
+      },
+      classes: "port",
+      position: portPosition(position),
+      selectable: false,
+      grabbable: false,
+    });
+  }
   return [
-    ...definition.nodes.map(
-      (node, index): cytoscape.ElementDefinition => ({
-        group: "nodes",
-        data: {
-          id: node.id,
-          kind: node.kind,
-          label: formatKind(node.kind),
-          type: node.type,
-        },
-        classes: node.type,
-        position: node.designer ?? {
-          x: 140 + index * 210,
-          y: fallbackY,
-        },
-      }),
-    ),
+    ...nodes,
     ...definition.edges.map(
       (edge): cytoscape.ElementDefinition => ({
         group: "edges",
@@ -369,6 +452,7 @@ export default defineUiPlugin<Component>({
       let canvasElement: HTMLDivElement | undefined;
       let graph: cytoscape.Core | undefined;
       let resizeObserver: ResizeObserver | undefined;
+      let detachEdgeDrawing: (() => void) | undefined;
 
       const setSelectedNode = (nodeId?: string): void => {
         setSelectedNodeId(nodeId);
@@ -420,7 +504,12 @@ export default defineUiPlugin<Component>({
           ...definition,
           nodes: definition.nodes.map((node) => {
             const element = graph?.$id(node.id);
-            if (!element || element.length === 0 || !element.isNode()) {
+            if (
+              !element ||
+              element.length === 0 ||
+              !element.isNode() ||
+              isPortNodeId(node.id)
+            ) {
               return node;
             }
             const position = element.position();
@@ -620,6 +709,8 @@ export default defineUiPlugin<Component>({
           return;
         }
         resizeObserver?.disconnect();
+        detachEdgeDrawing?.();
+        detachEdgeDrawing = undefined;
         graph?.destroy();
         graph = cytoscape({
           container: canvasElement,
@@ -630,11 +721,21 @@ export default defineUiPlugin<Component>({
           style: cytoscapeStyles,
           wheelSensitivity: 0.2,
         });
+        detachEdgeDrawing = attachEdgeDrawing(
+          graph,
+          (source, target, sourceHandle) => {
+            applyDrawnEdge(source, target, sourceHandle);
+          },
+        );
         graph.on(
           "tap",
           "node",
           (event: cytoscape.EventObjectNode): void => {
-            setSelectedNode(event.target.id());
+            const id = event.target.id();
+            if (isPortNodeId(id) || isGhostElementId(id)) {
+              return;
+            }
+            setSelectedNode(id);
           },
         );
         graph.on("tap", (event: cytoscape.EventObject): void => {
@@ -664,6 +765,8 @@ export default defineUiPlugin<Component>({
       onCleanup(() => {
         active = false;
         resizeObserver?.disconnect();
+        detachEdgeDrawing?.();
+        detachEdgeDrawing = undefined;
         graph?.destroy();
         graph = undefined;
         for (const subscription of subscriptions) {
@@ -771,52 +874,54 @@ export default defineUiPlugin<Component>({
         setOperationStatus(`Removed ${nodeId}.`);
       };
 
+      const applyDrawnEdge = (
+        source: string,
+        target: string,
+        sourceHandle?: BranchHandle,
+      ): void => {
+        const current = draft();
+        if (!current) {
+          return;
+        }
+        const positioned = definitionWithCanvasPositions(current);
+        const result = connectNodes(positioned, {
+          source,
+          target,
+          sourceHandle:
+            positioned.nodes.find(({ id }) => id === source)?.kind === "branch"
+              ? (sourceHandle ?? edgeHandle())
+              : undefined,
+        });
+        if (!result.ok) {
+          setOperationStatus(result.reason);
+          return;
+        }
+        setDraft(result.definition);
+        setDirty(true);
+        setEdgeSource(source);
+        setEdgeTarget(target);
+        if (result.edge.sourceHandle === "true" || result.edge.sourceHandle === "false") {
+          setEdgeHandle(result.edge.sourceHandle);
+        }
+        renderDefinition(result.definition, false);
+        setOperationStatus(`Connected ${source} to ${target}.`);
+      };
+
       const addEdge = (): void => {
         const current = draft();
         const source = edgeSource();
         const target = edgeTarget();
-        const sourceHandle =
-          current?.nodes.find(({ id }) => id === source)?.kind === "branch"
-            ? edgeHandle()
-            : undefined;
-        if (!current || !source || !target) {
+        if (!current) {
           setOperationStatus("Choose a source and target step.");
           return;
         }
-        if (source === target) {
-          setOperationStatus("An edge must connect two different steps.");
-          return;
-        }
-        if (
-          current.edges.some(
-            (edge) =>
-              edge.source === source &&
-              edge.target === target &&
-              edge.sourceHandle === sourceHandle,
-          )
-        ) {
-          setOperationStatus("That edge already exists.");
-          return;
-        }
-        const positioned = definitionWithCanvasPositions(current);
-        const edgeIds = new Set(positioned.edges.map(({ id }) => id));
-        const edgeId = nextUniqueId(`${source}-to-${target}`, edgeIds);
-        const next: GraphDefinition = {
-          ...positioned,
-          edges: [
-            ...positioned.edges,
-            {
-              id: edgeId,
-              source,
-              target,
-              ...(sourceHandle ? { sourceHandle } : {}),
-            },
-          ],
-        };
-        setDraft(next);
-        setDirty(true);
-        renderDefinition(next, false);
-        setOperationStatus(`Connected ${source} to ${target}.`);
+        applyDrawnEdge(
+          source,
+          target,
+          current.nodes.find(({ id }) => id === source)?.kind === "branch"
+            ? edgeHandle()
+            : undefined,
+        );
       };
 
       const removeEdge = (edgeId: string): void => {
@@ -1183,8 +1288,8 @@ export default defineUiPlugin<Component>({
                         data-testid="graph-canvas"
                       />
                       <div class="pointer-events-none absolute bottom-3 left-3 rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-[10px] text-slate-400">
-                        Drag steps to arrange · Scroll to zoom · Select a step
-                        to edit
+                        Drag the cyan handle to connect · Drag steps to arrange
+                        · Scroll to zoom
                       </div>
                     </div>
 
