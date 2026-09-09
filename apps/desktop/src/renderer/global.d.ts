@@ -169,6 +169,30 @@ declare global {
         listener: (summary: CostSummary) => void,
       ): Promise<() => void>;
     };
+    readonly files: {
+      getPathForFile(file: File): string;
+      startDrag(
+        capability: string,
+        sessionId: string,
+        relativePaths: readonly string[],
+      ): void;
+      copyWorkspaceFiles(
+        capability: string,
+        sessionId: string,
+        relativePaths: readonly string[],
+      ): Promise<boolean>;
+      readClipboardPaths(capability: string): Promise<readonly string[]>;
+      openWorkspaceFile(
+        capability: string,
+        sessionId: string,
+        path: string,
+      ): Promise<boolean>;
+      revealWorkspaceFile(
+        capability: string,
+        sessionId: string,
+        path: string,
+      ): Promise<boolean>;
+    };
     readonly window: {
       hide(shellCapability: string): Promise<boolean>;
       show(shellCapability: string): Promise<boolean>;

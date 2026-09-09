@@ -753,6 +753,7 @@ if (!app.requestSingleInstanceLock()) {
       personas: personaService,
       models,
       costs,
+      workspaces: workspaceService,
       kernelVersion: KERNEL_VERSION,
       startedAt,
       shellCapability,

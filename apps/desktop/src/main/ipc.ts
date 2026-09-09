@@ -10,12 +10,19 @@ import {
   type PersonaService,
   type PluginManager,
   type SecretFacade,
+  type WorkspaceService,
 } from "@borg/kernel";
 import {
   BrowserWindow,
+  ClipboardItem,
+  clipboard,
   ipcMain,
+  nativeImage,
+  shell,
   type Event as ElectronEvent,
+  type IpcMainEvent,
   type IpcMainInvokeEvent,
+  type NativeImage,
   type WebContents,
 } from "electron";
 import { randomUUID } from "node:crypto";
@@ -25,6 +32,13 @@ import {
   loopStartInputSchema,
   personaIdSchema,
 } from "@borg/contracts";
+import {
+  GNOME_COPIED_FILES_TYPE,
+  URI_LIST_TYPE,
+  encodeFileUriList,
+  encodeGnomeCopiedFiles,
+  selectClipboardFilePaths,
+} from "./native-file-clipboard";
 
 const commandInvokeSchema = z.object({
   id: z.string().min(1),
@@ -235,7 +249,89 @@ const kernelCallSchema = z.discriminatedUnion("method", [
       subscriptionId: z.string().uuid(),
     }),
   }),
+  z.object({
+    method: z.literal("files.copyWorkspaceFiles"),
+    args: z.object({
+      capability: z.string().uuid(),
+      sessionId: z.string().uuid(),
+      relativePaths: z.array(z.string().min(1)).min(1).max(50),
+    }),
+  }),
+  z.object({
+    method: z.literal("files.readClipboardPaths"),
+    args: z.object({ capability: z.string().uuid() }),
+  }),
+  z.object({
+    method: z.literal("files.openWorkspaceFile"),
+    args: z.object({
+      capability: z.string().uuid(),
+      sessionId: z.string().uuid(),
+      path: z.string().min(1),
+    }),
+  }),
+  z.object({
+    method: z.literal("files.revealWorkspaceFile"),
+    args: z.object({
+      capability: z.string().uuid(),
+      sessionId: z.string().uuid(),
+      path: z.string().min(1),
+    }),
+  }),
 ]);
+
+const startDragSchema = z.object({
+  capability: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  relativePaths: z.array(z.string().min(1)).min(1).max(50),
+});
+
+const DRAG_ICON_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+function createDragIcon(): NativeImage {
+  return nativeImage.createFromBuffer(DRAG_ICON_PNG).resize({
+    width: 16,
+    height: 16,
+  });
+}
+
+async function clipboardPayloadText(
+  item: InstanceType<typeof ClipboardItem>,
+  type: string,
+): Promise<string | undefined> {
+  if (!item.types.includes(type)) {
+    return undefined;
+  }
+  const payload = await item.getType(type);
+  return payload instanceof Blob ? payload.text() : undefined;
+}
+
+async function writeNativeFileClipboard(
+  nativePaths: readonly string[],
+): Promise<void> {
+  await clipboard.write([
+    new ClipboardItem({
+      [URI_LIST_TYPE]: encodeFileUriList(nativePaths),
+      [GNOME_COPIED_FILES_TYPE]: encodeGnomeCopiedFiles(nativePaths),
+    }),
+  ]);
+}
+
+async function readNativeFileClipboard(): Promise<readonly string[]> {
+  const items = await clipboard.read();
+  let gnomeCopiedFiles: string | undefined;
+  let uriList: string | undefined;
+  for (const item of items) {
+    gnomeCopiedFiles ??= await clipboardPayloadText(
+      item,
+      GNOME_COPIED_FILES_TYPE,
+    );
+    uriList ??= await clipboardPayloadText(item, URI_LIST_TYPE);
+  }
+  return selectClipboardFilePaths({ gnomeCopiedFiles, uriList });
+}
 
 interface IpcSuccess {
   readonly ok: true;
@@ -274,7 +370,7 @@ function failure(error: unknown): IpcFailure {
 }
 
 function assertTrustedSender(
-  event: IpcMainInvokeEvent,
+  event: IpcMainInvokeEvent | IpcMainEvent,
   getMainWindow: () => BrowserWindow | undefined,
   rendererUrl: string,
 ): void {
@@ -324,6 +420,7 @@ export interface IpcBridgeOptions {
   readonly personas: PersonaService;
   readonly models: ModelGateway;
   readonly costs: CostLedger;
+  readonly workspaces: WorkspaceService;
   readonly kernelVersion: string;
   readonly startedAt: string;
   readonly shellCapability: string;
@@ -899,6 +996,62 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
           costSubscriptions.delete(request.args.subscriptionId);
           return success(true);
         }
+        case "files.copyWorkspaceFiles": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "workspace.manage",
+          );
+          const nativePaths = request.args.relativePaths.map((relativePath) =>
+            options.workspaces.resolveNativePath(
+              pluginId,
+              request.args.sessionId,
+              relativePath,
+            ),
+          );
+          await writeNativeFileClipboard(nativePaths);
+          return success(true);
+        }
+        case "files.readClipboardPaths": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "workspace.manage",
+          );
+          return success(await readNativeFileClipboard());
+        }
+        case "files.openWorkspaceFile": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "workspace.manage",
+          );
+          const nativePath = options.workspaces.resolveNativePath(
+            pluginId,
+            request.args.sessionId,
+            request.args.path,
+          );
+          const openError = await shell.openPath(nativePath);
+          if (openError.length > 0) {
+            throw new Error(openError);
+          }
+          return success(true);
+        }
+        case "files.revealWorkspaceFile": {
+          const pluginId = resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "workspace.manage",
+          );
+          shell.showItemInFolder(
+            options.workspaces.resolveNativePath(
+              pluginId,
+              request.args.sessionId,
+              request.args.path,
+            ),
+          );
+          return success(true);
+        }
       }
       } catch (error) {
         return failure(error);
@@ -906,7 +1059,40 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
     }),
   );
 
+  const onStartDrag = (event: IpcMainEvent, payload: unknown): void => {
+    try {
+      assertTrustedSender(event, options.getMainWindow, options.rendererUrl);
+      observeSender(event.sender);
+      const request = startDragSchema.parse(payload);
+      const pluginId = resolveUiPlugin(
+        options.plugins,
+        request.capability,
+        "workspace.manage",
+      );
+      const files = request.relativePaths.map((relativePath) =>
+        options.workspaces.resolveNativePath(
+          pluginId,
+          request.sessionId,
+          relativePath,
+        ),
+      );
+      const first = files[0];
+      if (!first) {
+        return;
+      }
+      event.sender.startDrag({
+        file: first,
+        files,
+        icon: createDragIcon(),
+      });
+    } catch (error) {
+      console.error("[desktop] startDrag failed", error);
+    }
+  };
+  ipcMain.on("borg:files:startDrag", onStartDrag);
+
   return async () => {
+    ipcMain.removeListener("borg:files:startDrag", onStartDrag);
     ipcMain.removeHandler("borg:command:invoke");
     ipcMain.removeHandler("borg:kernel:bootstrap");
     ipcMain.removeHandler("borg:kernel:call");
