@@ -1776,6 +1776,9 @@ export function allocateConnectorAccountId(
 
 export const discordChannelStatusSchema = z
   .object({
+    accountId: connectorAccountIdSchema,
+    name: connectorAccountNameSchema,
+    adapterId: z.string().min(1).max(200),
     hasToken: z.boolean(),
     connected: z.boolean(),
     botUserId: z.string().optional(),
@@ -1796,20 +1799,20 @@ export type DiscordChannelStatus = z.infer<typeof discordChannelStatusSchema>;
 
 export const discordChannelGetStatus = defineCommand({
   id: "borg.channel.discord.getStatus",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: discordChannelStatusSchema,
 });
 
 export const discordChannelVerify = defineCommand({
   id: "borg.channel.discord.verify",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: discordChannelStatusSchema,
   timeoutMs: 30_000,
 });
 
 export const discordChannelDisconnect = defineCommand({
   id: "borg.channel.discord.disconnect",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: discordChannelStatusSchema,
 });
 
@@ -1867,6 +1870,8 @@ export const COINBASE_KEY_NAME_PATTERN =
 
 export const coinbaseStatusSchema = z
   .object({
+    accountId: connectorAccountIdSchema,
+    name: connectorAccountNameSchema,
     hasPrivateKey: z.boolean(),
     hasKeyName: z.boolean(),
     enabled: z.boolean(),
@@ -1880,20 +1885,20 @@ export type CoinbaseStatus = z.infer<typeof coinbaseStatusSchema>;
 
 export const coinbaseGetStatus = defineCommand({
   id: "borg.coinbase.getStatus",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: coinbaseStatusSchema,
 });
 
 export const coinbaseVerify = defineCommand({
   id: "borg.coinbase.verify",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: coinbaseStatusSchema,
   timeoutMs: 30_000,
 });
 
 export const coinbaseDisconnect = defineCommand({
   id: "borg.coinbase.disconnect",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: coinbaseStatusSchema,
 });
 
@@ -1911,7 +1916,11 @@ export const coinbaseAccountSchema = z
 
 export type CoinbaseAccount = z.infer<typeof coinbaseAccountSchema>;
 
-export const coinbaseListAccountsInputSchema = z.object({}).strict();
+export const coinbaseListAccountsInputSchema = z
+  .object({
+    connectionId: connectorAccountIdSchema.optional(),
+  })
+  .strict();
 export type CoinbaseListAccountsInput = z.input<
   typeof coinbaseListAccountsInputSchema
 >;
@@ -1927,6 +1936,7 @@ export type CoinbaseListAccountsOutput = z.infer<
 
 export const coinbaseGetAccountInputSchema = z
   .object({
+    connectionId: connectorAccountIdSchema.optional(),
     accountId: z.string().regex(COINBASE_ACCOUNT_ID_PATTERN),
   })
   .strict();
@@ -1953,6 +1963,7 @@ export type CoinbaseProduct = z.infer<typeof coinbaseProductSchema>;
 
 export const coinbaseGetPriceInputSchema = z
   .object({
+    connectionId: connectorAccountIdSchema.optional(),
     productId: z.string().regex(COINBASE_PRODUCT_ID_PATTERN),
   })
   .strict();
@@ -1978,6 +1989,7 @@ export type CoinbaseTransaction = z.infer<typeof coinbaseTransactionSchema>;
 
 export const coinbaseListTransactionsInputSchema = z
   .object({
+    connectionId: connectorAccountIdSchema.optional(),
     accountId: z.string().regex(COINBASE_ACCOUNT_ID_PATTERN),
   })
   .strict();
@@ -1996,6 +2008,7 @@ export type CoinbaseListTransactionsOutput = z.infer<
 
 export const coinbaseCreateOrderInputSchema = z
   .object({
+    connectionId: connectorAccountIdSchema.optional(),
     productId: z.string().regex(COINBASE_PRODUCT_ID_PATTERN),
     side: z.enum(["BUY", "SELL"]),
     quoteSize: z.string().regex(COINBASE_AMOUNT_PATTERN).optional(),
@@ -2024,6 +2037,7 @@ export type CoinbaseCreateOrderOutput = z.infer<
 
 export const coinbaseSendCryptoInputSchema = z
   .object({
+    connectionId: connectorAccountIdSchema.optional(),
     accountId: z.string().regex(COINBASE_ACCOUNT_ID_PATTERN),
     to: z
       .string()
@@ -2057,7 +2071,11 @@ export const coinbaseOrderSchema = z
 
 export type CoinbaseOrder = z.infer<typeof coinbaseOrderSchema>;
 
-export const coinbaseListOrdersInputSchema = z.object({}).strict();
+export const coinbaseListOrdersInputSchema = z
+  .object({
+    connectionId: connectorAccountIdSchema.optional(),
+  })
+  .strict();
 export type CoinbaseListOrdersInput = z.input<typeof coinbaseListOrdersInputSchema>;
 
 export const coinbaseListOrdersOutputSchema = z
@@ -2844,6 +2862,7 @@ export const imapChannelInject = defineCommand({
   id: "borg.channel.imap.inject",
   input: z
     .object({
+      accountId: connectorAccountIdSchema.optional(),
       destinationId: z.string().min(1).max(256).optional(),
       externalId: z.string().min(1).max(256).optional(),
       text: z.string().max(65_536),
@@ -2858,6 +2877,9 @@ export const imapChannelInject = defineCommand({
 
 export const m365ChannelStatusSchema = z
   .object({
+    accountId: connectorAccountIdSchema,
+    name: connectorAccountNameSchema,
+    adapterId: z.string().min(1).max(200),
     connected: z.boolean(),
     hasClientId: z.boolean(),
     mailbox: z.string().min(1).max(320).optional(),
@@ -2869,20 +2891,20 @@ export type M365ChannelStatus = z.infer<typeof m365ChannelStatusSchema>;
 
 export const m365ChannelGetStatus = defineCommand({
   id: "borg.channel.m365.getStatus",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: m365ChannelStatusSchema,
 });
 
 export const m365ChannelConnect = defineCommand({
   id: "borg.channel.m365.connect",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: m365ChannelStatusSchema,
   timeoutMs: 180_000,
 });
 
 export const m365ChannelDisconnect = defineCommand({
   id: "borg.channel.m365.disconnect",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: m365ChannelStatusSchema,
 });
 
@@ -2890,6 +2912,7 @@ export const m365ChannelInject = defineCommand({
   id: "borg.channel.m365.inject",
   input: z
     .object({
+      accountId: connectorAccountIdSchema.optional(),
       destinationId: z.string().min(1).max(256).optional(),
       externalId: z.string().min(1).max(256).optional(),
       text: z.string().max(65_536),
@@ -2904,6 +2927,9 @@ export const m365ChannelInject = defineCommand({
 
 export const googleChannelStatusSchema = z
   .object({
+    accountId: connectorAccountIdSchema,
+    name: connectorAccountNameSchema,
+    adapterId: z.string().min(1).max(200),
     connected: z.boolean(),
     hasClientId: z.boolean(),
     mailbox: z.string().min(1).max(320).optional(),
@@ -2915,20 +2941,20 @@ export type GoogleChannelStatus = z.infer<typeof googleChannelStatusSchema>;
 
 export const googleChannelGetStatus = defineCommand({
   id: "borg.channel.google.getStatus",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: googleChannelStatusSchema,
 });
 
 export const googleChannelConnect = defineCommand({
   id: "borg.channel.google.connect",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: googleChannelStatusSchema,
   timeoutMs: 180_000,
 });
 
 export const googleChannelDisconnect = defineCommand({
   id: "borg.channel.google.disconnect",
-  input: z.object({}).strict(),
+  input: connectorCommandInputSchema,
   output: googleChannelStatusSchema,
 });
 
@@ -2936,6 +2962,7 @@ export const googleChannelInject = defineCommand({
   id: "borg.channel.google.inject",
   input: z
     .object({
+      accountId: connectorAccountIdSchema.optional(),
       destinationId: z.string().min(1).max(256).optional(),
       externalId: z.string().min(1).max(256).optional(),
       text: z.string().max(65_536),
@@ -2965,6 +2992,7 @@ export type CalendarEvent = z.infer<typeof calendarEventSchema>;
 
 export const calendarListInputSchema = z
   .object({
+    accountId: connectorAccountIdSchema.optional(),
     start: z.string().datetime().optional(),
     end: z.string().datetime().optional(),
     maxResults: z.number().int().min(1).max(25).default(10),
@@ -2983,6 +3011,7 @@ export type CalendarListOutput = z.infer<typeof calendarListOutputSchema>;
 
 export const calendarCreateInputSchema = z
   .object({
+    accountId: connectorAccountIdSchema.optional(),
     title: z.string().min(1).max(256),
     start: z.string().datetime(),
     end: z.string().datetime(),
@@ -3016,6 +3045,7 @@ export type DriveFile = z.infer<typeof driveFileSchema>;
 
 export const driveSearchInputSchema = z
   .object({
+    accountId: connectorAccountIdSchema.optional(),
     query: z.string().min(1).max(200),
     maxResults: z.number().int().min(1).max(25).optional(),
   })
@@ -3033,6 +3063,7 @@ export type DriveSearchOutput = z.infer<typeof driveSearchOutputSchema>;
 
 export const driveReadInputSchema = z
   .object({
+    accountId: connectorAccountIdSchema.optional(),
     id: z
       .string()
       .min(1)
@@ -3075,6 +3106,7 @@ export type Contact = z.infer<typeof contactSchema>;
 
 export const contactsSearchInputSchema = z
   .object({
+    accountId: connectorAccountIdSchema.optional(),
     query: z.string().min(1).max(200).optional(),
     maxResults: z.number().int().min(1).max(25).default(10),
   })
