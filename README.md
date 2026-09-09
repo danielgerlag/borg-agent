@@ -25,7 +25,7 @@ npx --yes pnpm@12.0.0 install
 npx --yes pnpm@12.0.0 dev
 ```
 
-If an Azure Artifacts mirror rotates between equivalent `ms-feed-*` hosts, pnpm 12 may reject an unchanged lockfile URL during verification. After reviewing the committed lockfile, use `npx --yes pnpm@12.0.0 install --trust-lockfile` for that mirrored-registry case.
+The workspace sets `trustLockfile: true`. Azure Artifacts rotates `ms-feed-*` tarball hosts, and pnpm 12 would otherwise reject the committed lockfile. Tarball integrity is still checked on download.
 
 Closing the window hides Borg. Use the tray menu to show it again or quit the kernel.
 
