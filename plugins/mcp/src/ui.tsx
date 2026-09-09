@@ -9,6 +9,7 @@ import { Button, EmptyState, Panel } from "@borg/ui-kit";
 import { Plus, RefreshCw, Trash2 } from "lucide-solid";
 import {
   For,
+  Index,
   Show,
   createMemo,
   createSignal,
@@ -159,23 +160,23 @@ export default defineUiPlugin<Component>({
             }
           >
             <ul class="mt-6 grid gap-4" data-testid="mcp-server-list">
-              <For each={drafts()}>
+              <Index each={drafts()}>
                 {(server, index) => {
                   const snapshot = () =>
-                    status().find((entry) => entry.id === server.id);
+                    status().find((entry) => entry.id === server().id);
                   return (
                     <li
                       class="rounded-xl border border-[var(--border)] bg-[var(--panel-muted)] p-4"
-                      data-testid={`mcp-server-row-${server.id}`}
+                      data-testid={`mcp-server-row-${server().id}`}
                     >
                       <div class="flex items-center justify-between gap-3">
                         <input
                           class="w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
                           data-testid="mcp-server-id"
-                          value={server.id}
+                          value={server().id}
                           onInput={(event) =>
-                            updateDraft(index(), {
-                              ...server,
+                            updateDraft(index, {
+                              ...server(),
                               id: event.currentTarget.value,
                             })
                           }
@@ -184,10 +185,10 @@ export default defineUiPlugin<Component>({
                           <input
                             type="checkbox"
                             data-testid="mcp-server-enabled"
-                            checked={server.enabled}
+                            checked={server().enabled}
                             onChange={(event) =>
-                              updateDraft(index(), {
-                                ...server,
+                              updateDraft(index, {
+                                ...server(),
                                 enabled: event.currentTarget.checked,
                               })
                             }
@@ -201,15 +202,15 @@ export default defineUiPlugin<Component>({
                           <select
                             class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
                             data-testid="mcp-server-transport"
-                            value={server.transport}
+                            value={server().transport}
                             onChange={(event) => {
                               const transport = event.currentTarget.value as
                                 | "stdio"
                                 | "sse"
                                 | "streamable-http";
                               updateDraft(
-                                index(),
-                                changeDraftTransport(server, transport),
+                                index,
+                                changeDraftTransport(server(), transport),
                               );
                             }}
                           >
@@ -224,26 +225,26 @@ export default defineUiPlugin<Component>({
                             class="ml-2 align-middle"
                             type="checkbox"
                             data-testid="mcp-server-reconnect"
-                            checked={server.reconnect}
+                            checked={server().reconnect}
                             onChange={(event) =>
-                              updateDraft(index(), {
-                                ...server,
+                              updateDraft(index, {
+                                ...server(),
                                 reconnect: event.currentTarget.checked,
                               })
                             }
                           />
                         </label>
                       </div>
-                      <Show when={server.transport === "stdio"}>
+                      <Show when={server().transport === "stdio"}>
                         <label class="mt-3 block text-xs text-[var(--text-muted)]">
                           Command
                           <input
                             class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
                             data-testid="mcp-server-command"
-                            value={server.command ?? ""}
+                            value={server().command ?? ""}
                             onInput={(event) =>
-                              updateDraft(index(), {
-                                ...server,
+                              updateDraft(index, {
+                                ...server(),
                                 command: event.currentTarget.value,
                               })
                             }
@@ -255,10 +256,10 @@ export default defineUiPlugin<Component>({
                             class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
                             data-testid="mcp-server-arguments"
                             rows={3}
-                            value={argumentsToText(server.arguments)}
+                            value={argumentsToText(server().arguments)}
                             onInput={(event) =>
-                              updateDraft(index(), {
-                                ...server,
+                              updateDraft(index, {
+                                ...server(),
                                 arguments: textToArguments(event.currentTarget.value),
                               })
                             }
@@ -271,12 +272,12 @@ export default defineUiPlugin<Component>({
                             data-testid="mcp-env-secret-refs"
                             rows={2}
                             value={
-                              server.environmentSecretRefsText ??
-                              refsToText(server.environmentSecretRefs)
+                              server().environmentSecretRefsText ??
+                              refsToText(server().environmentSecretRefs)
                             }
                             onInput={(event) =>
-                              updateDraft(index(), {
-                                ...server,
+                              updateDraft(index, {
+                                ...server(),
                                 environmentSecretRefsText:
                                   event.currentTarget.value,
                                 environmentSecretRefs: textToRefs(
@@ -287,16 +288,16 @@ export default defineUiPlugin<Component>({
                           />
                         </label>
                       </Show>
-                      <Show when={server.transport !== "stdio"}>
+                      <Show when={server().transport !== "stdio"}>
                         <label class="mt-3 block text-xs text-[var(--text-muted)]">
                           URL
                           <input
                             class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
                             data-testid="mcp-server-url"
-                            value={server.url ?? ""}
+                            value={server().url ?? ""}
                             onInput={(event) =>
-                              updateDraft(index(), {
-                                ...server,
+                              updateDraft(index, {
+                                ...server(),
                                 url: event.currentTarget.value,
                               })
                             }
@@ -309,12 +310,12 @@ export default defineUiPlugin<Component>({
                             data-testid="mcp-header-secret-refs"
                             rows={2}
                             value={
-                              server.headerSecretRefsText ??
-                              refsToText(server.headerSecretRefs)
+                              server().headerSecretRefsText ??
+                              refsToText(server().headerSecretRefs)
                             }
                             onInput={(event) =>
-                              updateDraft(index(), {
-                                ...server,
+                              updateDraft(index, {
+                                ...server(),
                                 headerSecretRefsText:
                                   event.currentTarget.value,
                                 headerSecretRefs: textToRefs(
@@ -352,7 +353,7 @@ export default defineUiPlugin<Component>({
                           data-testid="mcp-remove-server"
                           onClick={() => {
                             const next = drafts().filter(
-                              (_, entryIndex) => entryIndex !== index(),
+                              (_, entryIndex) => entryIndex !== index,
                             );
                             setDrafts(next);
                             void persist(next);
@@ -365,7 +366,7 @@ export default defineUiPlugin<Component>({
                     </li>
                   );
                 }}
-              </For>
+              </Index>
             </ul>
           </Show>
 
