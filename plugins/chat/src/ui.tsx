@@ -1048,12 +1048,9 @@ export default defineUiPlugin<Component>({
                                       data-message-id={entry.id}
                                       data-role={entry.role}
                                     >
-                                      <p class="text-[var(--text-muted)]">
-                                        {activityLabel(entry)}
-                                      </p>
                                       <details class="mt-1">
                                         <summary class="cursor-pointer text-xs text-[var(--text-subtle)]">
-                                          Details
+                                          {activityLabel(entry)}
                                         </summary>
                                         <p class="mt-2 whitespace-pre-wrap text-xs text-[var(--text-muted)]">
                                           {entry.content}
