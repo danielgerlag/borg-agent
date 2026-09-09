@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "check:boundaries": "node scripts/check-plugin-boundaries.mjs",
+    "check:boundaries": "node scripts/check-plugin-boundaries.mjs && node scripts/check-editable-for-lists.mjs",
     "build": "pnpm check:boundaries && node scripts/generate-bundled-plugins.mjs && pnpm -r --if-present build",
     "dev": "pnpm build && node scripts/run-electron.mjs",
     "start": "pnpm build && node scripts/run-electron.mjs",
