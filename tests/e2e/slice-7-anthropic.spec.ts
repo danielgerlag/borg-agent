@@ -206,9 +206,9 @@ async function connectAnthropic(): Promise<void> {
 
 async function pickSonnet(): Promise<void> {
   await page.getByTestId("settings-section-borg.chat.personas").click();
-  await page.getByTestId("wizard-model-select").selectOption({
-    label: "Claude Sonnet 5",
-  });
+  await page.getByTestId("wizard-model-select").selectOption(
+    "borg.anthropic:claude-sonnet-5",
+  );
   await expect(page.getByTestId("wizard-model-select")).toHaveValue(
     "borg.anthropic:claude-sonnet-5",
   );
