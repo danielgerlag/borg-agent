@@ -103,6 +103,9 @@ test.skip(
 );
 
 test.beforeAll(async () => {
+  if (!publishedRoot) {
+    throw new Error("EXT_APPS_PUBLISHED is required");
+  }
   for (const server of SERVERS) {
     const entry = path.join(
       publishedRoot,
