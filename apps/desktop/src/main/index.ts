@@ -17,6 +17,8 @@ import {
   NotificationService,
   PersonaService,
   PersistenceRegistry,
+  PLUGIN_ENABLEMENT_NAMESPACE,
+  pluginEnablementSchema,
   PluginManager,
   ProcessSupervisor,
   PromptAssembler,
@@ -101,8 +103,10 @@ let interactionSubscription: Disposable | undefined;
 let loopSubscription: Disposable | undefined;
 let pluginLifecycleSubscription: Disposable | undefined;
 let setupSchemaRegistration: Disposable | undefined;
+let pluginEnablementSchemaRegistration: Disposable | undefined;
 let startupRecovery: { readonly message: string } | undefined;
 let windowServicesReady = false;
+let pluginReloadPaused = 0;
 let quitting = false;
 let shutdownComplete = false;
 let currentTrayMenuLabels: readonly string[] = [];
@@ -327,7 +331,9 @@ function createMainWindow(): BrowserWindow {
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => {
-    event.preventDefault();
+    if (event.url !== window.webContents.getURL()) {
+      event.preventDefault();
+    }
   });
   window.on("close", (event) => {
     if (!quitting) {
@@ -419,6 +425,7 @@ async function requestQuit(): Promise<void> {
       webSocketService?.shutdown();
       networkService?.shutdown();
     }
+    await pluginEnablementSchemaRegistration?.dispose();
     await setupSchemaRegistration?.dispose();
   } finally {
     removeEmbeddedContentProtocol?.();
@@ -615,6 +622,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     pluginLifecycleSubscription = pluginManager.subscribe(() => {
       if (
+        pluginReloadPaused === 0 &&
         windowServicesReady &&
         !quitting &&
         mainWindow &&
@@ -649,6 +657,10 @@ if (!app.requestSingleInstanceLock()) {
         "system.setup",
         setupSchema,
       );
+      pluginEnablementSchemaRegistration = configFacade.registerSchema(
+        PLUGIN_ENABLEMENT_NAMESPACE,
+        pluginEnablementSchema,
+      );
       const setup = await getSetupState();
       await configFacade.update("system.setup", {
         secretBackend: setup.secretBackend,
@@ -670,6 +682,15 @@ if (!app.requestSingleInstanceLock()) {
       if (!persistence.hasSecretStore()) {
         throw new Error("The selected secret store did not install its provider");
       }
+
+      pluginManager.lock(
+        getManifest(configStoreSources[0]).id,
+        "Required for Borg to start",
+      );
+      pluginManager.lock(
+        getManifest(selectedSecretSource).id,
+        "Required for Borg to start",
+      );
 
       const ordinarySources = bundledMainPlugins.filter(
         (source) =>
@@ -739,6 +760,14 @@ if (!app.requestSingleInstanceLock()) {
       getMainWindow: () => mainWindow,
       requestQuit: () => {
         void requestQuit();
+      },
+      runWithPausedPluginReload: async (operation) => {
+        pluginReloadPaused += 1;
+        try {
+          return await operation();
+        } finally {
+          pluginReloadPaused -= 1;
+        }
       },
     });
     installTestApi();

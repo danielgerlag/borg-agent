@@ -31,10 +31,12 @@ import {
   Show,
   createMemo,
   createSignal,
+  onMount,
   type Component,
   type JSX,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { PluginsSettings } from "./plugins-settings";
 
 type Surface = "chat" | "settings" | "activity" | "developer" | "setup";
 
@@ -52,6 +54,7 @@ interface AppProps {
   readonly pendingInteractions: readonly PendingInteraction[];
   readonly pluginErrors: readonly string[];
   readonly setupCompleted: boolean;
+  readonly shellCapability: string;
   readonly toasts: readonly RendererNotification[];
   completeSetup(): Promise<void>;
   dismissToast(id: string): void;
@@ -74,6 +77,22 @@ export const App: Component<AppProps> = (props) => {
   const [wizardReadinessErrors, setWizardReadinessErrors] = createSignal<
     readonly string[]
   >([]);
+  const [settingsSection, setSettingsSection] = createSignal("system.plugins");
+
+  onMount(() => {
+    const restoreSurface = sessionStorage.getItem("borg.restore.surface");
+    const restoreSection = sessionStorage.getItem(
+      "borg.restore.settingsSection",
+    );
+    sessionStorage.removeItem("borg.restore.surface");
+    sessionStorage.removeItem("borg.restore.settingsSection");
+    if (restoreSurface === "settings") {
+      if (restoreSection) {
+        setSettingsSection(restoreSection);
+      }
+      setSurface("settings");
+    }
+  });
 
   const primaryViews = createMemo(() =>
     props.workspaceViews.filter(({ placement }) => placement !== "developer"),
@@ -271,6 +290,8 @@ export const App: Component<AppProps> = (props) => {
             <Show when={surface() === "settings"}>
               <SettingsSurface
                 contributions={primarySettings()}
+                shellCapability={props.shellCapability}
+                initialSectionId={settingsSection()}
                 onOpenSetup={() => {
                   setWizardStep(0);
                   setSurface("setup");
@@ -744,12 +765,19 @@ const PrimarySurface: Component<{
 const SettingsSurface: Component<{
   readonly contributions: readonly SettingsPageContribution<Component>[];
   readonly hasDeveloperTools: boolean;
+  readonly shellCapability: string;
+  readonly initialSectionId: string;
   onOpenSetup(): void;
   onOpenDeveloper(): void;
 }> = (props) => {
-  const [selectedId, setSelectedId] = createSignal(
-    props.contributions[0]?.id ?? "",
-  );
+  const navItems = createMemo(() => [
+    { id: "system.plugins", label: "Plugins" },
+    ...props.contributions.map((contribution) => ({
+      id: contribution.id,
+      label: contribution.label,
+    })),
+  ]);
+  const [selectedId, setSelectedId] = createSignal(props.initialSectionId);
   const selected = createMemo(
     () =>
       props.contributions.find(({ id }) => id === selectedId()) ??
@@ -766,21 +794,21 @@ const SettingsSurface: Component<{
         </p>
         <h1 class="mt-2 text-2xl font-semibold">Make Borg yours</h1>
         <nav class="mt-7 grid gap-1" aria-label="Settings sections">
-          <For each={props.contributions}>
-            {(contribution) => (
+          <For each={navItems()}>
+            {(item) => (
               <button
                 type="button"
                 class="rounded-xl px-3 py-2.5 text-left text-sm transition"
                 classList={{
                   "bg-[var(--accent)]/12 text-[var(--accent)]":
-                    selected()?.id === contribution.id,
+                    selectedId() === item.id,
                   "text-[var(--text-muted)] hover:bg-[var(--panel-muted)] hover:text-[var(--text)]":
-                    selected()?.id !== contribution.id,
+                    selectedId() !== item.id,
                 }}
-                onClick={() => setSelectedId(contribution.id)}
-                data-testid={`settings-section-${contribution.id}`}
+                onClick={() => setSelectedId(item.id)}
+                data-testid={`settings-section-${item.id}`}
               >
-                {contribution.label}
+                {item.label}
               </button>
             )}
           </For>
@@ -809,15 +837,25 @@ const SettingsSurface: Component<{
         </div>
       </aside>
       <div class="min-h-0 overflow-y-auto p-8">
-        <Show keyed when={selected()}>
-          {(contribution) => (
+        <Show
+          when={selectedId() !== "system.plugins"}
+          fallback={
             <div class="mx-auto max-w-3xl">
-              <h2 class="mb-5 text-2xl font-semibold">{contribution.label}</h2>
-              <ContributionBoundary label={contribution.label}>
-                <Dynamic component={contribution.component} />
-              </ContributionBoundary>
+              <h2 class="mb-5 text-2xl font-semibold">Plugins</h2>
+              <PluginsSettings shellCapability={props.shellCapability} />
             </div>
-          )}
+          }
+        >
+          <Show keyed when={selected()}>
+            {(contribution) => (
+              <div class="mx-auto max-w-3xl">
+                <h2 class="mb-5 text-2xl font-semibold">{contribution.label}</h2>
+                <ContributionBoundary label={contribution.label}>
+                  <Dynamic component={contribution.component} />
+                </ContributionBoundary>
+              </div>
+            )}
+          </Show>
         </Show>
       </div>
     </section>

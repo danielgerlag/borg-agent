@@ -37,6 +37,7 @@ async function start(root: HTMLElement): Promise<void> {
           pendingInteractions={interactionStore.pending()}
           pluginErrors={pluginUi.errors}
           setupCompleted={snapshot.setup.wizardCompleted}
+          shellCapability={snapshot.shellCapability}
           toasts={toastStore.toasts()}
           completeSetup={async () => {
             await window.borg.setup.complete(snapshot.shellCapability);

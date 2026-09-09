@@ -724,10 +724,12 @@ Boot has a capability bootstrap phase:
 1. discover and statically validate all bundled manifests;
 2. select the sole compatible bootstrap `configStore` contribution by manifest capability, not by hard-coded plugin ID;
 3. activate it with a minimal bootstrap context containing only logger, platform, and scoped data directory;
-4. install config/store facades and load kernel/plugin enablement state;
+4. install config/store facades and load kernel/plugin enablement state from `system.plugins.disabled` (**Settings → Plugins**);
 5. activate the configured `secretStore`;
 6. load personas and activate the remaining plugins in deterministic order;
 7. mark the kernel ready and show/continue the wizard.
+
+Plugin enablement is default-on: ids missing from `system.plugins.disabled` stay active, and new plugins appear on. **Settings → Plugins** toggles that list at runtime; the config store and the selected secret store are locked because Borg cannot start without them.
 
 V1 ships one config-store candidate. Multiple equal-priority bootstrap stores are a configuration error, not last-write-wins. Secret-store selection can be persisted through the config facade.
 
