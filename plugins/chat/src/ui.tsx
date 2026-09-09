@@ -744,7 +744,7 @@ export default defineUiPlugin<Component>({
           data-testid="chat-workspace"
         >
           <div
-            class="grid h-full min-h-0 grid-cols-[13rem_minmax(20rem,1fr)]"
+            class="grid h-full min-h-0 grid-cols-[13rem_minmax(20rem,1fr)] grid-rows-[minmax(0,1fr)]"
             inert={deleteCandidate() !== undefined}
           >
             <aside class="flex min-h-0 flex-col border-r border-[var(--border)] bg-[var(--panel-muted)]/45 p-3">
@@ -759,7 +759,7 @@ export default defineUiPlugin<Component>({
                 New chat
               </button>
               <div
-                class="mt-3 grid min-h-0 gap-1 overflow-y-auto"
+                class="mt-3 grid min-h-0 flex-1 gap-1 overflow-y-auto"
                 data-testid="chat-session-list"
               >
                 <For
@@ -804,7 +804,7 @@ export default defineUiPlugin<Component>({
               </div>
             </aside>
 
-            <div class="flex min-w-0 flex-col">
+            <div class="flex min-h-0 min-w-0 flex-col">
               <header class="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
                 <div class="min-w-0">
                   <h2
@@ -881,9 +881,9 @@ export default defineUiPlugin<Component>({
               </header>
 
               <div class="flex min-h-0 flex-1">
-                <main class="flex min-w-0 flex-1 flex-col">
+                <main class="flex min-h-0 min-w-0 flex-1 flex-col">
                   <div
-                    class="flex-1 space-y-4 overflow-y-auto p-5"
+                    class="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
                     data-testid="chat-transcript"
                   >
                     <Show when={emptyConversation()}>

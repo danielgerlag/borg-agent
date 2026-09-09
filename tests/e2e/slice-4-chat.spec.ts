@@ -78,6 +78,87 @@ test.afterEach(async () => {
   rmSync(profileDirectory, { recursive: true, force: true });
 });
 
+test("scrolls the chat transcript when messages exceed the window", async () => {
+  await expect(page.getByTestId("chat-workspace")).toBeVisible();
+  await expect(page.getByTestId("chat-composer-input")).toBeVisible();
+
+  const emptyMetrics = await page.evaluate(() => {
+    const measure = (element: Element | null | undefined) => {
+      if (!(element instanceof HTMLElement)) {
+        return undefined;
+      }
+      const style = getComputedStyle(element);
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        overflowY: style.overflowY,
+        height: style.height,
+      };
+    };
+    const composer = document.querySelector('[data-testid="chat-composer-input"]');
+    const workspace = document.querySelector('[data-testid="chat-workspace"]');
+    const grid = workspace?.firstElementChild;
+    return {
+      innerHeight: window.innerHeight,
+      workspace: measure(workspace),
+      grid: measure(grid),
+      transcript: measure(document.querySelector('[data-testid="chat-transcript"]')),
+      composerBottom: composer?.getBoundingClientRect().bottom,
+    };
+  });
+
+  expect(
+    emptyMetrics.composerBottom,
+    `composer is clipped on an empty chat ${JSON.stringify(emptyMetrics)}`,
+  ).toBeLessThanOrEqual(emptyMetrics.innerHeight);
+
+  for (let index = 0; index < 12; index += 1) {
+    await sendMessage(`overflow line ${index}`);
+    await expect(
+      page.locator('[data-testid="chat-message"][data-role="assistant"]').last(),
+    ).toContainText(`Mock reply: overflow line ${index}`);
+  }
+
+  const metrics = await page.evaluate(() => {
+    const transcript = document.querySelector('[data-testid="chat-transcript"]');
+    if (!(transcript instanceof HTMLElement)) {
+      return undefined;
+    }
+    const style = getComputedStyle(transcript);
+    const composer = document.querySelector('[data-testid="chat-composer-input"]');
+    return {
+      innerHeight: window.innerHeight,
+      clientHeight: transcript.clientHeight,
+      scrollHeight: transcript.scrollHeight,
+      overflowY: style.overflowY,
+      height: style.height,
+      composerBottom: composer?.getBoundingClientRect().bottom,
+    };
+  });
+
+  expect(metrics, `layout ${JSON.stringify(metrics)}`).toBeDefined();
+  expect(
+    metrics!.composerBottom,
+    `composer is clipped after messages ${JSON.stringify(metrics)}`,
+  ).toBeLessThanOrEqual(metrics!.innerHeight);
+  expect(
+    metrics!.scrollHeight,
+    `transcript is not taller than its box ${JSON.stringify(metrics)}`,
+  ).toBeGreaterThan(metrics!.clientHeight);
+  expect(
+    metrics!.clientHeight,
+    `transcript grew past the window ${JSON.stringify(metrics)}`,
+  ).toBeLessThanOrEqual(metrics!.innerHeight);
+
+  await page
+    .locator('[data-testid="chat-message"][data-role="user"]')
+    .first()
+    .scrollIntoViewIfNeeded();
+  await expect(
+    page.locator('[data-testid="chat-message"][data-role="user"]').first(),
+  ).toBeInViewport();
+});
+
 test("sends a chat message through the persona-backed mock loop", async () => {
   await expect(page.getByTestId("chat-empty-state")).toBeVisible();
   await expect(page.getByTestId("chat-session-list")).toContainText(
