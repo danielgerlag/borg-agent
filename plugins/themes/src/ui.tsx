@@ -1,5 +1,5 @@
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Panel, Select } from "@borg/ui-kit";
 import { SunMoon } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";
 
@@ -61,26 +61,19 @@ export default defineUiPlugin<Component>({
               <p class="mt-2 text-sm text-[var(--text-muted)]">
                 Choose the shell color theme. Dark is the default.
               </p>
-              <label
-                class="mt-5 block text-sm text-[var(--text-muted)]"
-                for="themes-select"
-              >
-                Theme
-              </label>
-              <select
-                id="themes-select"
+              <Select
+                class="mt-5"
+                label="Theme"
                 value={theme()}
-                onChange={(event) =>
-                  setTheme(
-                    event.currentTarget.value === "light" ? "light" : "dark",
-                  )
+                onChange={(value) =>
+                  setTheme(value === "light" ? "light" : "dark")
                 }
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                options={[
+                  { value: "dark", label: "Dark" },
+                  { value: "light", label: "Light" },
+                ]}
                 data-testid="themes-select"
-              >
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-              </select>
+              />
               <div class="mt-4">
                 <Button
                   type="button"

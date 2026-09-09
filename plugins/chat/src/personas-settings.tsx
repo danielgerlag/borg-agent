@@ -1,5 +1,5 @@
 import type { ModelDescriptor, Persona } from "@borg/contracts";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Panel, Select, TextField } from "@borg/ui-kit";
 import type { PluginUiContext } from "@borg/plugin-sdk";
 import { Plus, Star, Trash2 } from "lucide-solid";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";
@@ -344,19 +344,19 @@ export function createPersonasSettings(
         <Show when={creating()}>
           <Panel class="mt-5" data-testid="persona-create-form">
             <p class="text-sm font-semibold">New persona</p>
-            <input
+            <TextField
+              class="mt-3"
               value={newName()}
-              onInput={(event) => setNewName(event.currentTarget.value)}
-              class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              onChange={setNewName}
               placeholder="Name"
               data-testid="settings-persona-name"
             />
-            <textarea
+            <TextField
+              class="mt-3"
               value={newInstructions()}
-              onInput={(event) =>
-                setNewInstructions(event.currentTarget.value)
-              }
-              class="mt-3 min-h-28 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+              onChange={setNewInstructions}
+              rows={5}
+              inputClass="min-h-28"
               placeholder="Instructions. This is who the persona is and how it should work."
               data-testid="settings-persona-instructions"
             />
@@ -425,90 +425,73 @@ export function createPersonasSettings(
                 </div>
               </div>
 
-              <label class="mt-4 block text-sm text-[var(--text-muted)]">
-                Name
-                <input
-                  value={name()}
-                  onInput={(event) => setName(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                  data-testid="persona-name"
-                />
-              </label>
-              <label class="mt-4 block text-sm text-[var(--text-muted)]">
-                Description
-                <input
-                  value={description()}
-                  onInput={(event) => setDescription(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                  data-testid="persona-description"
-                />
-              </label>
-              <label class="mt-4 block text-sm text-[var(--text-muted)]">
-                Instructions
-                <textarea
-                  value={instructions()}
-                  onInput={(event) =>
-                    setInstructions(event.currentTarget.value)
-                  }
-                  class="mt-2 min-h-36 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                  data-testid="persona-instructions"
-                />
-              </label>
+              <TextField
+                class="mt-4"
+                label="Name"
+                value={name()}
+                onChange={setName}
+                data-testid="persona-name"
+              />
+              <TextField
+                class="mt-4"
+                label="Description"
+                value={description()}
+                onChange={setDescription}
+                data-testid="persona-description"
+              />
+              <TextField
+                class="mt-4"
+                label="Instructions"
+                value={instructions()}
+                onChange={setInstructions}
+                rows={8}
+                inputClass="min-h-36"
+                data-testid="persona-instructions"
+              />
 
-              <label class="mt-4 block text-sm text-[var(--text-muted)]">
-                Loop
-                <select
-                  value={loopStrategy()}
-                  onChange={(event) =>
-                    setLoopStrategy(
-                      event.currentTarget.value === "code-act"
-                        ? "code-act"
-                        : "react",
-                    )
-                  }
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                  data-testid="persona-loop-strategy"
-                >
-                  <option value="react">ReAct. Think, then use tools.</option>
-                  <option value="code-act">
-                    CodeAct. Write and run code to act.
-                  </option>
-                </select>
-              </label>
+              <Select
+                class="mt-4"
+                label="Loop"
+                value={loopStrategy()}
+                onChange={(value) =>
+                  setLoopStrategy(value === "code-act" ? "code-act" : "react")
+                }
+                options={[
+                  { value: "react", label: "ReAct. Think, then use tools." },
+                  {
+                    value: "code-act",
+                    label: "CodeAct. Write and run code to act.",
+                  },
+                ]}
+                data-testid="persona-loop-strategy"
+              />
 
               <div class="mt-5">
                 <p class="text-sm font-medium">Preferred models</p>
                 <p class="mt-1 text-xs text-[var(--text-muted)]">
                   First connected match wins.
                 </p>
-                <label class="mt-3 block text-sm text-[var(--text-muted)]">
-                  Primary model
-                  <select
-                    value={primaryModelValue()}
-                    onFocus={() => {
-                      void refreshModels();
-                    }}
-                    onChange={(event) => {
-                      setPrimaryModel(event.currentTarget.value);
-                    }}
-                    class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="persona-primary-model"
-                  >
-                    <For each={groupModelsByProvider(models())}>
-                      {([providerId, group]) => (
-                        <optgroup label={displayProviderName(providerId)}>
-                          <For each={group}>
-                            {(model) => (
-                              <option value={model.preferenceId}>
-                                {displayModelName(model)}
-                              </option>
-                            )}
-                          </For>
-                        </optgroup>
-                      )}
-                    </For>
-                  </select>
-                </label>
+                <Select
+                  class="mt-3"
+                  label="Primary model"
+                  value={primaryModelValue()}
+                  onOpenChange={(open) => {
+                    if (open) void refreshModels();
+                  }}
+                  onChange={(value) => {
+                    setPrimaryModel(value);
+                  }}
+                  groups={groupModelsByProvider(models()).map(
+                    ([providerId, group]) => ({
+                      label: displayProviderName(providerId),
+                      options: group.map((model) => ({
+                        value: model.preferenceId,
+                        label: displayModelName(model),
+                      })),
+                    }),
+                  )}
+                  data-testid="persona-primary-model"
+                />
                 <div class="mt-3 grid gap-2">
                   <For
                     each={preferredModels()}
@@ -562,35 +545,28 @@ export function createPersonasSettings(
                     )}
                   </For>
                 </div>
-                <label class="mt-3 block text-sm text-[var(--text-muted)]">
-                  Add a connected model
-                  <select
-                    value={addModelId()}
-                    onFocus={() => {
-                      void refreshModels();
-                    }}
-                    onChange={(event) => {
-                      addPreferredModel(event.currentTarget.value);
-                    }}
-                    class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="persona-add-model"
-                  >
-                    <option value="">Select a model</option>
-                    <For each={groupModelsByProvider(unusedModels())}>
-                      {([providerId, group]) => (
-                        <optgroup label={displayProviderName(providerId)}>
-                          <For each={group}>
-                            {(model) => (
-                              <option value={model.preferenceId}>
-                                {displayModelName(model)}
-                              </option>
-                            )}
-                          </For>
-                        </optgroup>
-                      )}
-                    </For>
-                  </select>
-                </label>
+                <Select
+                  class="mt-3"
+                  label="Add a connected model"
+                  value={addModelId()}
+                  placeholder="Select a model"
+                  onOpenChange={(open) => {
+                    if (open) void refreshModels();
+                  }}
+                  onChange={(value) => {
+                    addPreferredModel(value);
+                  }}
+                  groups={groupModelsByProvider(unusedModels()).map(
+                    ([providerId, group]) => ({
+                      label: displayProviderName(providerId),
+                      options: group.map((model) => ({
+                        value: model.preferenceId,
+                        label: displayModelName(model),
+                      })),
+                    }),
+                  )}
+                  data-testid="persona-add-model"
+                />
               </div>
 
               <div class="mt-5">

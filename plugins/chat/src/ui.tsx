@@ -30,7 +30,7 @@ import {
   type EmbeddedContentRendererProps,
   z,
 } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Collapsible, Panel, TextField } from "@borg/ui-kit";
 import {
   Bot,
   CircleAlert,
@@ -224,7 +224,7 @@ export default defineUiPlugin<Component>({
       let selectionGeneration = 0;
       let refreshGeneration = 0;
       let loopGeneration = 0;
-      let composerInput: HTMLTextAreaElement | undefined;
+      let composerInput: HTMLInputElement | HTMLTextAreaElement | undefined;
       let conversationHeading: HTMLHeadingElement | undefined;
       let deleteTrigger: HTMLButtonElement | undefined;
       let deleteCancelButton: HTMLButtonElement | undefined;
@@ -1218,14 +1218,15 @@ export default defineUiPlugin<Component>({
                                       data-message-id={entry.id}
                                       data-role={entry.role}
                                     >
-                                      <details class="mt-1">
-                                        <summary class="cursor-pointer text-xs text-[var(--text-subtle)]">
-                                          {activityLabel(entry)}
-                                        </summary>
-                                        <p class="mt-2 whitespace-pre-wrap text-xs text-[var(--text-muted)]">
+                                      <Collapsible
+                                        class="mt-1 rounded-none border-0 bg-transparent p-0"
+                                        triggerClass="text-xs font-normal text-[var(--text-subtle)]"
+                                        trigger={activityLabel(entry)}
+                                      >
+                                        <p class="whitespace-pre-wrap text-xs text-[var(--text-muted)]">
                                           {entry.content}
                                         </p>
-                                      </details>
+                                      </Collapsible>
                                     </div>
                                   </Show>
                                 }
@@ -1332,31 +1333,26 @@ export default defineUiPlugin<Component>({
                   </Show>
 
                   <Show when={document()}>
-                    <details
-                      class="border-t border-[var(--border)] bg-[var(--panel-muted)]/20"
+                    <Collapsible
+                      class="rounded-none border-x-0 border-b-0 bg-[var(--panel-muted)]/20 p-0"
+                      triggerClass="px-5 py-2.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)]"
+                      trigger="Advanced conversation"
                       data-testid="chat-advanced-conversation"
                     >
-                      <summary class="cursor-pointer px-5 py-2.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)]">
-                        Advanced conversation
-                      </summary>
                       <div class="grid gap-2 border-t border-[var(--border)] px-5 py-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-                        <label class="sr-only" for="chat-subagent-task">
-                          Task for child chat
-                        </label>
-                        <input
+                        <TextField
                           id="chat-subagent-task"
                           value={subAgentTask()}
-                          onInput={(event) =>
-                            setSubAgentTask(event.currentTarget.value)
-                          }
+                          onChange={setSubAgentTask}
                           onKeyDown={(event) => {
                             if (event.key === "Enter") {
                               event.preventDefault();
                               void spawnSubAgent();
                             }
                           }}
-                          class="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs outline-none focus:border-[var(--accent)]"
+                          size="sm"
                           placeholder="Delegate a task to a child chat"
+                          aria-label="Task for child chat"
                           data-testid="chat-subagent-task"
                         />
                         <button
@@ -1373,24 +1369,25 @@ export default defineUiPlugin<Component>({
                             : "Create child chat"}
                         </button>
                       </div>
-                    </details>
+                    </Collapsible>
                   </Show>
 
                   <div class="flex gap-3 border-t border-[var(--border)] p-4">
-                    <textarea
+                    <TextField
+                      class="min-w-0 flex-1"
+                      inputClass="resize-none py-2.5 transition focus:ring-2 focus:ring-[var(--accent)]/15"
+                      rows={2}
+                      value={draft()}
+                      onChange={setDraft}
                       ref={(element) => {
                         composerInput = element;
                       }}
-                      rows="2"
-                      value={draft()}
-                      onInput={(event) => setDraft(event.currentTarget.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" && !event.shiftKey) {
                           event.preventDefault();
                           void send();
                         }
                       }}
-                      class="min-w-0 flex-1 resize-none rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15"
                       placeholder={
                         document()
                           ? "Reply to this conversation"

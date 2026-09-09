@@ -1,9 +1,19 @@
+import { Button as KobalteButton } from "@kobalte/core/button";
 import { splitProps, type JSX, type ParentComponent } from "solid-js";
-import { twMerge } from "tailwind-merge";
+import { cn } from "./cn";
 
-export function cn(...values: ReadonlyArray<string | false | null | undefined>): string {
-  return twMerge(values.filter((value): value is string => typeof value === "string"));
-}
+export { cn, controlClass, controlClassSm, labelClass, labelClassSm } from "./cn";
+export { TextField, type TextFieldProps } from "./text-field";
+export { Checkbox, type CheckboxProps } from "./checkbox";
+export { Switch, type SwitchProps } from "./switch";
+export {
+  Select,
+  type SelectGroup,
+  type SelectOption,
+  type SelectProps,
+} from "./select";
+export { Dialog, type DialogProps } from "./dialog";
+export { Collapsible, type CollapsibleProps } from "./collapsible";
 
 export interface PanelProps {
   readonly class?: string;
@@ -26,18 +36,21 @@ export interface IconButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElem
   readonly label: string;
 }
 
-export const IconButton: ParentComponent<IconButtonProps> = (props) => (
-  <button
-    {...props}
-    aria-label={props.label}
-    class={cn(
-      "inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--panel-muted)] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)]",
-      props.class,
-    )}
-  >
-    {props.children}
-  </button>
-);
+export const IconButton: ParentComponent<IconButtonProps> = (props) => {
+  const [local, buttonProps] = splitProps(props, ["label", "class", "children"]);
+  return (
+    <KobalteButton
+      {...buttonProps}
+      aria-label={local.label}
+      class={cn(
+        "inline-flex size-9 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--panel-muted)] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)]",
+        local.class,
+      )}
+    >
+      {local.children}
+    </KobalteButton>
+  );
+};
 
 export interface ButtonProps
   extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -53,7 +66,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     "size",
   ]);
   return (
-    <button
+    <KobalteButton
       {...buttonProps}
       class={cn(
         "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
@@ -72,7 +85,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       )}
     >
       {local.children}
-    </button>
+    </KobalteButton>
   );
 };
 

@@ -1,4 +1,5 @@
 import { graphValueMapSchema, type GraphNode, type Persona } from "@borg/contracts";
+import { Select, Switch, TextField } from "@borg/ui-kit";
 import {
   For,
   Index,
@@ -19,8 +20,6 @@ import type { FieldSpec } from "./kind-registry";
 import { isJsonObject } from "./schema";
 import SchemaForm from "./schema-form";
 
-const fieldClass =
-  "mt-1 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]";
 const labelClass =
   "block text-[10px] font-medium uppercase tracking-wider text-[var(--text-subtle)]";
 
@@ -115,35 +114,37 @@ const DurationField: Component<{
     <Show
       when={!expression()}
       fallback={
-        <input
+        <TextField
           value={readString(props.value)}
           disabled={props.disabled}
-          onInput={(event) => props.onChange(event.currentTarget.value)}
-          class={`${fieldClass} font-mono`}
+          onChange={(value) => props.onChange(value)}
+          class="mt-1"
+          size="sm"
+          inputClass="font-mono"
           placeholder="$vars.waitMs"
         />
       }
     >
       <div class="mt-1 flex gap-2">
-        <input
+        <TextField
           type="number"
           min={0}
-          value={ms() / factor(unit())}
+          value={String(ms() / factor(unit()))}
           disabled={props.disabled}
-          onInput={(event) => {
-            const next = Number(event.currentTarget.value);
+          onChange={(value) => {
+            const next = Number(value);
             const millis = Number.isFinite(next)
               ? Math.max(props.min ?? 0, Math.round(next * factor(unit())))
               : 0;
             props.onChange(millis);
           }}
-          class={fieldClass}
+          class="min-w-0 flex-1"
+          size="sm"
         />
-        <select
+        <Select
           value={unit()}
           disabled={props.disabled}
-          onChange={(event) => {
-            const next = event.currentTarget.value;
+          onChange={(next) => {
             if (next !== "ms" && next !== "s" && next !== "min") {
               return;
             }
@@ -151,12 +152,14 @@ const DurationField: Component<{
             setUnit(next);
             props.onChange(Math.round(displayed * factor(next)));
           }}
-          class={`${fieldClass} w-20`}
-        >
-          <option value="ms">ms</option>
-          <option value="s">s</option>
-          <option value="min">min</option>
-        </select>
+          options={[
+            { value: "ms", label: "ms" },
+            { value: "s", label: "s" },
+            { value: "min", label: "min" },
+          ]}
+          class="w-20"
+          size="sm"
+        />
       </div>
     </Show>
   );
@@ -183,27 +186,25 @@ const FieldRenderer: Component<FieldRendererProps> = (props) => {
                 <Show
                   when={spec.multiline}
                   fallback={
-                    <input
+                    <TextField
                       value={readString(props.value[spec.key])}
-                      onInput={(event) =>
-                        setKey(spec.key, event.currentTarget.value)
-                      }
-                      class={fieldClass}
+                      onChange={(value) => setKey(spec.key, value)}
+                      class="mt-1"
+                      size="sm"
                     />
                   }
                 >
-                  <textarea
+                  <TextField
                     value={readString(props.value[spec.key])}
                     rows={4}
-                    onInput={(event) =>
-                      setKey(spec.key, event.currentTarget.value)
-                    }
-                    class={fieldClass}
+                    onChange={(value) => setKey(spec.key, value)}
+                    class="mt-1"
+                    size="sm"
                   />
                 </Show>
               </Show>
               <Show when={spec.widget === "number"}>
-                <input
+                <TextField
                   type="number"
                   min={spec.min}
                   value={
@@ -211,58 +212,45 @@ const FieldRenderer: Component<FieldRendererProps> = (props) => {
                       ? String(props.value[spec.key])
                       : ""
                   }
-                  onInput={(event) => {
-                    const next = Number(event.currentTarget.value);
-                    setKey(
-                      spec.key,
-                      Number.isFinite(next) ? next : event.currentTarget.value,
-                    );
+                  onChange={(value) => {
+                    const next = Number(value);
+                    setKey(spec.key, Number.isFinite(next) ? next : value);
                   }}
-                  class={fieldClass}
+                  class="mt-1"
+                  size="sm"
                 />
               </Show>
               <Show when={spec.widget === "select"}>
-                <select
+                <Select
                   value={readString(props.value[spec.key])}
-                  onChange={(event) =>
-                    setKey(spec.key, event.currentTarget.value)
-                  }
-                  class={fieldClass}
-                >
-                  <For each={spec.options ?? []}>
-                    {(option) => (
-                      <option value={option.value}>{option.label}</option>
-                    )}
-                  </For>
-                </select>
+                  onChange={(value) => setKey(spec.key, value)}
+                  options={spec.options ?? []}
+                  class="mt-1"
+                  size="sm"
+                />
               </Show>
               <Show when={spec.widget === "switch"}>
-                <label class="mt-1 flex items-center gap-2 text-xs text-[var(--text)]">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(props.value[spec.key])}
-                    onChange={(event) =>
-                      setKey(spec.key, event.currentTarget.checked)
-                    }
-                  />
-                  {spec.label}
-                </label>
+                <Switch
+                  checked={Boolean(props.value[spec.key])}
+                  onChange={(checked) => setKey(spec.key, checked)}
+                  label={spec.label}
+                  class="mt-1"
+                />
               </Show>
               <Show when={spec.widget === "persona"}>
-                <select
+                <Select
                   value={readString(props.value[spec.key])}
-                  onChange={(event) =>
-                    setKey(spec.key, event.currentTarget.value)
-                  }
-                  class={fieldClass}
-                >
-                  <option value="">Select a persona…</option>
-                  <For each={props.catalog.personas}>
-                    {(persona) => (
-                      <option value={persona.id}>{persona.name}</option>
-                    )}
-                  </For>
-                </select>
+                  onChange={(value) => setKey(spec.key, value)}
+                  options={[
+                    { value: "", label: "Select a persona…" },
+                    ...props.catalog.personas.map((persona) => ({
+                      value: persona.id,
+                      label: persona.name,
+                    })),
+                  ]}
+                  class="mt-1"
+                  size="sm"
+                />
               </Show>
               <Show when={spec.widget === "tool"}>
                 <ToolPicker
@@ -283,24 +271,24 @@ const FieldRenderer: Component<FieldRendererProps> = (props) => {
                 <Show
                   when={spec.multiline}
                   fallback={
-                    <input
+                    <TextField
                       value={readString(props.value[spec.key])}
                       placeholder="$vars.name"
-                      onInput={(event) =>
-                        setKey(spec.key, event.currentTarget.value)
-                      }
-                      class={`${fieldClass} font-mono`}
+                      onChange={(value) => setKey(spec.key, value)}
+                      class="mt-1"
+                      size="sm"
+                      inputClass="font-mono"
                     />
                   }
                 >
-                  <textarea
+                  <TextField
                     value={readString(props.value[spec.key])}
                     rows={4}
                     placeholder="$input.query"
-                    onInput={(event) =>
-                      setKey(spec.key, event.currentTarget.value)
-                    }
-                    class={`${fieldClass} font-mono`}
+                    onChange={(value) => setKey(spec.key, value)}
+                    class="mt-1"
+                    size="sm"
+                    inputClass="font-mono"
                   />
                 </Show>
               </Show>
@@ -350,28 +338,27 @@ const ToolPicker: Component<{
     );
   });
   return (
-    <div class="grid gap-1">
-      <input
+    <div class="mt-1 grid gap-1">
+      <TextField
         value={query()}
         placeholder="Search tools…"
-        onInput={(event) => setQuery(event.currentTarget.value)}
-        class={fieldClass}
+        onChange={setQuery}
+        size="sm"
       />
-      <select
+      <Select
         value={props.value}
-        onChange={(event) => props.onChange(event.currentTarget.value)}
-        class={fieldClass}
-      >
-        <option value="">Select a tool…</option>
-        <For each={filtered()}>
-          {(tool) => (
-            <option value={tool.id}>
-              {tool.id}
-              {tool.description ? ` — ${tool.description}` : ""}
-            </option>
-          )}
-        </For>
-      </select>
+        onChange={props.onChange}
+        options={[
+          { value: "", label: "Select a tool…" },
+          ...filtered().map((tool) => ({
+            value: tool.id,
+            label: tool.description
+              ? `${tool.id} — ${tool.description}`
+              : tool.id,
+          })),
+        ]}
+        size="sm"
+      />
     </div>
   );
 };
@@ -389,31 +376,33 @@ const AssignmentEditor: Component<{
       <Index each={rows()}>
         {(row, index) => (
           <div class="flex gap-2">
-            <input
+            <TextField
               value={row().name}
               placeholder="name"
               data-testid={`graph-assignment-name-${index}`}
-              onInput={(event) => {
+              onChange={(value) => {
                 const next = [...rows()];
-                next[index] = { ...row(), name: event.currentTarget.value };
+                next[index] = { ...row(), name: value };
                 replace(next);
               }}
-              class={fieldClass}
+              class="min-w-0 flex-1"
+              size="sm"
             />
-            <input
+            <TextField
               value={row().value}
               placeholder="value or $vars.x"
               data-testid={`graph-assignment-value-${index}`}
-              onInput={(event) => {
+              onChange={(value) => {
                 const next = [...rows()];
-                next[index] = { ...row(), value: event.currentTarget.value };
+                next[index] = { ...row(), value };
                 replace(next);
               }}
-              class={fieldClass}
+              class="min-w-0 flex-1"
+              size="sm"
             />
             <button
               type="button"
-              class="mt-1 rounded px-2 text-[var(--text-subtle)] hover:text-[var(--danger)]"
+              class="rounded px-2 text-[var(--text-subtle)] hover:text-[var(--danger)]"
               aria-label={`Remove assignment ${row().name}`}
               onClick={() =>
                 replace(rows().filter((_, rowIndex) => rowIndex !== index))
@@ -445,29 +434,31 @@ const ChoiceListEditor: Component<{
       <Index each={rows()}>
         {(row, index) => (
           <div class="flex gap-2">
-            <input
+            <TextField
               value={row().id}
               placeholder="id"
-              onInput={(event) => {
+              onChange={(value) => {
                 const next = [...rows()];
-                next[index] = { ...row(), id: event.currentTarget.value };
+                next[index] = { ...row(), id: value };
                 props.onChange(next);
               }}
-              class={fieldClass}
+              class="min-w-0 flex-1"
+              size="sm"
             />
-            <input
+            <TextField
               value={row().label}
               placeholder="label"
-              onInput={(event) => {
+              onChange={(value) => {
                 const next = [...rows()];
-                next[index] = { ...row(), label: event.currentTarget.value };
+                next[index] = { ...row(), label: value };
                 props.onChange(next);
               }}
-              class={fieldClass}
+              class="min-w-0 flex-1"
+              size="sm"
             />
             <button
               type="button"
-              class="mt-1 rounded px-2 text-[var(--text-subtle)] hover:text-[var(--danger)]"
+              class="rounded px-2 text-[var(--text-subtle)] hover:text-[var(--danger)]"
               aria-label={`Remove choice ${row().id}`}
               onClick={() =>
                 props.onChange(
@@ -512,7 +503,7 @@ const ToolArgsEditor: Component<{
     <Show
       when={tool()}
       fallback={
-        <textarea
+        <TextField
           value={
             isJsonObject(props.value)
               ? JSON.stringify(props.value, null, 2)
@@ -520,9 +511,9 @@ const ToolArgsEditor: Component<{
           }
           rows={6}
           spellcheck={false}
-          onInput={(event) => {
+          onChange={(value) => {
             try {
-              const parsed: unknown = JSON.parse(event.currentTarget.value);
+              const parsed: unknown = JSON.parse(value);
               if (isJsonObject(parsed)) {
                 props.onChange(parsed);
               }
@@ -530,7 +521,9 @@ const ToolArgsEditor: Component<{
               /* wait for valid JSON */
             }
           }}
-          class={`${fieldClass} font-mono`}
+          class="mt-1"
+          size="sm"
+          inputClass="font-mono"
         />
       }
     >

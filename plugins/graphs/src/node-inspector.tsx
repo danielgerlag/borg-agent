@@ -1,10 +1,8 @@
 import type { GraphNode } from "@borg/contracts";
+import { TextField } from "@borg/ui-kit";
 import { Show, type Component } from "solid-js";
 import FieldRenderer, { type InspectorCatalog } from "./field-renderer";
 import { kindDescriptor } from "./kind-registry";
-
-const fieldClass =
-  "mt-1.5 w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-[11px] leading-5 text-[var(--text)] outline-none focus:border-[var(--accent)]";
 
 export interface NodeInspectorProps {
   readonly node: GraphNode;
@@ -33,20 +31,20 @@ const NodeInspector: Component<NodeInspectorProps> = (props) => {
           onChange={props.onConfigObject}
         />
       </Show>
-      <label class="block text-[10px] font-medium uppercase tracking-wider text-[var(--text-subtle)]">
-        Config JSON
-        <textarea
-          value={props.configText}
-          rows={9}
-          spellcheck={false}
-          onInput={(event) => props.onConfigText(event.currentTarget.value)}
-          class={fieldClass}
-          classList={{
-            "border-[var(--danger)]": props.configError.length > 0,
-          }}
-          data-testid="graph-node-config"
-        />
-      </label>
+      <TextField
+        label="Config JSON"
+        value={props.configText}
+        rows={9}
+        spellcheck={false}
+        onChange={props.onConfigText}
+        size="sm"
+        inputClass={
+          props.configError.length > 0
+            ? "font-mono text-[11px] leading-5 border-[var(--danger)]"
+            : "font-mono text-[11px] leading-5"
+        }
+        data-testid="graph-node-config"
+      />
       <Show when={props.configError.length > 0}>
         <p class="text-xs text-[var(--danger)]" role="alert">
           {props.configError}

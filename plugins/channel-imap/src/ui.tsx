@@ -6,7 +6,7 @@ import {
   connectorSecretKey,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { KeyRound, Mail, Plus, Save, Trash2 } from "lucide-solid";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";
 import {
@@ -291,10 +291,10 @@ export default defineUiPlugin<Component>({
           <Show when={creating()}>
             <Panel class="mt-5">
               <p class="text-sm font-semibold">New IMAP account</p>
-              <input
+              <TextField
+                class="mt-3"
                 value={newName()}
-                onInput={(event) => setNewName(event.currentTarget.value)}
-                class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setNewName}
                 placeholder="Mailbox name"
                 data-testid="imap-new-account-name"
               />
@@ -352,32 +352,23 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label class="mt-4 block text-sm text-[var(--text-muted)]">
-                  Name
-                  <input
-                    value={accountName()}
-                    onInput={(event) =>
-                      setAccountName(event.currentTarget.value)
-                    }
-                    class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="imap-account-name"
-                  />
-                </label>
+                <TextField
+                  class="mt-4"
+                  label="Name"
+                  value={accountName()}
+                  onChange={setAccountName}
+                  data-testid="imap-account-name"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="imap-password"
-                >
-                  Password
-                </label>
-                <input
+                <TextField
+                  class="mt-5"
+                  label="Password"
                   id="imap-password"
                   type="password"
                   autocomplete="off"
                   spellcheck={false}
                   value={passwordDraft()}
-                  onInput={(event) => setPasswordDraft(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setPasswordDraft}
                   placeholder={
                     hasPassword()
                       ? "Password saved. Enter a new password to replace it."
@@ -406,85 +397,61 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label class="mt-6 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={enabled()}
-                    onChange={(event) =>
-                      setEnabled(event.currentTarget.checked)
-                    }
-                    data-testid="imap-enabled"
-                  />
-                  Enable the IMAP channel
-                </label>
+                <Checkbox
+                  class="mt-6"
+                  checked={enabled()}
+                  onChange={setEnabled}
+                  label="Enable the IMAP channel"
+                  data-testid="imap-enabled"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="imap-host"
-                >
-                  Host
-                </label>
-                <input
+                <TextField
+                  class="mt-5"
+                  label="Host"
                   id="imap-host"
                   type="text"
                   autocomplete="off"
                   spellcheck={false}
                   value={host()}
-                  onInput={(event) => setHost(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setHost}
                   placeholder="imap.example.com"
                   data-testid="imap-host"
                 />
 
-                <label
-                  class="mt-4 block text-sm text-[var(--text-muted)]"
-                  for="imap-port"
-                >
-                  Port
-                </label>
-                <input
+                <TextField
+                  class="mt-4"
+                  label="Port"
                   id="imap-port"
                   type="number"
                   min="1"
                   max="65535"
                   value={port()}
-                  onInput={(event) => setPort(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setPort}
                   data-testid="imap-port"
                 />
 
-                <label
-                  class="mt-4 block text-sm text-[var(--text-muted)]"
-                  for="imap-username"
-                >
-                  Username
-                </label>
-                <input
+                <TextField
+                  class="mt-4"
+                  label="Username"
                   id="imap-username"
                   type="text"
                   autocomplete="off"
                   spellcheck={false}
                   value={username()}
-                  onInput={(event) => setUsername(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setUsername}
                   placeholder="borg@example.com"
                   data-testid="imap-username"
                 />
 
-                <label
-                  class="mt-4 block text-sm text-[var(--text-muted)]"
-                  for="imap-mailbox"
-                >
-                  Mailbox
-                </label>
-                <input
+                <TextField
+                  class="mt-4"
+                  label="Mailbox"
                   id="imap-mailbox"
                   type="text"
                   autocomplete="off"
                   spellcheck={false}
                   value={mailbox()}
-                  onInput={(event) => setMailbox(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setMailbox}
                   placeholder={IMAP_DEFAULT_MAILBOX}
                   data-testid="imap-mailbox"
                 />

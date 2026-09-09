@@ -15,7 +15,7 @@ import {
   type Page,
 } from "@playwright/test";
 import type { ChildProcess } from "node:child_process";
-import { completeSetup } from "./setup";
+import { completeSetup, selectControlOption } from "./setup";
 
 const projectRoot = path.resolve(__dirname, "../..");
 const desktopApp = path.join(projectRoot, "apps/desktop");
@@ -222,7 +222,8 @@ async function pickGpt5Mini(): Promise<void> {
   await page.getByTestId("settings-section-borg.chat.personas").click();
   await expect(page.getByTestId("personas-settings-page")).toBeVisible();
   await expect(page.getByTestId("persona-editor")).toBeVisible();
-  await page.getByTestId("persona-primary-model").selectOption(
+  await selectControlOption(
+    page.getByTestId("persona-primary-model"),
     "borg.openai:gpt-5-mini",
   );
   await expect(page.getByTestId("persona-primary-model")).toHaveValue(

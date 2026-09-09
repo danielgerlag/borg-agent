@@ -1,4 +1,4 @@
-import { Panel } from "@borg/ui-kit";
+import { Checkbox, Panel } from "@borg/ui-kit";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";
 
 function pluginLabel(id: string): string {
@@ -73,18 +73,13 @@ export const PluginsSettings: Component<{
                   </p>
                 </Show>
               </div>
-              <label class="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={plugin.enabled}
-                  disabled={plugin.locked || pendingId() !== undefined}
-                  aria-label={pluginLabel(plugin.id)}
-                  onChange={(event) =>
-                    void toggle(plugin, event.currentTarget.checked)
-                  }
-                  data-testid={`plugin-enabled-${plugin.id}`}
-                />
-              </label>
+              <Checkbox
+                checked={plugin.enabled}
+                disabled={plugin.locked || pendingId() !== undefined}
+                aria-label={pluginLabel(plugin.id)}
+                onChange={(enabled) => void toggle(plugin, enabled)}
+                data-testid={`plugin-enabled-${plugin.id}`}
+              />
             </div>
           )}
         </For>

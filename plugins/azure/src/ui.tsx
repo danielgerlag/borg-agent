@@ -4,7 +4,7 @@ import {
   azureGetStatus,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Panel, Select, TextField } from "@borg/ui-kit";
 import { Cloud, KeyRound } from "lucide-solid";
 import { Show, createSignal, onMount, type Component } from "solid-js";
 import {
@@ -181,61 +181,45 @@ export default defineUiPlugin<Component>({
                 Azure CLI credentials.
               </p>
 
-              <label
-                class="mt-5 block text-sm text-[var(--text-muted)]"
-                for="azure-endpoint"
-              >
-                Endpoint
-              </label>
-              <input
+              <TextField
+                class="mt-5"
+                label="Endpoint"
                 id="azure-endpoint"
                 type="url"
                 autocomplete="off"
                 spellcheck={false}
                 value={endpoint()}
-                onInput={(event) => setEndpoint(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setEndpoint}
                 placeholder="https://YOUR_RESOURCE.openai.azure.com"
                 data-testid="azure-endpoint"
               />
 
-              <label
-                class="mt-4 block text-sm text-[var(--text-muted)]"
-                for="azure-api-version"
-              >
-                API version
-              </label>
-              <input
+              <TextField
+                class="mt-4"
+                label="API version"
                 id="azure-api-version"
                 type="text"
                 autocomplete="off"
                 spellcheck={false}
                 value={apiVersion()}
-                onInput={(event) => setApiVersion(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setApiVersion}
                 data-testid="azure-api-version"
               />
 
-              <label
-                class="mt-4 block text-sm text-[var(--text-muted)]"
-                for="azure-auth-mode"
-              >
-                Authentication
-              </label>
-              <select
-                id="azure-auth-mode"
+              <Select
+                class="mt-4"
+                label="Authentication"
                 value={authMode()}
-                onChange={(event) =>
-                  setAuthMode(asAuthMode(event.currentTarget.value))
-                }
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={(value) => setAuthMode(asAuthMode(value))}
+                options={[
+                  { value: "api-key", label: "API key" },
+                  {
+                    value: "azure-default",
+                    label: "Azure Identity (Managed Identity / CLI)",
+                  },
+                ]}
                 data-testid="azure-auth-mode"
-              >
-                <option value="api-key">API key</option>
-                <option value="azure-default">
-                  Azure Identity (Managed Identity / CLI)
-                </option>
-              </select>
+              />
               <Show when={authMode() === "azure-default"}>
                 <p class="mt-2 text-xs text-[var(--text-muted)]">
                   Uses Managed Identity on Azure-hosted compute, or Azure CLI or
@@ -244,20 +228,15 @@ export default defineUiPlugin<Component>({
               </Show>
 
               <Show when={authMode() === "api-key"}>
-                <label
-                  class="mt-4 block text-sm text-[var(--text-muted)]"
-                  for="azure-api-key"
-                >
-                  API key
-                </label>
-                <input
+                <TextField
+                  class="mt-4"
+                  label="API key"
                   id="azure-api-key"
                   type="password"
                   autocomplete="off"
                   spellcheck={false}
                   value={keyDraft()}
-                  onInput={(event) => setKeyDraft(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setKeyDraft}
                   placeholder={
                     hasKey()
                       ? "Key saved. Enter a new key to replace it."

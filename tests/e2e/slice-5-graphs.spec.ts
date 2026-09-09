@@ -121,16 +121,13 @@ async function expandTranscriptEvent(text: string): Promise<void> {
     .locator('[data-testid="chat-message"][data-role="event"]')
     .filter({ hasText: text });
   await expect(event).toBeVisible();
-  const details = event.locator("details");
-  const alreadyOpen = await details.evaluate(
-    (node) => node instanceof HTMLDetailsElement && node.open,
-  );
-  if (!alreadyOpen) {
-    await details.locator("summary").click();
+  const trigger = event.getByRole("button").first();
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") {
+    await trigger.click();
   }
-  await expect(details).toHaveJSProperty("open", true);
-  await expect(details.locator("p")).toBeVisible();
-  await expect(details.locator("p")).toContainText(text);
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(event.locator("p")).toBeVisible();
+  await expect(event.locator("p")).toContainText(text);
 }
 
 async function setWindowVisibility(visible: boolean): Promise<void> {
@@ -374,9 +371,9 @@ test("launches a graph from Chat and shows its transcript lifecycle", async () =
     .locator('[data-testid="chat-message"][data-role="tool"]')
     .filter({ hasText: "Used graphs.run" });
   await expect(graphToolActivity).toBeVisible();
-  await expect(graphToolActivity.locator("summary")).toHaveText(
-    "Used graphs.run",
-  );
+  await expect(
+    graphToolActivity.getByRole("button", { name: "Used graphs.run" }),
+  ).toBeVisible();
 
   const startedEvent = page
     .locator('[data-testid="chat-message"][data-role="event"]')

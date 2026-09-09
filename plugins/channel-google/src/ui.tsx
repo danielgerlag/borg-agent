@@ -9,7 +9,7 @@ import {
   type GoogleChannelStatus,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { Mail, Plus, Save, Trash2 } from "lucide-solid";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";
 import {
@@ -277,10 +277,10 @@ export default defineUiPlugin<Component>({
           <Show when={creating()}>
             <Panel class="mt-5">
               <p class="text-sm font-semibold">New Google account</p>
-              <input
+              <TextField
+                class="mt-3"
                 value={newName()}
-                onInput={(event) => setNewName(event.currentTarget.value)}
-                class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setNewName}
                 placeholder="Mailbox name"
                 data-testid="google-new-account-name"
               />
@@ -335,63 +335,43 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label class="mt-4 block text-sm text-[var(--text-muted)]">
-                  Name
-                  <input
-                    value={accountName()}
-                    onInput={(event) =>
-                      setAccountName(event.currentTarget.value)
-                    }
-                    class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="google-account-name"
-                  />
-                </label>
+                <TextField
+                  class="mt-4"
+                  label="Name"
+                  value={accountName()}
+                  onChange={setAccountName}
+                  data-testid="google-account-name"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="google-client-id"
-                >
-                  Public desktop client id
-                </label>
-                <input
+                <TextField
+                  class="mt-5"
+                  label="Public desktop client id"
                   id="google-client-id"
                   type="text"
                   autocomplete="off"
                   spellcheck={false}
                   value={clientId()}
-                  onInput={(event) => setClientId(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setClientId}
                   placeholder="OAuth client ID"
                   data-testid="google-client-id"
                 />
 
-                <label class="mt-6 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={enabled()}
-                    onChange={(event) =>
-                      setEnabled(event.currentTarget.checked)
-                    }
-                    data-testid="google-enabled"
-                  />
-                  Enable the Google channel
-                </label>
+                <Checkbox
+                  class="mt-6"
+                  checked={enabled()}
+                  onChange={setEnabled}
+                  label="Enable the Google channel"
+                  data-testid="google-enabled"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="google-allowed-recipients"
-                >
-                  Allowed recipients. One email per line; the connected mailbox
-                  can send to itself
-                </label>
-                <textarea
+                <TextField
+                  class="mt-5"
+                  label="Allowed recipients. One email per line; the connected mailbox can send to itself"
                   id="google-allowed-recipients"
                   rows={4}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
+                  inputClass="font-mono"
                   value={recipientText()}
-                  onInput={(event) =>
-                    setRecipientText(event.currentTarget.value)
-                  }
+                  onChange={setRecipientText}
                   data-testid="google-allowed-recipients"
                 />
 

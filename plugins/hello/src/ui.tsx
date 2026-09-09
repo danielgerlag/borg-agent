@@ -1,6 +1,6 @@
 import { helloGetStatus } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Panel } from "@borg/ui-kit";
+import { Panel, TextField } from "@borg/ui-kit";
 import { Activity, CircleAlert, LoaderCircle, MessageSquareText } from "lucide-solid";
 import {
   Match,
@@ -119,13 +119,13 @@ export default defineUiPlugin<Component>({
                 Change the status message shown on the Flight Deck.
               </p>
               <div class="mt-5 flex gap-2">
-                <input
+                <TextField
+                  class="min-w-0 flex-1"
                   value={message()}
-                  onInput={(event) => {
-                    setMessage(event.currentTarget.value);
+                  onChange={(value) => {
+                    setMessage(value);
                     setSaved(false);
                   }}
-                  class="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm outline-none transition focus:border-[var(--accent)]"
                   data-testid="hello-message-input"
                 />
                 <button

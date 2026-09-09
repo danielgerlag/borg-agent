@@ -10,7 +10,7 @@ import {
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
-import { completeSetup } from "./setup";
+import { completeSetup, selectControlOption } from "./setup";
 
 const projectRoot = path.resolve(__dirname, "../..");
 const desktopApp = path.join(projectRoot, "apps/desktop");
@@ -87,7 +87,10 @@ async function addHttpServer(id: string, url: string): Promise<void> {
   const draft = page.getByTestId(`mcp-server-row-server-${id === "vanilla" ? "1" : id === "map" ? "2" : "3"}`);
   await draft.getByTestId("mcp-server-id").fill(id);
   const row = page.getByTestId(`mcp-server-row-${id}`);
-  await row.getByTestId("mcp-server-transport").selectOption("streamable-http");
+  await selectControlOption(
+    row.getByTestId("mcp-server-transport"),
+    "streamable-http",
+  );
   await row.getByTestId("mcp-server-url").fill(url);
   await row.getByTestId("mcp-save-server").click();
   await page.getByTestId("mcp-refresh").click();

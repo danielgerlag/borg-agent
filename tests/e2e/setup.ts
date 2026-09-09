@@ -1,5 +1,12 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
+export async function selectControlOption(
+  field: Locator,
+  value: string,
+): Promise<void> {
+  await field.selectOption(value, { force: true });
+}
+
 export async function expectTypingKeepsFocus(
   field: Locator,
   extra: string,

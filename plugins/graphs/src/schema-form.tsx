@@ -1,3 +1,4 @@
+import { Checkbox, Select, TextField } from "@borg/ui-kit";
 import { For, Show, createMemo, createSignal, type Component } from "solid-js";
 import {
   evaluateFieldCondition,
@@ -7,8 +8,6 @@ import {
   type UiWidget,
 } from "./schema";
 
-const fieldClass =
-  "mt-1 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]";
 const labelClass =
   "block text-[10px] font-medium uppercase tracking-wider text-[var(--text-subtle)]";
 
@@ -113,35 +112,38 @@ const SchemaForm: Component<SchemaFormProps> = (props) => {
 
     if (widget === "textarea" || widget === "code-editor") {
       return (
-        <textarea
+        <TextField
           value={String(current ?? "")}
           rows={hint.rows ?? 4}
           disabled={disabled}
-          onInput={(event) => setField(name, event.currentTarget.value)}
-          class={fieldClass}
-          classList={{ "font-mono": widget === "code-editor" }}
+          onChange={(value) => setField(name, value)}
+          class="mt-1"
+          size="sm"
+          inputClass={widget === "code-editor" ? "font-mono" : undefined}
         />
       );
     }
     if (widget === "password") {
       return (
-        <input
+        <TextField
           type="password"
           value={String(current ?? "")}
           disabled={disabled}
-          onInput={(event) => setField(name, event.currentTarget.value)}
-          class={fieldClass}
+          onChange={(value) => setField(name, value)}
+          class="mt-1"
+          size="sm"
         />
       );
     }
     if (widget === "date") {
       return (
-        <input
+        <TextField
           type="date"
           value={String(current ?? "")}
           disabled={disabled}
-          onInput={(event) => setField(name, event.currentTarget.value)}
-          class={fieldClass}
+          onChange={(value) => setField(name, value)}
+          class="mt-1"
+          size="sm"
         />
       );
     }
@@ -180,50 +182,47 @@ const SchemaForm: Component<SchemaFormProps> = (props) => {
     }
     if (enumValues.length > 0) {
       return (
-        <select
+        <Select
           value={String(current ?? "")}
           disabled={disabled}
-          onChange={(event) => setField(name, event.currentTarget.value)}
-          class={fieldClass}
-        >
-          <option value="">—</option>
-          <For each={enumValues}>
-            {(item) => <option value={item}>{item}</option>}
-          </For>
-        </select>
+          onChange={(value) => setField(name, value)}
+          options={[
+            { value: "", label: "—" },
+            ...enumValues.map((item) => ({ value: item, label: item })),
+          ]}
+          class="mt-1"
+          size="sm"
+        />
       );
     }
     if (property.type === "boolean") {
       return (
-        <label class="mt-1 flex items-center gap-2 text-xs text-[var(--text)]">
-          <input
-            type="checkbox"
-            checked={Boolean(current)}
-            disabled={disabled}
-            onChange={(event) => setField(name, event.currentTarget.checked)}
-          />
-          {hint.label || name}
-        </label>
+        <Checkbox
+          checked={Boolean(current)}
+          disabled={disabled}
+          onChange={(checked) => setField(name, checked)}
+          label={hint.label || name}
+          class="mt-1"
+        />
       );
     }
     if (property.type === "number" || property.type === "integer") {
       return (
-        <input
+        <TextField
           type="number"
           value={current === undefined || current === "" ? "" : String(current)}
           min={typeof property.minimum === "number" ? property.minimum : undefined}
           max={typeof property.maximum === "number" ? property.maximum : undefined}
           disabled={disabled}
-          onInput={(event) =>
-            setField(name, coerceNumber(event.currentTarget.value))
-          }
-          class={fieldClass}
+          onChange={(value) => setField(name, coerceNumber(value))}
+          class="mt-1"
+          size="sm"
         />
       );
     }
     if (property.type === "object" || property.type === "array") {
       return (
-        <textarea
+        <TextField
           value={
             typeof current === "string"
               ? current
@@ -234,28 +233,30 @@ const SchemaForm: Component<SchemaFormProps> = (props) => {
           rows={4}
           disabled={disabled}
           spellcheck={false}
-          onInput={(event) => {
-            const text = event.currentTarget.value;
+          onChange={(text) => {
             try {
               setField(name, JSON.parse(text) as unknown);
             } catch {
               setField(name, text);
             }
           }}
-          class={`${fieldClass} font-mono`}
+          class="mt-1"
+          size="sm"
+          inputClass="font-mono"
         />
       );
     }
     return (
-      <input
+      <TextField
         type="text"
         value={String(current ?? "")}
         maxLength={
           typeof property.maxLength === "number" ? property.maxLength : undefined
         }
         disabled={disabled}
-        onInput={(event) => setField(name, event.currentTarget.value)}
-        class={fieldClass}
+        onChange={(value) => setField(name, value)}
+        class="mt-1"
+        size="sm"
       />
     );
   };
@@ -283,13 +284,12 @@ const SchemaForm: Component<SchemaFormProps> = (props) => {
         </div>
       </Show>
       <Show when={jsonMode()}>
-        <textarea
+        <TextField
           value={jsonText()}
           rows={8}
           spellcheck={false}
           disabled={props.disabled}
-          onInput={(event) => {
-            const text = event.currentTarget.value;
+          onChange={(text) => {
             setJsonText(text);
             try {
               const parsed: unknown = JSON.parse(text);
@@ -304,7 +304,8 @@ const SchemaForm: Component<SchemaFormProps> = (props) => {
               );
             }
           }}
-          class={`${fieldClass} font-mono`}
+          size="sm"
+          inputClass="font-mono"
         />
         <Show when={jsonError()}>
           {(message) => (

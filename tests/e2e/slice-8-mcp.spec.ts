@@ -128,7 +128,7 @@ test("discovers MCP tools and completes an MCP App tool round trip", async () =>
     .locator('[data-testid="chat-message"][data-role="tool"]')
     .filter({ hasText: "Used mcp.mock.echo" });
   await expect(echoActivity).toBeVisible();
-  await echoActivity.locator("summary").click();
+  await echoActivity.getByRole("button", { name: "Used mcp.mock.echo" }).click();
   await expect(echoActivity.locator("p")).toContainText(
     '"echoed":"hello from mcp"',
   );

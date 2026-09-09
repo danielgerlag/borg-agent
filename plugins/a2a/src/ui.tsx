@@ -5,9 +5,9 @@ import {
   type Persona,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Checkbox, Panel, Select, TextField } from "@borg/ui-kit";
 import { Radio } from "lucide-solid";
-import { For, createSignal, onMount, type Component } from "solid-js";
+import { createSignal, onMount, type Component } from "solid-js";
 
 const IDLE_STATUS: A2AStatus = {
   enabled: false,
@@ -89,48 +89,40 @@ export default defineUiPlugin<Component>({
                 The listener stays off until you enable it.
               </p>
 
-              <label class="mt-5 flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={enabled()}
-                  onChange={(event) => setEnabled(event.currentTarget.checked)}
-                  data-testid="a2a-enabled"
-                />
-                Enable loopback A2A
-              </label>
+              <Checkbox
+                class="mt-5"
+                checked={enabled()}
+                onChange={setEnabled}
+                label="Enable loopback A2A"
+                data-testid="a2a-enabled"
+              />
 
-              <label class="mt-4 block text-sm text-[var(--text-muted)]" for="a2a-port">
-                Port
-              </label>
-              <input
+              <TextField
+                class="mt-4"
+                label="Port"
                 id="a2a-port"
                 type="number"
                 min="1"
                 max="65535"
                 value={port()}
-                onInput={(event) => setPort(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setPort}
                 data-testid="a2a-port"
               />
 
-              <label
-                class="mt-4 block text-sm text-[var(--text-muted)]"
-                for="a2a-persona"
-              >
-                Persona
-              </label>
-              <select
-                id="a2a-persona"
+              <Select
+                class="mt-4"
+                label="Persona"
                 value={personaId()}
-                onChange={(event) => setPersonaId(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setPersonaId}
+                options={[
+                  { value: "", label: "Default persona" },
+                  ...personas().map((persona) => ({
+                    value: persona.id,
+                    label: persona.name,
+                  })),
+                ]}
                 data-testid="a2a-persona"
-              >
-                <option value="">Default persona</option>
-                <For each={personas()}>
-                  {(persona) => <option value={persona.id}>{persona.name}</option>}
-                </For>
-              </select>
+              />
 
               <div class="mt-4">
                 <Button

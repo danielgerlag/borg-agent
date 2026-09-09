@@ -9,7 +9,7 @@ import {
   type CoinbaseStatus,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { Coins, KeyRound, Plus, Save, Trash2 } from "lucide-solid";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";
 import {
@@ -315,10 +315,10 @@ export default defineUiPlugin<Component>({
           <Show when={creating()}>
             <Panel class="mt-5">
               <p class="text-sm font-semibold">New Coinbase account</p>
-              <input
+              <TextField
+                class="mt-3"
                 value={newName()}
-                onInput={(event) => setNewName(event.currentTarget.value)}
-                class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setNewName}
                 placeholder="Account name"
                 data-testid="coinbase-new-account-name"
               />
@@ -367,52 +367,38 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label class="mt-4 block text-sm text-[var(--text-muted)]">
-                  Name
-                  <input
-                    value={accountName()}
-                    onInput={(event) =>
-                      setAccountName(event.currentTarget.value)
-                    }
-                    class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="coinbase-account-name"
-                  />
-                </label>
+                <TextField
+                  class="mt-4"
+                  label="Name"
+                  value={accountName()}
+                  onChange={setAccountName}
+                  data-testid="coinbase-account-name"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="coinbase-key-name"
-                >
-                  API key name
-                </label>
-                <input
+                <TextField
+                  class="mt-5"
+                  label="API key name"
                   id="coinbase-key-name"
                   type="text"
                   autocomplete="off"
                   spellcheck={false}
+                  inputClass="font-mono"
                   value={keyName()}
-                  onInput={(event) => setKeyName(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
+                  onChange={setKeyName}
                   placeholder="organizations/{org_id}/apiKeys/{key_id}"
                   data-testid="coinbase-key-name"
                 />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="coinbase-private-key"
-                >
-                  Private key (PEM)
-                </label>
-                <textarea
+                <TextField
+                  class="mt-5"
+                  label="Private key (PEM)"
                   id="coinbase-private-key"
                   rows={5}
                   autocomplete="off"
                   spellcheck={false}
+                  inputClass="font-mono"
                   value={privateKeyDraft()}
-                  onInput={(event) =>
-                    setPrivateKeyDraft(event.currentTarget.value)
-                  }
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
+                  onChange={setPrivateKeyDraft}
                   placeholder={
                     status()?.hasPrivateKey
                       ? "Key saved. Paste a new PEM to replace it."
@@ -441,28 +427,20 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label class="mt-6 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={enabled()}
-                    onChange={(event) =>
-                      setEnabled(event.currentTarget.checked)
-                    }
-                    data-testid="coinbase-enabled"
-                  />
-                  Enable Coinbase trading tools
-                </label>
-                <label class="mt-2 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={sandbox()}
-                    onChange={(event) =>
-                      setSandbox(event.currentTarget.checked)
-                    }
-                    data-testid="coinbase-sandbox"
-                  />
-                  Use the Coinbase sandbox API
-                </label>
+                <Checkbox
+                  class="mt-6"
+                  checked={enabled()}
+                  onChange={setEnabled}
+                  label="Enable Coinbase trading tools"
+                  data-testid="coinbase-enabled"
+                />
+                <Checkbox
+                  class="mt-2"
+                  checked={sandbox()}
+                  onChange={setSandbox}
+                  label="Use the Coinbase sandbox API"
+                  data-testid="coinbase-sandbox"
+                />
 
                 <div class="mt-4 flex flex-wrap gap-2">
                   <Button

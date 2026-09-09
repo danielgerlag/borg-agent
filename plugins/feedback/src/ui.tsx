@@ -1,7 +1,7 @@
 import type { PendingInteraction } from "@borg/contracts";
 import type { InteractionRendererProps } from "@borg/plugin-sdk";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Checkbox, Panel, Select, TextField } from "@borg/ui-kit";
 import { MessageCircleQuestion } from "lucide-solid";
 import {
   For,
@@ -35,10 +35,10 @@ export default defineUiPlugin<Component>({
       return (
         <div data-testid="human-input-interaction">
           <Show when={props.interaction.form === "text"}>
-            <input
+            <TextField
+              class="mt-4"
               value={text()}
-              onInput={(event) => setText(event.currentTarget.value)}
-              class="mt-4 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
+              onChange={setText}
               placeholder="Type your answer"
               data-testid="human-input-text"
             />
@@ -208,47 +208,39 @@ export default defineUiPlugin<Component>({
           <p class="mt-2 text-sm leading-6 text-[var(--text-muted)]">
             Choose how long work should wait and how Borg should get your attention.
           </p>
-          <label class="mt-4 block text-sm text-[var(--text-muted)]">
-            Wait for an answer
-            <select
-              value={timeoutMs()}
-              onInput={(event) =>
-                setTimeoutMs(Number(event.currentTarget.value))
-              }
-              class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-            >
-              <Show when={!timeoutPresets.includes(timeoutMs())}>
-                <option value={timeoutMs()}>
-                  Current setting ({Math.round(timeoutMs() / 1000)} seconds)
-                </option>
-              </Show>
-              <option value={60_000}>1 minute</option>
-              <option value={300_000}>5 minutes</option>
-              <option value={900_000}>15 minutes</option>
-              <option value={3_600_000}>1 hour</option>
-              <option value={86_400_000}>Until tomorrow</option>
-            </select>
-          </label>
-          <label class="mt-4 flex items-center gap-3 text-sm">
-            <input
-              type="checkbox"
-              checked={notifyOnRequest()}
-              onChange={(event) =>
-                setNotifyOnRequest(event.currentTarget.checked)
-              }
-            />
-            Send a notification when Borg needs an answer
-          </label>
-          <label class="mt-3 flex items-center gap-3 text-sm">
-            <input
-              type="checkbox"
-              checked={focusOnRequest()}
-              onChange={(event) =>
-                setFocusOnRequest(event.currentTarget.checked)
-              }
-            />
-            Bring Borg to the front when work is blocked
-          </label>
+          <Select
+            class="mt-4"
+            label="Wait for an answer"
+            value={String(timeoutMs())}
+            onChange={(value) => setTimeoutMs(Number(value))}
+            options={[
+              ...(!timeoutPresets.includes(timeoutMs())
+                ? [
+                    {
+                      value: String(timeoutMs()),
+                      label: `Current setting (${Math.round(timeoutMs() / 1000)} seconds)`,
+                    },
+                  ]
+                : []),
+              { value: String(60_000), label: "1 minute" },
+              { value: String(300_000), label: "5 minutes" },
+              { value: String(900_000), label: "15 minutes" },
+              { value: String(3_600_000), label: "1 hour" },
+              { value: String(86_400_000), label: "Until tomorrow" },
+            ]}
+          />
+          <Checkbox
+            class="mt-4"
+            checked={notifyOnRequest()}
+            onChange={setNotifyOnRequest}
+            label="Send a notification when Borg needs an answer"
+          />
+          <Checkbox
+            class="mt-3"
+            checked={focusOnRequest()}
+            onChange={setFocusOnRequest}
+            label="Bring Borg to the front when work is blocked"
+          />
           <div class="mt-5 flex items-center gap-3">
             <Button
               type="button"

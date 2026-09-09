@@ -136,7 +136,7 @@ test("keeps focus while typing across chat, settings, and graphs", async () => {
       page.locator('[data-testid="graph-node-fields"] input').first(),
       "x",
     );
-    await page.locator("summary", { hasText: "Graph inputs" }).click();
+    await page.getByRole("button", { name: "Graph inputs" }).click();
     await page
       .getByTestId("graph-input-schema")
       .getByRole("button", { name: "Add field" })

@@ -4,7 +4,7 @@ import {
   anthropicGetStatus,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Panel, TextField } from "@borg/ui-kit";
 import { KeyRound, Sparkles } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";
 
@@ -116,18 +116,20 @@ export default defineUiPlugin<Component>({
                 this and keep the built-in demo model.
               </p>
 
-              <label class="mt-5 block text-sm text-[var(--text-muted)]" for="anthropic-api-key">
-                API key
-              </label>
-              <input
+              <TextField
+                class="mt-5"
+                label="API key"
                 id="anthropic-api-key"
                 type="password"
                 autocomplete="off"
                 spellcheck={false}
                 value={keyDraft()}
-                onInput={(event) => setKeyDraft(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                placeholder={hasKey() ? "Key saved. Enter a new key to replace it." : "sk-ant-…"}
+                onChange={setKeyDraft}
+                placeholder={
+                  hasKey()
+                    ? "Key saved. Enter a new key to replace it."
+                    : "sk-ant-…"
+                }
                 data-testid="anthropic-api-key"
               />
 

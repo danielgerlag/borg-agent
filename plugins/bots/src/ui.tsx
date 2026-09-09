@@ -15,7 +15,7 @@ import {
   type Persona,
 } from "@borg/contracts";
 import { defineUiPlugin, type Disposable } from "@borg/plugin-sdk";
-import { Button, EmptyState, Panel } from "@borg/ui-kit";
+import { Button, EmptyState, Panel, Select, TextField } from "@borg/ui-kit";
 import { Activity, Play, Plus, Square, Trash2 } from "lucide-solid";
 import {
   For,
@@ -239,41 +239,30 @@ export default defineUiPlugin({
             <Panel>
               <h3 class="text-sm font-semibold">New bot</h3>
               <div class="mt-3 grid gap-3">
-                <label class="grid gap-1 text-xs font-medium text-[var(--text-muted)]">
-                  Name
-                  <input
-                    class="rounded-lg border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="bot-name"
-                    value={name()}
-                    onInput={(event) => setName(event.currentTarget.value)}
-                  />
-                </label>
-                <label class="grid gap-1 text-xs font-medium text-[var(--text-muted)]">
-                  Persona
-                  <select
-                    class="rounded-lg border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="bot-persona"
-                    value={personaId()}
-                    onChange={(event) => setPersonaId(event.currentTarget.value)}
-                  >
-                    <For each={personas()}>
-                      {(persona) => (
-                        <option value={persona.id}>{persona.name}</option>
-                      )}
-                    </For>
-                  </select>
-                </label>
-                <label class="grid gap-1 text-xs font-medium text-[var(--text-muted)]">
-                  Launch prompt
-                  <textarea
-                    class="min-h-20 rounded-lg border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="bot-launch-prompt"
-                    value={launchPrompt()}
-                    onInput={(event) =>
-                      setLaunchPrompt(event.currentTarget.value)
-                    }
-                  />
-                </label>
+                <TextField
+                  label="Name"
+                  data-testid="bot-name"
+                  value={name()}
+                  onChange={setName}
+                />
+                <Select
+                  label="Persona"
+                  data-testid="bot-persona"
+                  value={personaId()}
+                  onChange={setPersonaId}
+                  options={personas().map((persona) => ({
+                    value: persona.id,
+                    label: persona.name,
+                  }))}
+                />
+                <TextField
+                  label="Launch prompt"
+                  data-testid="bot-launch-prompt"
+                  rows={3}
+                  inputClass="min-h-20"
+                  value={launchPrompt()}
+                  onChange={setLaunchPrompt}
+                />
                 <Button
                   type="button"
                   data-testid="bot-create"

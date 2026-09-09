@@ -21,7 +21,14 @@ import {
   type Persona,
 } from "@borg/contracts";
 import { defineUiPlugin, type Disposable } from "@borg/plugin-sdk";
-import { Button, EmptyState, Panel } from "@borg/ui-kit";
+import {
+  Button,
+  Collapsible,
+  EmptyState,
+  Panel,
+  Select,
+  TextField,
+} from "@borg/ui-kit";
 import cytoscape from "cytoscape";
 import {
   connectNodes,
@@ -1293,31 +1300,23 @@ export default defineUiPlugin<Component>({
                     <header class="border-b border-[var(--border)] px-3 py-3 lg:px-5">
                       <div class="flex flex-wrap items-start gap-2 lg:flex-nowrap lg:gap-3">
                         <div class="min-w-0 flex-1 basis-full lg:basis-auto">
-                          <label class="sr-only" for="graph-name">
-                            Graph name
-                          </label>
-                          <input
-                            id="graph-name"
+                          <TextField
                             value={current().name}
-                            onInput={(event) => {
-                              const name = event.currentTarget.value;
+                            onChange={(name) => {
                               setDraft((definition) =>
                                 definition ? { ...definition, name } : definition,
                               );
                               setDirty(true);
                             }}
-                            class="w-full border-0 bg-transparent text-lg font-semibold outline-none placeholder:text-[var(--text-subtle)]"
+                            class="min-w-0"
+                            inputClass="border-0 bg-transparent px-0 py-0 text-lg font-semibold placeholder:text-[var(--text-subtle)] focus:border-0"
                             placeholder="Graph name"
+                            aria-label="Graph name"
                             data-testid="graph-name"
                           />
-                          <label class="sr-only" for="graph-description">
-                            Graph description
-                          </label>
-                          <input
-                            id="graph-description"
+                          <TextField
                             value={current().description ?? ""}
-                            onInput={(event) => {
-                              const description = event.currentTarget.value;
+                            onChange={(description) => {
                               setDraft((definition) =>
                                 definition
                                   ? { ...definition, description }
@@ -1325,31 +1324,31 @@ export default defineUiPlugin<Component>({
                               );
                               setDirty(true);
                             }}
-                            class="mt-1 w-full border-0 bg-transparent text-xs text-[var(--text-muted)] outline-none placeholder:text-[var(--text-subtle)]"
+                            class="mt-1"
+                            inputClass="border-0 bg-transparent px-0 py-0 text-xs text-[var(--text-muted)] placeholder:text-[var(--text-subtle)] focus:border-0"
                             placeholder="Describe when this graph should be used"
+                            aria-label="Graph description"
                             data-testid="graph-description"
                           />
                         </div>
-                        <label class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                          Mode
-                          <select
-                            value={current().mode}
-                            onChange={(event) => {
-                              const mode = event.currentTarget.value;
-                              if (mode !== "chat" && mode !== "background") {
-                                return;
-                              }
-                              setDraft((definition) =>
-                                definition ? { ...definition, mode } : definition,
-                              );
-                              setDirty(true);
-                            }}
-                            class="rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--text)]"
-                          >
-                            <option value="chat">Chat</option>
-                            <option value="background">Background</option>
-                          </select>
-                        </label>
+                        <Select
+                          label="Mode"
+                          value={current().mode}
+                          onChange={(mode) => {
+                            if (mode !== "chat" && mode !== "background") {
+                              return;
+                            }
+                            setDraft((definition) =>
+                              definition ? { ...definition, mode } : definition,
+                            );
+                            setDirty(true);
+                          }}
+                          options={[
+                            { value: "chat", label: "Chat" },
+                            { value: "background", label: "Background" },
+                          ]}
+                          size="sm"
+                        />
                         <Button
                           type="button"
                           variant="secondary"
@@ -1439,48 +1438,41 @@ export default defineUiPlugin<Component>({
                   <h3 class="text-sm font-semibold">Add step</h3>
                 </div>
                 <div class="mt-3 grid gap-2">
-                  <select
+                  <Select
                     value={selectedKind()}
-                    onChange={(event) =>
-                      setSelectedKind(event.currentTarget.value)
-                    }
-                    class="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs"
+                    onChange={setSelectedKind}
+                    groups={[
+                      {
+                        label: "Triggers",
+                        options: paletteItems()
+                          .filter(({ type }) => type === "trigger")
+                          .map((item) => ({
+                            value: item.kind,
+                            label: item.label,
+                          })),
+                      },
+                      {
+                        label: "Tasks",
+                        options: paletteItems()
+                          .filter(({ type }) => type === "task")
+                          .map((item) => ({
+                            value: item.kind,
+                            label: item.label,
+                          })),
+                      },
+                      {
+                        label: "Controls",
+                        options: paletteItems()
+                          .filter(({ type }) => type === "control")
+                          .map((item) => ({
+                            value: item.kind,
+                            label: item.label,
+                          })),
+                      },
+                    ]}
+                    size="sm"
                     data-testid="graph-node-kind"
-                  >
-                    <optgroup label="Triggers">
-                      <For
-                        each={paletteItems().filter(
-                          ({ type }) => type === "trigger",
-                        )}
-                      >
-                        {(item) => (
-                          <option value={item.kind}>{item.label}</option>
-                        )}
-                      </For>
-                    </optgroup>
-                    <optgroup label="Tasks">
-                      <For
-                        each={paletteItems().filter(
-                          ({ type }) => type === "task",
-                        )}
-                      >
-                        {(item) => (
-                          <option value={item.kind}>{item.label}</option>
-                        )}
-                      </For>
-                    </optgroup>
-                    <optgroup label="Controls">
-                      <For
-                        each={paletteItems().filter(
-                          ({ type }) => type === "control",
-                        )}
-                      >
-                        {(item) => (
-                          <option value={item.kind}>{item.label}</option>
-                        )}
-                      </For>
-                    </optgroup>
-                  </select>
+                  />
                   <Button
                     type="button"
                     variant="secondary"
@@ -1504,51 +1496,45 @@ export default defineUiPlugin<Component>({
                   />
                   <h3 class="text-sm font-semibold">Connect steps</h3>
                 </div>
-                <label class="mt-3 block text-[10px] font-medium uppercase tracking-wider text-[var(--text-subtle)]">
-                  Source
-                  <select
-                    value={edgeSource()}
-                    onChange={(event) =>
-                      setEdgeSource(event.currentTarget.value)
-                    }
-                    class="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-xs normal-case tracking-normal text-[var(--text)]"
-                  >
-                    <For each={draft()?.nodes ?? []}>
-                      {(node) => <option value={node.id}>{node.id}</option>}
-                    </For>
-                  </select>
-                </label>
-                <label class="mt-2 block text-[10px] font-medium uppercase tracking-wider text-[var(--text-subtle)]">
-                  Target
-                  <select
-                    value={edgeTarget()}
-                    onChange={(event) =>
-                      setEdgeTarget(event.currentTarget.value)
-                    }
-                    class="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-xs normal-case tracking-normal text-[var(--text)]"
-                  >
-                    <For each={draft()?.nodes ?? []}>
-                      {(node) => <option value={node.id}>{node.id}</option>}
-                    </For>
-                  </select>
-                </label>
+                <Select
+                  class="mt-3"
+                  label="Source"
+                  value={edgeSource()}
+                  onChange={setEdgeSource}
+                  options={(draft()?.nodes ?? []).map((node) => ({
+                    value: node.id,
+                    label: node.id,
+                  }))}
+                  size="sm"
+                />
+                <Select
+                  class="mt-2"
+                  label="Target"
+                  value={edgeTarget()}
+                  onChange={setEdgeTarget}
+                  options={(draft()?.nodes ?? []).map((node) => ({
+                    value: node.id,
+                    label: node.id,
+                  }))}
+                  size="sm"
+                />
                 <Show when={edgeSourceNode()?.kind === "branch"}>
-                  <label class="mt-2 block text-[10px] font-medium uppercase tracking-wider text-[var(--text-subtle)]">
-                    Branch outcome
-                    <select
-                      value={edgeHandle()}
-                      onChange={(event) =>
-                        setEdgeHandle(
-                          event.currentTarget.value as "true" | "false",
-                        )
+                  <Select
+                    class="mt-2"
+                    label="Branch outcome"
+                    value={edgeHandle()}
+                    onChange={(value) => {
+                      if (value === "true" || value === "false") {
+                        setEdgeHandle(value);
                       }
-                      class="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-2 text-xs normal-case tracking-normal text-[var(--text)]"
-                      data-testid="graph-edge-handle"
-                    >
-                      <option value="true">Condition is true</option>
-                      <option value="false">Condition is false</option>
-                    </select>
-                  </label>
+                    }}
+                    options={[
+                      { value: "true", label: "Condition is true" },
+                      { value: "false", label: "Condition is false" },
+                    ]}
+                    size="sm"
+                    data-testid="graph-edge-handle"
+                  />
                 </Show>
                 <Button
                   type="button"
@@ -1683,10 +1669,7 @@ export default defineUiPlugin<Component>({
               <Show when={draft()}>
                 {(current) => (
                   <div class="mt-5 border-t border-[var(--border)] pt-5">
-                    <details class="rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2">
-                      <summary class="cursor-pointer text-sm font-semibold">
-                        Graph inputs
-                      </summary>
+                    <Collapsible trigger="Graph inputs">
                       <p class="mt-1 text-[10px] leading-4 text-[var(--text-subtle)]">
                         Fields the consumer fills when this graph runs.
                       </p>
@@ -1704,11 +1687,8 @@ export default defineUiPlugin<Component>({
                           testId="graph-input-schema"
                         />
                       </div>
-                    </details>
-                    <details class="mt-3 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2">
-                      <summary class="cursor-pointer text-sm font-semibold">
-                        Graph variables
-                      </summary>
+                    </Collapsible>
+                    <Collapsible class="mt-3" trigger="Graph variables">
                       <p class="mt-1 text-[10px] leading-4 text-[var(--text-subtle)]">
                         Types for values this graph stores while it runs.
                       </p>
@@ -1726,7 +1706,7 @@ export default defineUiPlugin<Component>({
                           testId="graph-variables-schema"
                         />
                       </div>
-                    </details>
+                    </Collapsible>
                   </div>
                 )}
               </Show>

@@ -4,7 +4,7 @@ import {
   ollamaGetStatus,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Panel, TextField } from "@borg/ui-kit";
 import { Server } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";
 import { DEFAULT_OLLAMA_BASE_URL, parseOllamaConfig } from "./config";
@@ -108,20 +108,15 @@ export default defineUiPlugin<Component>({
                 allowed.
               </p>
 
-              <label
-                class="mt-5 block text-sm text-[var(--text-muted)]"
-                for="ollama-base-url"
-              >
-                Base URL
-              </label>
-              <input
+              <TextField
+                class="mt-5"
+                label="Base URL"
                 id="ollama-base-url"
                 type="text"
                 autocomplete="off"
                 spellcheck={false}
                 value={baseUrl()}
-                onInput={(event) => setBaseUrl(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setBaseUrl}
                 placeholder={DEFAULT_OLLAMA_BASE_URL}
                 data-testid="ollama-base-url"
               />

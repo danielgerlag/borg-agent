@@ -10,7 +10,7 @@ import {
   type DiscordChannelStatus,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { KeyRound, Plus, PlugZap, Save, Trash2 } from "lucide-solid";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";
 import {
@@ -320,10 +320,10 @@ export default defineUiPlugin<Component>({
           <Show when={creating()}>
             <Panel class="mt-5">
               <p class="text-sm font-semibold">New Discord account</p>
-              <input
+              <TextField
+                class="mt-3"
                 value={newName()}
-                onInput={(event) => setNewName(event.currentTarget.value)}
-                class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setNewName}
                 placeholder="Bot name"
                 data-testid="discord-new-account-name"
               />
@@ -378,32 +378,23 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label class="mt-4 block text-sm text-[var(--text-muted)]">
-                  Name
-                  <input
-                    value={accountName()}
-                    onInput={(event) =>
-                      setAccountName(event.currentTarget.value)
-                    }
-                    class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="discord-account-name"
-                  />
-                </label>
+                <TextField
+                  class="mt-4"
+                  label="Name"
+                  value={accountName()}
+                  onChange={setAccountName}
+                  data-testid="discord-account-name"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="discord-bot-token"
-                >
-                  Bot token
-                </label>
-                <input
+                <TextField
+                  class="mt-5"
+                  label="Bot token"
                   id="discord-bot-token"
                   type="password"
                   autocomplete="off"
                   spellcheck={false}
                   value={tokenDraft()}
-                  onInput={(event) => setTokenDraft(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setTokenDraft}
                   placeholder={
                     status()?.hasToken
                       ? "Token saved. Enter a new token to replace it."
@@ -432,57 +423,40 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label class="mt-6 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={enabled()}
-                    onChange={(event) =>
-                      setEnabled(event.currentTarget.checked)
-                    }
-                    data-testid="discord-enabled"
-                  />
-                  Enable the Discord channel
-                </label>
-                <label class="mt-2 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked
-                    disabled
-                    data-testid="discord-ignore-bots"
-                  />
-                  Messages from bots are always ignored
-                </label>
+                <Checkbox
+                  class="mt-6"
+                  checked={enabled()}
+                  onChange={setEnabled}
+                  label="Enable the Discord channel"
+                  data-testid="discord-enabled"
+                />
+                <Checkbox
+                  class="mt-2"
+                  checked
+                  disabled
+                  label="Messages from bots are always ignored"
+                  data-testid="discord-ignore-bots"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="discord-allowed-guilds"
-                >
-                  Allowed server (guild) ids. One per line; blank allows any
-                  server
-                </label>
-                <textarea
+                <TextField
+                  class="mt-5"
+                  label="Allowed server (guild) ids. One per line; blank allows any server"
                   id="discord-allowed-guilds"
                   rows={3}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
+                  inputClass="font-mono"
                   value={guildText()}
-                  onInput={(event) => setGuildText(event.currentTarget.value)}
+                  onChange={setGuildText}
                   data-testid="discord-allowed-guilds"
                 />
 
-                <label
-                  class="mt-4 block text-sm text-[var(--text-muted)]"
-                  for="discord-allowed-channels"
-                >
-                  Allowed channel ids. One per line; required
-                </label>
-                <textarea
+                <TextField
+                  class="mt-4"
+                  label="Allowed channel ids. One per line; required"
                   id="discord-allowed-channels"
                   rows={4}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
+                  inputClass="font-mono"
                   value={channelText()}
-                  onInput={(event) =>
-                    setChannelText(event.currentTarget.value)
-                  }
+                  onChange={setChannelText}
                   data-testid="discord-allowed-channels"
                 />
 

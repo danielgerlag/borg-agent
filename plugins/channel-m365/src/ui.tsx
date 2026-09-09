@@ -9,7 +9,7 @@ import {
   type M365ChannelStatus,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { Mail, Plus, Save, Trash2 } from "lucide-solid";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";
 import {
@@ -282,10 +282,10 @@ export default defineUiPlugin<Component>({
           <Show when={creating()}>
             <Panel class="mt-5">
               <p class="text-sm font-semibold">New Microsoft 365 account</p>
-              <input
+              <TextField
+                class="mt-3"
                 value={newName()}
-                onInput={(event) => setNewName(event.currentTarget.value)}
-                class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setNewName}
                 placeholder="Mailbox name"
                 data-testid="m365-new-account-name"
               />
@@ -340,81 +340,56 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label class="mt-4 block text-sm text-[var(--text-muted)]">
-                  Name
-                  <input
-                    value={accountName()}
-                    onInput={(event) =>
-                      setAccountName(event.currentTarget.value)
-                    }
-                    class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="m365-account-name"
-                  />
-                </label>
+                <TextField
+                  class="mt-4"
+                  label="Name"
+                  value={accountName()}
+                  onChange={setAccountName}
+                  data-testid="m365-account-name"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="m365-client-id"
-                >
-                  Public native client id
-                </label>
-                <input
+                <TextField
+                  class="mt-5"
+                  label="Public native client id"
                   id="m365-client-id"
                   type="text"
                   autocomplete="off"
                   spellcheck={false}
                   value={clientId()}
-                  onInput={(event) => setClientId(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setClientId}
                   placeholder="Application (client) ID"
                   data-testid="m365-client-id"
                 />
 
-                <label
-                  class="mt-4 block text-sm text-[var(--text-muted)]"
-                  for="m365-tenant"
-                >
-                  Tenant
-                </label>
-                <input
+                <TextField
+                  class="mt-4"
+                  label="Tenant"
                   id="m365-tenant"
                   type="text"
                   autocomplete="off"
                   spellcheck={false}
                   value={tenant()}
-                  onInput={(event) => setTenant(event.currentTarget.value)}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setTenant}
                   placeholder={M365_DEFAULT_TENANT}
                   data-testid="m365-tenant"
                 />
 
-                <label class="mt-6 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={enabled()}
-                    onChange={(event) =>
-                      setEnabled(event.currentTarget.checked)
-                    }
-                    data-testid="m365-enabled"
-                  />
-                  Enable the Microsoft 365 channel
-                </label>
+                <Checkbox
+                  class="mt-6"
+                  checked={enabled()}
+                  onChange={setEnabled}
+                  label="Enable the Microsoft 365 channel"
+                  data-testid="m365-enabled"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="m365-allowed-recipients"
-                >
-                  Allowed recipients. One email per line; the connected mailbox
-                  can send to itself
-                </label>
-                <textarea
+                <TextField
+                  class="mt-5"
+                  label="Allowed recipients. One email per line; the connected mailbox can send to itself"
                   id="m365-allowed-recipients"
                   rows={4}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
+                  inputClass="font-mono"
                   value={recipientText()}
-                  onInput={(event) =>
-                    setRecipientText(event.currentTarget.value)
-                  }
+                  onChange={setRecipientText}
                   data-testid="m365-allowed-recipients"
                 />
 

@@ -4,7 +4,7 @@ import {
   openrouterGetStatus,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Panel, TextField } from "@borg/ui-kit";
 import { Globe, KeyRound } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";
 
@@ -116,22 +116,19 @@ export default defineUiPlugin<Component>({
                 catalog. You can skip this and keep the built-in demo model.
               </p>
 
-              <label
-                class="mt-5 block text-sm text-[var(--text-muted)]"
-                for="openrouter-api-key"
-              >
-                API key
-              </label>
-              <input
+              <TextField
+                class="mt-5"
+                label="API key"
                 id="openrouter-api-key"
                 type="password"
                 autocomplete="off"
                 spellcheck={false}
                 value={keyDraft()}
-                onInput={(event) => setKeyDraft(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setKeyDraft}
                 placeholder={
-                  hasKey() ? "Key saved. Enter a new key to replace it." : "sk-or-…"
+                  hasKey()
+                    ? "Key saved. Enter a new key to replace it."
+                    : "sk-or-…"
                 }
                 data-testid="openrouter-api-key"
               />

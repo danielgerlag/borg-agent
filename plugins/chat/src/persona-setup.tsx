@@ -1,7 +1,8 @@
 import type { ModelDescriptor, Persona } from "@borg/contracts";
 import type { PluginUiContext } from "@borg/plugin-sdk";
+import { Select } from "@borg/ui-kit";
 import { UserRoundCog } from "lucide-solid";
-import { For, createSignal, onMount, type Component } from "solid-js";
+import { createSignal, onMount, type Component } from "solid-js";
 import { displayModelName, matchesModelPreference } from "./model-preference";
 
 export function createPersonaWizardStep(
@@ -128,39 +129,31 @@ export function createPersonaWizardStep(
             </p>
           </div>
         </div>
-        <label class="mt-5 block text-sm text-[var(--text-muted)]">
-          Persona
-          <select
-            value={selected()}
-            onChange={(event) => void choose(event.currentTarget.value)}
-            class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-            data-testid="wizard-persona-select"
-          >
-            <For each={personas()}>
-              {(persona) => (
-                <option value={persona.id}>{persona.name}</option>
-              )}
-            </For>
-          </select>
-        </label>
-        <label class="mt-4 block text-sm text-[var(--text-muted)]">
-          Preferred model for this persona
-          <select
-            value={selectedModel()}
-            onFocus={() => void load()}
-            onChange={(event) => void chooseModel(event.currentTarget.value)}
-            class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2"
-            data-testid="wizard-model-select"
-          >
-            <For each={models()}>
-              {(model) => (
-                <option value={model.preferenceId}>
-                  {displayModelName(model)}
-                </option>
-              )}
-            </For>
-          </select>
-        </label>
+        <Select
+          class="mt-5"
+          label="Persona"
+          value={selected()}
+          onChange={(value) => void choose(value)}
+          options={personas().map((persona) => ({
+            value: persona.id,
+            label: persona.name,
+          }))}
+          data-testid="wizard-persona-select"
+        />
+        <Select
+          class="mt-4"
+          label="Preferred model for this persona"
+          value={selectedModel()}
+          onOpenChange={(open) => {
+            if (open) void load();
+          }}
+          onChange={(value) => void chooseModel(value)}
+          options={models().map((model) => ({
+            value: model.preferenceId,
+            label: displayModelName(model),
+          }))}
+          data-testid="wizard-model-select"
+        />
         <p class="mt-3 text-xs text-[var(--text-muted)]">{status()}</p>
       </section>
     );

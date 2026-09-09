@@ -10,7 +10,7 @@ import {
   type SlackChannelStatus,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, Panel } from "@borg/ui-kit";
+import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { KeyRound, Plus, PlugZap, Save, Trash2 } from "lucide-solid";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";
 import {
@@ -368,10 +368,10 @@ export default defineUiPlugin<Component>({
           <Show when={creating()}>
             <Panel class="mt-5">
               <p class="text-sm font-semibold">New Slack account</p>
-              <input
+              <TextField
+                class="mt-3"
                 value={newName()}
-                onInput={(event) => setNewName(event.currentTarget.value)}
-                class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                onChange={setNewName}
                 placeholder="Workspace name"
                 data-testid="slack-new-account-name"
               />
@@ -426,34 +426,23 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label class="mt-4 block text-sm text-[var(--text-muted)]">
-                  Name
-                  <input
-                    value={accountName()}
-                    onInput={(event) =>
-                      setAccountName(event.currentTarget.value)
-                    }
-                    class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
-                    data-testid="slack-account-name"
-                  />
-                </label>
+                <TextField
+                  class="mt-4"
+                  label="Name"
+                  value={accountName()}
+                  onChange={setAccountName}
+                  data-testid="slack-account-name"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="slack-bot-token"
-                >
-                  Bot token
-                </label>
-                <input
+                <TextField
+                  class="mt-5"
+                  label="Bot token"
                   id="slack-bot-token"
                   type="password"
                   autocomplete="off"
                   spellcheck={false}
                   value={botTokenDraft()}
-                  onInput={(event) =>
-                    setBotTokenDraft(event.currentTarget.value)
-                  }
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setBotTokenDraft}
                   placeholder={
                     status()?.hasBotToken
                       ? "Token saved. Enter a new token to replace it."
@@ -482,22 +471,15 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="slack-app-token"
-                >
-                  App-level token
-                </label>
-                <input
+                <TextField
+                  class="mt-5"
+                  label="App-level token"
                   id="slack-app-token"
                   type="password"
                   autocomplete="off"
                   spellcheck={false}
                   value={appTokenDraft()}
-                  onInput={(event) =>
-                    setAppTokenDraft(event.currentTarget.value)
-                  }
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  onChange={setAppTokenDraft}
                   placeholder={
                     status()?.hasAppToken
                       ? "Token saved. Enter a new token to replace it."
@@ -526,59 +508,41 @@ export default defineUiPlugin<Component>({
                   </Button>
                 </div>
 
-                <label class="mt-6 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={enabled()}
-                    onChange={(event) =>
-                      setEnabled(event.currentTarget.checked)
-                    }
-                    data-testid="slack-enabled"
-                  />
-                  Enable the Slack channel
-                </label>
-                <label class="mt-2 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked
-                    disabled
-                    data-testid="slack-ignore-bots"
-                  />
-                  Messages from bots are always ignored
-                </label>
+                <Checkbox
+                  class="mt-6"
+                  checked={enabled()}
+                  onChange={setEnabled}
+                  label="Enable the Slack channel"
+                  data-testid="slack-enabled"
+                />
+                <Checkbox
+                  class="mt-2"
+                  checked
+                  disabled
+                  label="Messages from bots are always ignored"
+                  data-testid="slack-ignore-bots"
+                />
 
-                <label
-                  class="mt-5 block text-sm text-[var(--text-muted)]"
-                  for="slack-allowed-channels"
-                >
-                  Allowed channel ids. One per line; required
-                </label>
-                <textarea
+                <TextField
+                  class="mt-5"
+                  label="Allowed channel ids. One per line; required"
                   id="slack-allowed-channels"
                   rows={4}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
+                  inputClass="font-mono"
                   value={channelText()}
-                  onInput={(event) =>
-                    setChannelText(event.currentTarget.value)
-                  }
+                  onChange={setChannelText}
                   data-testid="slack-allowed-channels"
                 />
 
-                <label
-                  class="mt-4 block text-sm text-[var(--text-muted)]"
-                  for="slack-default-send-channel"
-                >
-                  Default send channel id. Must be in the allow-list when set
-                </label>
-                <input
+                <TextField
+                  class="mt-4"
+                  label="Default send channel id. Must be in the allow-list when set"
                   id="slack-default-send-channel"
                   type="text"
                   spellcheck={false}
-                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-sm"
+                  inputClass="font-mono"
                   value={defaultSendText()}
-                  onInput={(event) =>
-                    setDefaultSendText(event.currentTarget.value)
-                  }
+                  onChange={setDefaultSendText}
                   data-testid="slack-default-send-channel"
                 />
 

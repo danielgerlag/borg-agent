@@ -5,10 +5,9 @@ import {
   type Persona,
 } from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
-import { Button, EmptyState, Panel } from "@borg/ui-kit";
+import { Button, Checkbox, EmptyState, Panel, Select, TextField } from "@borg/ui-kit";
 import { Plus, RefreshCw, Trash2 } from "lucide-solid";
 import {
-  For,
   Index,
   Show,
   createMemo,
@@ -126,16 +125,12 @@ export default defineUiPlugin<Component>({
             </Button>
           </div>
 
-          <label class="mt-5 block text-sm text-[var(--text-muted)]" for="mcp-persona">
-            Persona
-          </label>
-          <select
-            id="mcp-persona"
-            class="mt-1 w-full rounded-xl border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 text-sm"
+          <Select
+            class="mt-5"
+            label="Persona"
             data-testid="mcp-persona-select"
             value={personaId()}
-            onChange={(event) => {
-              const next = event.currentTarget.value;
+            onChange={(next) => {
               setPersonaId(next);
               const persona = personas().find((entry) => entry.id === next);
               setDrafts((persona?.mcpServers ?? []).map(draftFromConfig));
@@ -143,11 +138,11 @@ export default defineUiPlugin<Component>({
                 setError(describeDraftError(failure)),
               );
             }}
-          >
-            <For each={personas()}>
-              {(persona) => <option value={persona.id}>{persona.name}</option>}
-            </For>
-          </select>
+            options={personas().map((persona) => ({
+              value: persona.id,
+              label: persona.name,
+            }))}
+          />
 
           <Show
             when={drafts().length > 0}
@@ -170,161 +165,142 @@ export default defineUiPlugin<Component>({
                       data-testid={`mcp-server-row-${server().id}`}
                     >
                       <div class="flex items-center justify-between gap-3">
-                        <input
-                          class="w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
+                        <TextField
+                          class="min-w-0 flex-1"
                           data-testid="mcp-server-id"
                           value={server().id}
-                          onInput={(event) =>
+                          onChange={(value) =>
                             updateDraft(index, {
                               ...server(),
-                              id: event.currentTarget.value,
+                              id: value,
                             })
                           }
                         />
-                        <label class="flex items-center gap-2 text-xs">
-                          <input
-                            type="checkbox"
-                            data-testid="mcp-server-enabled"
-                            checked={server().enabled}
-                            onChange={(event) =>
-                              updateDraft(index, {
-                                ...server(),
-                                enabled: event.currentTarget.checked,
-                              })
-                            }
-                          />
-                          Enabled
-                        </label>
+                        <Checkbox
+                          data-testid="mcp-server-enabled"
+                          checked={server().enabled}
+                          onChange={(enabled) =>
+                            updateDraft(index, {
+                              ...server(),
+                              enabled,
+                            })
+                          }
+                          label="Enabled"
+                        />
                       </div>
                       <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                        <label class="text-xs text-[var(--text-muted)]">
-                          Transport
-                          <select
-                            class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
-                            data-testid="mcp-server-transport"
-                            value={server().transport}
-                            onChange={(event) => {
-                              const transport = event.currentTarget.value as
-                                | "stdio"
-                                | "sse"
-                                | "streamable-http";
-                              updateDraft(
-                                index,
-                                changeDraftTransport(server(), transport),
-                              );
-                            }}
-                          >
-                            <option value="stdio">stdio</option>
-                            <option value="sse">sse</option>
-                            <option value="streamable-http">streamable-http</option>
-                          </select>
-                        </label>
-                        <label class="text-xs text-[var(--text-muted)]">
-                          Reconnect
-                          <input
-                            class="ml-2 align-middle"
-                            type="checkbox"
-                            data-testid="mcp-server-reconnect"
-                            checked={server().reconnect}
-                            onChange={(event) =>
-                              updateDraft(index, {
-                                ...server(),
-                                reconnect: event.currentTarget.checked,
-                              })
+                        <Select
+                          label="Transport"
+                          data-testid="mcp-server-transport"
+                          value={server().transport}
+                          onChange={(value) => {
+                            if (
+                              value !== "stdio" &&
+                              value !== "sse" &&
+                              value !== "streamable-http"
+                            ) {
+                              return;
                             }
-                          />
-                        </label>
+                            updateDraft(
+                              index,
+                              changeDraftTransport(server(), value),
+                            );
+                          }}
+                          options={[
+                            { value: "stdio", label: "stdio" },
+                            { value: "sse", label: "sse" },
+                            {
+                              value: "streamable-http",
+                              label: "streamable-http",
+                            },
+                          ]}
+                        />
+                        <Checkbox
+                          data-testid="mcp-server-reconnect"
+                          checked={server().reconnect}
+                          onChange={(reconnect) =>
+                            updateDraft(index, {
+                              ...server(),
+                              reconnect,
+                            })
+                          }
+                          label="Reconnect"
+                        />
                       </div>
                       <Show when={server().transport === "stdio"}>
-                        <label class="mt-3 block text-xs text-[var(--text-muted)]">
-                          Command
-                          <input
-                            class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
-                            data-testid="mcp-server-command"
-                            value={server().command ?? ""}
-                            onInput={(event) =>
-                              updateDraft(index, {
-                                ...server(),
-                                command: event.currentTarget.value,
-                              })
-                            }
-                          />
-                        </label>
-                        <label class="mt-3 block text-xs text-[var(--text-muted)]">
-                          Arguments
-                          <textarea
-                            class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
-                            data-testid="mcp-server-arguments"
-                            rows={3}
-                            value={argumentsToText(server().arguments)}
-                            onInput={(event) =>
-                              updateDraft(index, {
-                                ...server(),
-                                arguments: textToArguments(event.currentTarget.value),
-                              })
-                            }
-                          />
-                        </label>
-                        <label class="mt-3 block text-xs text-[var(--text-muted)]">
-                          Environment secret refs
-                          <textarea
-                            class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
-                            data-testid="mcp-env-secret-refs"
-                            rows={2}
-                            value={
-                              server().environmentSecretRefsText ??
-                              refsToText(server().environmentSecretRefs)
-                            }
-                            onInput={(event) =>
-                              updateDraft(index, {
-                                ...server(),
-                                environmentSecretRefsText:
-                                  event.currentTarget.value,
-                                environmentSecretRefs: textToRefs(
-                                  event.currentTarget.value,
-                                ),
-                              })
-                            }
-                          />
-                        </label>
+                        <TextField
+                          class="mt-3"
+                          label="Command"
+                          data-testid="mcp-server-command"
+                          value={server().command ?? ""}
+                          onChange={(value) =>
+                            updateDraft(index, {
+                              ...server(),
+                              command: value,
+                            })
+                          }
+                        />
+                        <TextField
+                          class="mt-3"
+                          label="Arguments"
+                          data-testid="mcp-server-arguments"
+                          rows={3}
+                          value={argumentsToText(server().arguments)}
+                          onChange={(value) =>
+                            updateDraft(index, {
+                              ...server(),
+                              arguments: textToArguments(value),
+                            })
+                          }
+                        />
+                        <TextField
+                          class="mt-3"
+                          label="Environment secret refs"
+                          data-testid="mcp-env-secret-refs"
+                          rows={2}
+                          value={
+                            server().environmentSecretRefsText ??
+                            refsToText(server().environmentSecretRefs)
+                          }
+                          onChange={(value) =>
+                            updateDraft(index, {
+                              ...server(),
+                              environmentSecretRefsText: value,
+                              environmentSecretRefs: textToRefs(value),
+                            })
+                          }
+                        />
                       </Show>
                       <Show when={server().transport !== "stdio"}>
-                        <label class="mt-3 block text-xs text-[var(--text-muted)]">
-                          URL
-                          <input
-                            class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
-                            data-testid="mcp-server-url"
-                            value={server().url ?? ""}
-                            onInput={(event) =>
-                              updateDraft(index, {
-                                ...server(),
-                                url: event.currentTarget.value,
-                              })
-                            }
-                          />
-                        </label>
-                        <label class="mt-3 block text-xs text-[var(--text-muted)]">
-                          Header secret refs
-                          <textarea
-                            class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
-                            data-testid="mcp-header-secret-refs"
-                            rows={2}
-                            value={
-                              server().headerSecretRefsText ??
-                              refsToText(server().headerSecretRefs)
-                            }
-                            onInput={(event) =>
-                              updateDraft(index, {
-                                ...server(),
-                                headerSecretRefsText:
-                                  event.currentTarget.value,
-                                headerSecretRefs: textToRefs(
-                                  event.currentTarget.value,
-                                ),
-                              })
-                            }
-                          />
-                        </label>
+                        <TextField
+                          class="mt-3"
+                          label="URL"
+                          data-testid="mcp-server-url"
+                          value={server().url ?? ""}
+                          onChange={(value) =>
+                            updateDraft(index, {
+                              ...server(),
+                              url: value,
+                            })
+                          }
+                        />
+                        <TextField
+                          class="mt-3"
+                          label="Header secret refs"
+                          data-testid="mcp-header-secret-refs"
+                          rows={2}
+                          value={
+                            server().headerSecretRefsText ??
+                            refsToText(server().headerSecretRefs)
+                          }
+                          onChange={(value) =>
+                            updateDraft(index, {
+                              ...server(),
+                              headerSecretRefsText: value,
+                              headerSecretRefs: textToRefs(value),
+                            })
+                          }
+                        />
                       </Show>
                       <p class="mt-3 text-xs" data-testid="mcp-server-status">
                         {snapshot()?.status ?? "idle"}
