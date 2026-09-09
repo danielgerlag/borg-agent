@@ -11,6 +11,8 @@ describe("Microsoft 365 settings UI contract", () => {
     expect(source).toContain('label: "Microsoft 365"');
     expect(source).toContain("order: 47");
     expect(source).toContain('data-testid="m365-settings-page"');
+    expect(source).toContain("m365-account-row-");
+    expect(source).toContain('data-testid="m365-account-new"');
     expect(source).toContain('data-testid="m365-client-id"');
     expect(source).toContain('data-testid="m365-tenant"');
     expect(source).toContain('data-testid="m365-enabled"');

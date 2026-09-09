@@ -44,11 +44,15 @@ export default definePlugin({
   async activate(context) {
     const controller = new M365ChannelController(context);
     const handles = [
-      context.bus.handle(m365ChannelGetStatus, () => controller.status()),
-      context.bus.handle(m365ChannelConnect, (_input, signal) =>
-        controller.connect(signal),
+      context.bus.handle(m365ChannelGetStatus, (input) =>
+        controller.status(input.accountId),
       ),
-      context.bus.handle(m365ChannelDisconnect, () => controller.disconnect()),
+      context.bus.handle(m365ChannelConnect, (input, signal) =>
+        controller.connect(input.accountId, signal),
+      ),
+      context.bus.handle(m365ChannelDisconnect, (input) =>
+        controller.disconnect(input.accountId),
+      ),
       context.bus.handle(m365ChannelInject, async (input, signal) => {
         signal.throwIfAborted();
         return controller.inject(m365ChannelInject.input.parse(input), signal);

@@ -25,11 +25,19 @@ const TOOL_SECURITY = {
   channelCapacity: "private",
 } as const;
 
+export interface M365ToolClients {
+  readonly calendar: GraphCalendarClient;
+  readonly drive: GraphDriveClient;
+  readonly contacts: GraphContactsClient;
+}
+
+export type M365ToolAccountResolver = (
+  accountId: string | undefined,
+) => Promise<M365ToolClients>;
+
 export function registerM365Tools(
   context: PluginContext,
-  calendar: GraphCalendarClient,
-  drive: GraphDriveClient,
-  contacts: GraphContactsClient,
+  resolveAccount: M365ToolAccountResolver,
 ): Disposable {
   const handles = [
     context.tools.register(
@@ -41,7 +49,10 @@ export function registerM365Tools(
         approval: "ask",
         sideEffect: false,
         security: TOOL_SECURITY,
-        execute: (input, execution) => calendar.list(input, execution.signal),
+        execute: async (input, execution) => {
+          const clients = await resolveAccount(input.accountId);
+          return clients.calendar.list(input, execution.signal);
+        },
       }),
     ),
     context.tools.register(
@@ -53,7 +64,10 @@ export function registerM365Tools(
         approval: "ask",
         sideEffect: true,
         security: TOOL_SECURITY,
-        execute: (input, execution) => calendar.create(input, execution.signal),
+        execute: async (input, execution) => {
+          const clients = await resolveAccount(input.accountId);
+          return clients.calendar.create(input, execution.signal);
+        },
       }),
     ),
     context.tools.register(
@@ -65,7 +79,10 @@ export function registerM365Tools(
         approval: "ask",
         sideEffect: false,
         security: TOOL_SECURITY,
-        execute: (input, execution) => drive.search(input, execution.signal),
+        execute: async (input, execution) => {
+          const clients = await resolveAccount(input.accountId);
+          return clients.drive.search(input, execution.signal);
+        },
       }),
     ),
     context.tools.register(
@@ -77,7 +94,10 @@ export function registerM365Tools(
         approval: "ask",
         sideEffect: false,
         security: TOOL_SECURITY,
-        execute: (input, execution) => drive.read(input, execution.signal),
+        execute: async (input, execution) => {
+          const clients = await resolveAccount(input.accountId);
+          return clients.drive.read(input, execution.signal);
+        },
       }),
     ),
     context.tools.register(
@@ -89,7 +109,10 @@ export function registerM365Tools(
         approval: "ask",
         sideEffect: false,
         security: TOOL_SECURITY,
-        execute: (input, execution) => contacts.search(input, execution.signal),
+        execute: async (input, execution) => {
+          const clients = await resolveAccount(input.accountId);
+          return clients.contacts.search(input, execution.signal);
+        },
       }),
     ),
   ];

@@ -4,6 +4,7 @@ import {
   m365ChannelDisconnect,
   m365ChannelGetStatus,
   m365ChannelInject,
+  oauthGrantKey,
   type M365ChannelStatus,
 } from "@borg/contracts";
 import { createTestHarness, type ToolContribution } from "@borg/plugin-sdk";
@@ -193,12 +194,9 @@ describe("borg.channel.m365 plugin", () => {
   it("stays unregistered until enabled with a client id", async () => {
     const harness = await activate();
     expect(harness.registrations).toHaveLength(0);
-    expect(
-      await harness.invoke<M365ChannelStatus>(m365ChannelGetStatus, {}),
-    ).toEqual({
-      connected: false,
-      hasClientId: false,
-    });
+    await expect(
+      harness.invoke<M365ChannelStatus>(m365ChannelGetStatus, {}),
+    ).rejects.toThrow("No Microsoft 365 account is configured");
   });
 
   it("registers without a mailbox so inject works without a grant", async () => {
@@ -352,6 +350,10 @@ describe("borg.channel.m365 plugin", () => {
       prompt: "consent",
     });
     expect(harness.oauth.requests[0]?.scopes).toEqual([...M365_SCOPES]);
+    expect(harness.oauth.connectAccountIds).toEqual(["default"]);
+    expect(harness.oauth.usedGrantKeys).toContain(
+      oauthGrantKey("borg.channel.m365"),
+    );
     await harness.invoke(m365ChannelDisconnect, {});
     expect(harness.tools).toEqual([]);
   });
@@ -583,5 +585,104 @@ describe("borg.channel.m365 plugin", () => {
     expect(isAllowedGraphPath("/v1.0/me/people", "GET")).toBe(false);
     expect(isAllowedGraphPath("/v1.0/users/other/events", "POST")).toBe(false);
     expect(isAllowedGraphPath("/v1.0/me/drive/root/children", "GET")).toBe(false);
+  });
+
+  it("registers a second account without disposing the default adapter", async () => {
+    const harness = await activate({
+      config: {
+        accounts: [
+          {
+            id: "default",
+            name: "Microsoft 365",
+            enabled: true,
+            clientId: CLIENT_ID,
+            allowedRecipients: [RECIPIENT],
+          },
+          {
+            id: "work",
+            name: "Work",
+            enabled: true,
+            clientId: "work-client",
+            tenant: "contoso.onmicrosoft.com",
+            allowedRecipients: ["work@contoso.com"],
+          },
+        ],
+      },
+      oauth: { connectedAccountIds: ["default", "work"] },
+    });
+
+    const live = harness.registrations.filter((entry) => !entry.disposed);
+    expect(live.map((entry) => entry.adapter.id).sort()).toEqual([
+      M365_ADAPTER_ID,
+      `${M365_ADAPTER_ID}.work`,
+    ]);
+    const defaultRegistration = live.find(
+      (entry) => entry.adapter.id === M365_ADAPTER_ID,
+    );
+    const workRegistration = live.find(
+      (entry) => entry.adapter.id === `${M365_ADAPTER_ID}.work`,
+    );
+    expect(defaultRegistration?.adapter.destinations).toEqual([RECIPIENT]);
+    expect(workRegistration?.adapter.destinations).toEqual([
+      "work@contoso.com",
+    ]);
+    expect(harness.tools.map((tool) => tool.id)).toEqual([...CONNECTOR_TOOL_IDS]);
+    expect([...harness.oauth.usedGrantKeys].sort()).toEqual([
+      oauthGrantKey("borg.channel.m365"),
+      oauthGrantKey("borg.channel.m365", "work"),
+    ]);
+
+    await expect(
+      executeTool(harness.tools, "m365.calendar.list", {}),
+    ).rejects.toThrow("Pass accountId; more than one account is connected");
+    const listed = await executeTool(harness.tools, "m365.calendar.list", {
+      accountId: "work",
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-01-08T00:00:00.000Z",
+      maxResults: 5,
+    });
+    expect(listed).toEqual({
+      events: [
+        {
+          id: "evt-1",
+          title: "Standup",
+          start: "2026-01-01T10:00:00.0000000",
+          end: "2026-01-01T10:30:00.0000000",
+          location: "Room A",
+        },
+      ],
+    });
+
+    await harness.updateConfig({
+      accounts: [
+        {
+          id: "default",
+          name: "Microsoft 365",
+          enabled: true,
+          clientId: CLIENT_ID,
+          allowedRecipients: [RECIPIENT],
+        },
+        {
+          id: "work",
+          name: "Work",
+          enabled: true,
+          clientId: "work-client",
+          tenant: "contoso.onmicrosoft.com",
+          allowedRecipients: [RECIPIENT, "work@contoso.com"],
+        },
+      ],
+    });
+    await settle();
+
+    expect(defaultRegistration?.disposed).toBe(false);
+    const nextLive = harness.registrations.filter((entry) => !entry.disposed);
+    expect(
+      nextLive.find((entry) => entry.adapter.id === M365_ADAPTER_ID),
+    ).toBe(defaultRegistration);
+    expect(
+      nextLive.find((entry) => entry.adapter.id === `${M365_ADAPTER_ID}.work`)
+        ?.adapter.destinations,
+    ).toEqual([RECIPIENT, "work@contoso.com"]);
+    expect(harness.tools.map((tool) => tool.id)).toEqual([...CONNECTOR_TOOL_IDS]);
   });
 });

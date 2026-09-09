@@ -52,12 +52,14 @@ export default definePlugin({
   async activate(context) {
     const controller = new GoogleChannelController(context);
     const handles = [
-      context.bus.handle(googleChannelGetStatus, () => controller.status()),
-      context.bus.handle(googleChannelConnect, (_input, signal) =>
-        controller.connect(signal),
+      context.bus.handle(googleChannelGetStatus, (input) =>
+        controller.status(input.accountId),
       ),
-      context.bus.handle(googleChannelDisconnect, () =>
-        controller.disconnect(),
+      context.bus.handle(googleChannelConnect, (input, signal) =>
+        controller.connect(input.accountId, signal),
+      ),
+      context.bus.handle(googleChannelDisconnect, (input) =>
+        controller.disconnect(input.accountId),
       ),
       context.bus.handle(googleChannelInject, async (input, signal) => {
         signal.throwIfAborted();
