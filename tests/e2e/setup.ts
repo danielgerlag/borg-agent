@@ -1,4 +1,24 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
+
+export async function expectTypingKeepsFocus(
+  field: Locator,
+  extra: string,
+): Promise<void> {
+  const before = await field.inputValue();
+  await field.click();
+  await field.evaluate((node) => {
+    if (
+      node instanceof HTMLInputElement ||
+      node instanceof HTMLTextAreaElement
+    ) {
+      const end = node.value.length;
+      node.setSelectionRange(end, end);
+    }
+  });
+  await field.pressSequentially(extra);
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue(`${before}${extra}`);
+}
 
 const OPTIONAL_LLM_SETUP_STEPS = [
   "openai-setup-step",

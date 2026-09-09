@@ -66,6 +66,7 @@ const SchemaCardEditor: Component<SchemaCardEditorProps> = (props) => {
                 Name
                 <input
                   value={card().name}
+                  data-testid={`graph-schema-field-name-${index}`}
                   onInput={(event) =>
                     update(index, { name: event.currentTarget.value })
                   }

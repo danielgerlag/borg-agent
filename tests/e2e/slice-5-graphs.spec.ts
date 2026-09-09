@@ -9,7 +9,7 @@ import {
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
-import { completeSetup } from "./setup";
+import { completeSetup, expectTypingKeepsFocus } from "./setup";
 
 const projectRoot = path.resolve(__dirname, "../..");
 const desktopApp = path.join(projectRoot, "apps/desktop");
@@ -364,10 +364,7 @@ test("keeps focus while typing in a selected node field", async () => {
   await page.getByTestId("graph-node-option-set-variable").click();
   const value = page.getByTestId("graph-assignment-value-0");
   await expect(value).toHaveValue("Ready");
-  await value.click();
-  await value.pressSequentially("xyz");
-  await expect(value).toBeFocused();
-  await expect(value).toHaveValue("Readyxyz");
+  await expectTypingKeepsFocus(value, "xyz");
 });
 
 test("launches a graph from Chat and shows its transcript lifecycle", async () => {
