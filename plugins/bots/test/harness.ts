@@ -342,6 +342,7 @@ export async function createBotHarness(
       registerProvider: () => unavailable("Tool provider registration"),
       registerExecutionScope: () => unavailable("Tool execution scopes"),
       invoke: async () => unavailable("Tool invocation"),
+      listCatalog: () => [],
     },
     config: {
       get: async () => unavailable("Config reads"),

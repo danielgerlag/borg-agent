@@ -14,6 +14,7 @@ import {
   graphsGetDefinition,
   graphsGetInstance,
   graphsLaunch,
+  graphsListCatalog,
   graphsListContributions,
   graphsListDefinitions,
   graphsListInstances,
@@ -51,6 +52,7 @@ export default definePlugin({
       graphsGetDefinition.id,
       graphsGetInstance.id,
       graphsLaunch.id,
+      graphsListCatalog.id,
       graphsListContributions.id,
       graphsListDefinitions.id,
       graphsListInstances.id,
@@ -88,6 +90,13 @@ export default definePlugin({
       await engine.refreshContributions();
       return { definitions: engine.listDefinitions() };
     });
+    context.bus.handle(graphsListCatalog, () => ({
+      tools: context.tools.listCatalog().map((tool) => ({
+        id: tool.id,
+        description: tool.description,
+        inputSchema: z.json().parse(JSON.parse(JSON.stringify(tool.inputSchema))),
+      })),
+    }));
     context.bus.handle(graphsListContributions, () => ({
       contributions: [
         ...context.graphs.listTriggers().map(({ kind, label }) => ({

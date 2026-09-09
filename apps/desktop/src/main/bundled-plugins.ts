@@ -569,6 +569,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
           "borg.graphs.getDefinition",
           "borg.graphs.getInstance",
           "borg.graphs.launch",
+          "borg.graphs.listCatalog",
           "borg.graphs.listContributions",
           "borg.graphs.listDefinitions",
           "borg.graphs.listInstances",

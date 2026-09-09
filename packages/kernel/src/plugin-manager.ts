@@ -944,6 +944,10 @@ export class PluginManager {
               ]),
             });
           },
+          listCatalog: () => {
+            assertPermission("tools.invoke");
+            return requireTools().listDefinitions(["*"]);
+          },
         },
         models: {
           registerProvider: (provider) => {

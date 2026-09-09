@@ -4,17 +4,18 @@ import type {
   LoopRunSnapshot,
   LoopStartInput,
 } from "@borg/contracts";
-import type {
-  Disposable,
-  GraphStepContribution,
-  GraphTriggerContribution,
-  JsonValue,
-  PluginBus,
-  PluginContext,
-  PluginExecutions,
-  StoreEntry,
-  StoreTransactionOperation,
-  ToolContribution,
+import {
+  z,
+  type Disposable,
+  type GraphStepContribution,
+  type GraphTriggerContribution,
+  type JsonValue,
+  type PluginBus,
+  type PluginContext,
+  type PluginExecutions,
+  type StoreEntry,
+  type StoreTransactionOperation,
+  type ToolContribution,
 } from "@borg/plugin-sdk";
 import { vi } from "vitest";
 import { createSecurityRuntime } from "../../../packages/kernel/test/security-runtime";
@@ -398,6 +399,12 @@ export function createGraphHarness(
       },
       registerExecutionScope,
       invoke: invokeTool,
+      listCatalog: () =>
+        [...registeredTools.values()].map((tool) => ({
+          id: tool.id,
+          description: tool.description,
+          inputSchema: z.toJSONSchema(tool.input) as JsonValue,
+        })),
     },
     workspace: {
       allocate: (sessionId: string) => {
