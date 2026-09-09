@@ -28,6 +28,7 @@ import {
   nextUniqueId,
   type BranchHandle,
 } from "./connect";
+import { canvasEdgeToDelete, isEditableTarget } from "./canvas-keys";
 import {
   attachEdgeDrawing,
   isGhostElementId,
@@ -366,6 +367,7 @@ export default defineUiPlugin<Component>({
         createSignal<readonly GraphDefinition[]>([]);
       const [draft, setDraft] = createSignal<GraphDefinition>();
       const [selectedNodeId, setSelectedNodeId] = createSignal<string>();
+      const [selectedEdgeId, setSelectedEdgeId] = createSignal<string>();
       const [selectedKind, setSelectedKind] = createSignal("set_variable");
       const [paletteItems, setPaletteItems] =
         createSignal<readonly PaletteItem[]>(builtInKinds);
@@ -416,10 +418,12 @@ export default defineUiPlugin<Component>({
 
       const setSelectedNode = (nodeId?: string): void => {
         setSelectedNodeId(nodeId);
+        setSelectedEdgeId(undefined);
         const node = draft()?.nodes.find(({ id }) => id === nodeId);
         setConfigText(node ? JSON.stringify(node.config, null, 2) : "");
         setConfigError(undefined);
         graph?.nodes().unselect();
+        graph?.edges().unselect();
         if (nodeId) {
           graph?.$id(nodeId).select();
           if (!edgeSource()) {
@@ -427,6 +431,21 @@ export default defineUiPlugin<Component>({
           } else if (edgeSource() !== nodeId) {
             setEdgeTarget(nodeId);
           }
+        }
+      };
+
+      const setSelectedEdge = (edgeId?: string): void => {
+        if (edgeId && isGhostElementId(edgeId)) {
+          return;
+        }
+        setSelectedEdgeId(edgeId);
+        setSelectedNodeId(undefined);
+        setConfigText("");
+        setConfigError(undefined);
+        graph?.nodes().unselect();
+        graph?.edges().unselect();
+        if (edgeId) {
+          graph?.$id(edgeId).select();
         }
       };
 
@@ -716,9 +735,21 @@ export default defineUiPlugin<Component>({
             setSelectedNode(id);
           },
         );
+        graph.on(
+          "tap",
+          "edge",
+          (event: cytoscape.EventObjectEdge): void => {
+            const id = event.target.id();
+            if (isGhostElementId(id)) {
+              return;
+            }
+            event.originalEvent?.preventDefault();
+            setSelectedEdge(id);
+          },
+        );
         graph.on("tap", (event: cytoscape.EventObject): void => {
           if (event.target === graph) {
-            setSelectedNode(undefined);
+            setSelectedEdge(undefined);
           }
         });
         if (typeof ResizeObserver !== "undefined") {
@@ -939,9 +970,32 @@ export default defineUiPlugin<Component>({
         };
         setDraft(next);
         setDirty(true);
+        setSelectedEdgeId(undefined);
         renderDefinition(next, false);
         setOperationStatus("Edge removed.");
       };
+
+      onMount(() => {
+        const onKeyDown = (event: KeyboardEvent): void => {
+          const edgeId = canvasEdgeToDelete({
+            key: event.key,
+            metaKey: event.metaKey,
+            ctrlKey: event.ctrlKey,
+            altKey: event.altKey,
+            typing: isEditableTarget(event.target),
+            selectedEdgeId: selectedEdgeId(),
+          });
+          if (!edgeId) {
+            return;
+          }
+          event.preventDefault();
+          removeEdge(edgeId);
+        };
+        window.addEventListener("keydown", onKeyDown);
+        onCleanup(() => {
+          window.removeEventListener("keydown", onKeyDown);
+        });
+      });
 
       const prepareDefinition = (): GraphDefinition | undefined => {
         const current = draft();
@@ -1330,8 +1384,8 @@ export default defineUiPlugin<Component>({
                         data-testid="graph-canvas"
                       />
                       <div class="pointer-events-none absolute bottom-3 left-3 rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-[10px] text-slate-400">
-                        Drag the cyan handle to connect · Drag steps to arrange
-                        · Scroll to zoom
+                        Drag a handle to connect · Click an arrow, then Delete
+                        · Drag steps to arrange · Scroll to zoom
                       </div>
                     </div>
 
