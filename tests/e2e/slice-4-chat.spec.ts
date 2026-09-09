@@ -197,6 +197,10 @@ test("approves a filesystem tool and shows its workspace file", async () => {
     '[data-testid="chat-workspace-file"][data-path="notes/hello.txt"]',
   );
   await expect(file).toBeVisible();
+  await file.click();
+  await expect(page.getByTestId("chat-workspace-preview")).toContainText(
+    "Created by Borg chat.",
+  );
   await expect(
     page.locator('[data-testid="chat-message"][data-role="assistant"]'),
   ).toContainText("File created: notes/hello.txt");

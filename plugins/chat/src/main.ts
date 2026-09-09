@@ -6,8 +6,10 @@ import {
   chatEntrySchema,
   chatGetSession,
   chatListSessions,
+  chatImportWorkspaceFiles,
   chatListWorkspace,
   chatMessageAppended,
+  chatPreviewWorkspaceFile,
   chatSendMessage,
   chatSessionDeleted,
   chatSessionSchema,
@@ -15,6 +17,7 @@ import {
   chatSpawnSubAgent,
   chatTurnCompleted,
   chatTurnStarted,
+  chatWorkspaceUpdated,
   embeddedContentRegistered,
   embeddedContentSnapshotSchema,
   feedbackRequested,
@@ -152,7 +155,9 @@ export default definePlugin({
       chatDeleteSession.id,
       chatGetSession.id,
       chatListSessions.id,
+      chatImportWorkspaceFiles.id,
       chatListWorkspace.id,
+      chatPreviewWorkspaceFile.id,
       chatSendMessage.id,
       chatSpawnSubAgent.id,
     ],
@@ -162,6 +167,7 @@ export default definePlugin({
       chatSessionUpdated.id,
       chatTurnCompleted.id,
       chatTurnStarted.id,
+      chatWorkspaceUpdated.id,
     ],
     kinds: [
       "flightDeckWidget",
@@ -1016,6 +1022,23 @@ export default definePlugin({
     context.bus.handle(chatListWorkspace, async ({ sessionId }) => ({
       files: [...(await context.workspace.listFiles(sessionId))],
     }));
+
+    context.bus.handle(chatPreviewWorkspaceFile, ({ sessionId, path }) =>
+      context.workspace.readFile(sessionId, path),
+    );
+
+    context.bus.handle(
+      chatImportWorkspaceFiles,
+      async ({ sessionId, nativePaths, destDir }) => {
+        const result = await context.workspace.importNativePaths(
+          sessionId,
+          nativePaths,
+          destDir,
+        );
+        await context.bus.emit(chatWorkspaceUpdated, { sessionId });
+        return result;
+      },
+    );
 
     context.bus.handle(
       chatSpawnSubAgent,
