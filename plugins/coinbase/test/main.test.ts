@@ -11,6 +11,7 @@ import coinbasePlugin from "../src/main";
 import {
   COINBASE_PRIVATE_KEY_SECRET,
   COINBASE_PRODUCTION_ORIGIN,
+  COINBASE_SANDBOX_ORIGIN,
 } from "../src/protocol";
 import {
   createCoinbaseHarness,
@@ -26,6 +27,7 @@ WFqar8wj03nITtVkHqWT5oLXHtnpcrCFMnCUrr7BH7gJwUpeGedSgKV/
 `;
 
 const KEY_NAME = "organizations/org1/apiKeys/key-uuid-123";
+const WORK_KEY_NAME = "organizations/org1/apiKeys/work-key";
 const ACCOUNT = "11111111-1111-4111-8111-111111111111";
 
 const TOOL_IDS = [
@@ -37,6 +39,26 @@ const TOOL_IDS = [
   "coinbase.trading.send_crypto",
   "coinbase.trading.list_orders",
 ] as const;
+
+function defaultAccount(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "default",
+    name: "Coinbase",
+    enabled: true,
+    sandbox: false,
+    keyName: KEY_NAME,
+    ...overrides,
+  };
+}
+
+function execution(toolCallId = "call-1"): ToolExecutionContext {
+  return {
+    toolCallId,
+    signal: new AbortController().signal,
+  };
+}
 
 function coinbaseRoutes(
   overrides: Readonly<
@@ -113,15 +135,9 @@ describe("borg.coinbase plugin", () => {
   it("stays unregistered until enabled with a key name and private key", async () => {
     const harness = await activate();
     expect(harness.tools).toHaveLength(0);
-    expect(
-      await harness.invoke<CoinbaseStatus>(coinbaseGetStatus, {}),
-    ).toEqual({
-      hasPrivateKey: false,
-      hasKeyName: false,
-      enabled: false,
-      sandbox: false,
-      connected: false,
-    });
+    await expect(
+      harness.invoke<CoinbaseStatus>(coinbaseGetStatus, {}),
+    ).rejects.toThrow("No Coinbase account is configured");
   });
 
   it("explains itself when enabled without a private key", async () => {
@@ -132,6 +148,8 @@ describe("borg.coinbase plugin", () => {
     expect(
       await harness.invoke<CoinbaseStatus>(coinbaseGetStatus, {}),
     ).toEqual({
+      accountId: "default",
+      name: "Coinbase",
       hasPrivateKey: false,
       hasKeyName: true,
       enabled: true,
@@ -172,18 +190,16 @@ describe("borg.coinbase plugin", () => {
       secrets: { [COINBASE_PRIVATE_KEY_SECRET]: TEST_EC_PEM },
     });
     const verified = await harness.invoke<CoinbaseStatus>(coinbaseVerify, {});
-    expect(verified.connected).toBe(true);
+    expect(verified).toMatchObject({
+      accountId: "default",
+      name: "Coinbase",
+      connected: true,
+    });
     expect(verified.error).toBeUndefined();
     expect(harness.requests[0]?.url).toBe(
       `${COINBASE_PRODUCTION_ORIGIN}/api/v3/brokerage/accounts`,
     );
-    const listed = await harness.tools[0]?.execute(
-      {},
-      {
-        toolCallId: "call-1",
-        signal: new AbortController().signal,
-      } satisfies ToolExecutionContext,
-    );
+    const listed = await harness.tools[0]?.execute({}, execution());
     expect(listed).toEqual({
       accounts: [
         expect.objectContaining({ id: ACCOUNT, currency: "BTC" }),
@@ -206,5 +222,91 @@ describe("borg.coinbase plugin", () => {
     const verified = await harness.invoke<CoinbaseStatus>(coinbaseVerify, {});
     expect(verified.connected).toBe(true);
     expect(verified.error).toBe("Coinbase rejected the API key");
+  });
+
+  it("unregisters tools when the live account is disabled", async () => {
+    const harness = await activate({
+      config: { enabled: true, keyName: KEY_NAME },
+      secrets: { [COINBASE_PRIVATE_KEY_SECRET]: TEST_EC_PEM },
+    });
+    expect(harness.tools).toHaveLength(TOOL_IDS.length);
+    await harness.updateConfig({
+      accounts: [defaultAccount({ enabled: false })],
+    });
+    expect(harness.tools).toHaveLength(0);
+  });
+
+  it("registers trading tools once and uses a namespaced privateKey for a second account", async () => {
+    const workAccount = {
+      id: "work",
+      name: "Work",
+      enabled: true,
+      sandbox: true,
+      keyName: WORK_KEY_NAME,
+    };
+    const harness = await activate({
+      config: {
+        accounts: [defaultAccount(), workAccount],
+      },
+      secrets: {
+        "work.privateKey": TEST_EC_PEM,
+      },
+    });
+
+    expect(harness.tools.map((tool) => tool.id)).toEqual([...TOOL_IDS]);
+    expect(
+      await harness.invoke<CoinbaseStatus>(coinbaseGetStatus, {
+        accountId: "work",
+      }),
+    ).toMatchObject({
+      accountId: "work",
+      name: "Work",
+      connected: true,
+      sandbox: true,
+      hasPrivateKey: true,
+    });
+    expect(
+      await harness.invoke<CoinbaseStatus>(coinbaseGetStatus, {}),
+    ).toMatchObject({
+      accountId: "default",
+      connected: false,
+      hasPrivateKey: false,
+    });
+
+    await harness.tools[0]?.execute({}, execution("sole"));
+    expect(harness.requests.at(-1)?.url).toBe(
+      `${COINBASE_SANDBOX_ORIGIN}/api/v3/brokerage/accounts`,
+    );
+    await expect(
+      harness.tools[0]?.execute({ connectionId: "default" }, execution("miss")),
+    ).rejects.toThrow("Coinbase connection default is not connected");
+
+    harness.secrets.set(COINBASE_PRIVATE_KEY_SECRET, TEST_EC_PEM);
+    const verified = await harness.invoke<CoinbaseStatus>(coinbaseVerify, {
+      accountId: "default",
+    });
+    expect(verified.connected).toBe(true);
+    expect(harness.tools.map((tool) => tool.id)).toEqual([...TOOL_IDS]);
+
+    await expect(
+      harness.tools[0]?.execute({}, execution("ambiguous")),
+    ).rejects.toThrow(
+      "Specify connectionId when multiple Coinbase accounts are connected",
+    );
+
+    await harness.tools[0]?.execute(
+      { connectionId: "default" },
+      execution("default"),
+    );
+    expect(harness.requests.at(-1)?.url).toBe(
+      `${COINBASE_PRODUCTION_ORIGIN}/api/v3/brokerage/accounts`,
+    );
+    await harness.tools[0]?.execute(
+      { connectionId: "work" },
+      execution("work"),
+    );
+    expect(harness.requests.at(-1)?.url).toBe(
+      `${COINBASE_SANDBOX_ORIGIN}/api/v3/brokerage/accounts`,
+    );
   });
 });

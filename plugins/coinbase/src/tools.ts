@@ -33,9 +33,13 @@ const PUBLIC_SECURITY = {
   channelCapacity: "public",
 } as const;
 
+export type CoinbaseClientResolver = (
+  connectionId: string | undefined,
+) => Promise<CoinbaseClient>;
+
 export function registerCoinbaseTools(
   context: PluginContext,
-  client: CoinbaseClient,
+  resolveClient: CoinbaseClientResolver,
 ): Disposable {
   const handles = [
     context.tools.register(
@@ -47,7 +51,10 @@ export function registerCoinbaseTools(
         approval: "auto",
         sideEffect: false,
         security: ACCOUNT_SECURITY,
-        execute: (_input, execution) => client.listAccounts(execution.signal),
+        execute: async (input, execution) => {
+          const client = await resolveClient(input.connectionId);
+          return client.listAccounts(execution.signal);
+        },
       }),
     ),
     context.tools.register(
@@ -59,7 +66,10 @@ export function registerCoinbaseTools(
         approval: "auto",
         sideEffect: false,
         security: ACCOUNT_SECURITY,
-        execute: (input, execution) => client.getAccount(input, execution.signal),
+        execute: async (input, execution) => {
+          const client = await resolveClient(input.connectionId);
+          return client.getAccount(input, execution.signal);
+        },
       }),
     ),
     context.tools.register(
@@ -71,7 +81,10 @@ export function registerCoinbaseTools(
         approval: "auto",
         sideEffect: false,
         security: PUBLIC_SECURITY,
-        execute: (input, execution) => client.getPrice(input, execution.signal),
+        execute: async (input, execution) => {
+          const client = await resolveClient(input.connectionId);
+          return client.getPrice(input, execution.signal);
+        },
       }),
     ),
     context.tools.register(
@@ -83,8 +96,10 @@ export function registerCoinbaseTools(
         approval: "auto",
         sideEffect: false,
         security: ACCOUNT_SECURITY,
-        execute: (input, execution) =>
-          client.listTransactions(input, execution.signal),
+        execute: async (input, execution) => {
+          const client = await resolveClient(input.connectionId);
+          return client.listTransactions(input, execution.signal);
+        },
       }),
     ),
     context.tools.register(
@@ -97,7 +112,10 @@ export function registerCoinbaseTools(
         approval: "ask",
         sideEffect: true,
         security: ACCOUNT_SECURITY,
-        execute: (input, execution) => client.createOrder(input, execution.signal),
+        execute: async (input, execution) => {
+          const client = await resolveClient(input.connectionId);
+          return client.createOrder(input, execution.signal);
+        },
       }),
     ),
     context.tools.register(
@@ -110,7 +128,10 @@ export function registerCoinbaseTools(
         approval: "ask",
         sideEffect: true,
         security: ACCOUNT_SECURITY,
-        execute: (input, execution) => client.sendCrypto(input, execution.signal),
+        execute: async (input, execution) => {
+          const client = await resolveClient(input.connectionId);
+          return client.sendCrypto(input, execution.signal);
+        },
       }),
     ),
     context.tools.register(
@@ -122,7 +143,10 @@ export function registerCoinbaseTools(
         approval: "auto",
         sideEffect: false,
         security: ACCOUNT_SECURITY,
-        execute: (_input, execution) => client.listOrders(execution.signal),
+        execute: async (input, execution) => {
+          const client = await resolveClient(input.connectionId);
+          return client.listOrders(execution.signal);
+        },
       }),
     ),
   ];
