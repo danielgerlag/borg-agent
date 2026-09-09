@@ -1,3 +1,9 @@
+import {
+  DEFAULT_CONNECTOR_ACCOUNT_ID,
+  MAX_CONNECTOR_ACCOUNTS,
+  connectorAccountIdSchema,
+  connectorAccountNameSchema,
+} from "@borg/contracts";
 import { z } from "@borg/plugin-sdk";
 import {
   MAX_ALLOWED_CHANNEL_IDS,
@@ -24,14 +30,46 @@ const channelIdsSchema = z
   .max(MAX_ALLOWED_CHANNEL_IDS)
   .refine(isDuplicateFree, "Channel ids must be unique");
 
-/**
- * Plugin configuration. The host parses `{}` during activation and persists the
- * parsed document on every update, so the stored shape has to survive a
- * defaults-only round trip. The "at least one channel" rule is therefore
- * expressed as a condition of being enabled rather than as an array minimum.
- */
-export const discordChannelConfigSchema = z
+const DISCORD_SINGLETON_KEYS = new Set([
+  "enabled",
+  "ignoreBots",
+  "allowedGuildIds",
+  "allowedChannelIds",
+]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function liftDiscordChannelConfig(value: unknown): unknown {
+  if (!isPlainObject(value)) {
+    return value;
+  }
+  if (Array.isArray(value.accounts)) {
+    return { accounts: value.accounts };
+  }
+  const keys = Object.keys(value);
+  if (keys.length === 0) {
+    return { accounts: [] };
+  }
+  if (keys.every((key) => DISCORD_SINGLETON_KEYS.has(key))) {
+    return {
+      accounts: [
+        {
+          ...value,
+          id: DEFAULT_CONNECTOR_ACCOUNT_ID,
+          name: "Discord",
+        },
+      ],
+    };
+  }
+  return value;
+}
+
+export const discordChannelAccountSchema = z
   .object({
+    id: connectorAccountIdSchema,
+    name: connectorAccountNameSchema,
     enabled: z.boolean().default(false),
     ignoreBots: z.boolean().default(true),
     allowedGuildIds: guildIdsSchema.default([]),
@@ -39,11 +77,29 @@ export const discordChannelConfigSchema = z
   })
   .strict()
   .refine(
-    (config) =>
-      !config.enabled ||
-      config.allowedChannelIds.length >= MIN_ALLOWED_CHANNEL_IDS,
+    (account) =>
+      !account.enabled ||
+      account.allowedChannelIds.length >= MIN_ALLOWED_CHANNEL_IDS,
     "Enable Discord only after allowing at least one channel id",
   );
+
+export const discordChannelConfigSchema = z.preprocess(
+  liftDiscordChannelConfig,
+  z
+    .object({
+      accounts: z
+        .array(discordChannelAccountSchema)
+        .max(MAX_CONNECTOR_ACCOUNTS)
+        .default([]),
+    })
+    .strict()
+    .refine(
+      (config) =>
+        new Set(config.accounts.map((account) => account.id)).size ===
+        config.accounts.length,
+      "Connector account ids must be unique",
+    ),
+);
 
 export const discordChannelSettingsSchema = z
   .object({
@@ -60,6 +116,7 @@ export const discordChannelSettingsSchema = z
     "Allow at least one channel id before enabling Discord",
   );
 
+export type DiscordChannelAccount = z.infer<typeof discordChannelAccountSchema>;
 export type DiscordChannelConfig = z.infer<typeof discordChannelConfigSchema>;
 
 export function defaultDiscordChannelConfig(): DiscordChannelConfig {
@@ -72,15 +129,42 @@ export function parseDiscordChannelConfig(
   return discordChannelConfigSchema.parse(candidate);
 }
 
-export function sameDiscordChannelConfig(
-  left: DiscordChannelConfig,
-  right: DiscordChannelConfig,
+export function sameDiscordAccount(
+  left: DiscordChannelAccount,
+  right: DiscordChannelAccount,
+): boolean {
+  return (
+    left.id === right.id &&
+    left.name === right.name &&
+    left.enabled === right.enabled &&
+    left.ignoreBots === right.ignoreBots &&
+    sameIdList(left.allowedGuildIds, right.allowedGuildIds) &&
+    sameIdList(left.allowedChannelIds, right.allowedChannelIds)
+  );
+}
+
+export function sameDiscordAccountRuntime(
+  left: DiscordChannelAccount,
+  right: DiscordChannelAccount,
 ): boolean {
   return (
     left.enabled === right.enabled &&
     left.ignoreBots === right.ignoreBots &&
     sameIdList(left.allowedGuildIds, right.allowedGuildIds) &&
     sameIdList(left.allowedChannelIds, right.allowedChannelIds)
+  );
+}
+
+export function sameDiscordChannelConfig(
+  left: DiscordChannelConfig,
+  right: DiscordChannelConfig,
+): boolean {
+  return (
+    left.accounts.length === right.accounts.length &&
+    left.accounts.every((account, index) => {
+      const other = right.accounts[index];
+      return other !== undefined && sameDiscordAccount(account, other);
+    })
   );
 }
 

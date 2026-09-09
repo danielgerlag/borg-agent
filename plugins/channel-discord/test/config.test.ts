@@ -22,22 +22,86 @@ function snowflakes(count: number): string[] {
   );
 }
 
+function defaultAccount(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "default",
+    name: "Discord",
+    enabled: false,
+    ignoreBots: true,
+    allowedGuildIds: [],
+    allowedChannelIds: [],
+    ...overrides,
+  };
+}
+
 describe("discord channel settings", () => {
-  it("survives the defaults-only round trip the host performs at activation", () => {
+  it("parses empty config as no accounts", () => {
     const defaults = defaultDiscordChannelConfig();
-    expect(defaults).toEqual({
-      enabled: false,
-      ignoreBots: true,
-      allowedGuildIds: [],
-      allowedChannelIds: [],
-    });
+    expect(defaults).toEqual({ accounts: [] });
+    expect(discordChannelConfigSchema.parse({})).toEqual({ accounts: [] });
     expect(discordChannelConfigSchema.parse(defaults)).toEqual(defaults);
+  });
+
+  it("lifts a stored singleton into the default account", () => {
+    expect(
+      discordChannelConfigSchema.parse({
+        enabled: true,
+        allowedChannelIds: [CHANNEL_ID],
+      }),
+    ).toEqual({
+      accounts: [
+        defaultAccount({
+          enabled: true,
+          allowedChannelIds: [CHANNEL_ID],
+        }),
+      ],
+    });
+  });
+
+  it("drops leftover singleton keys when accounts is present", () => {
+    expect(
+      discordChannelConfigSchema.parse({
+        accounts: [{ id: "work", name: "Work" }],
+        enabled: true,
+      }),
+    ).toEqual({
+      accounts: [defaultAccount({ id: "work", name: "Work" })],
+    });
   });
 
   it("refuses unknown keys", () => {
     expect(
       discordChannelConfigSchema.safeParse({ enabled: false, botToken: "leak" })
         .success,
+    ).toBe(false);
+  });
+
+  it("requires unique ids and at most eight accounts", () => {
+    expect(
+      discordChannelConfigSchema.safeParse({
+        accounts: [
+          { id: "work", name: "Work" },
+          { id: "work", name: "Also work" },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      discordChannelConfigSchema.safeParse({
+        accounts: Array.from({ length: 8 }, (_value, index) => ({
+          id: `acct-${index}`,
+          name: `Account ${index}`,
+        })),
+      }).success,
+    ).toBe(true);
+    expect(
+      discordChannelConfigSchema.safeParse({
+        accounts: Array.from({ length: 9 }, (_value, index) => ({
+          id: `acct-${index}`,
+          name: `Account ${index}`,
+        })),
+      }).success,
     ).toBe(false);
   });
 

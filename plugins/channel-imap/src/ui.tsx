@@ -1,43 +1,88 @@
+import {
+  CONNECTOR_ACCOUNT_NAME_MAX,
+  MAX_CONNECTOR_ACCOUNTS,
+  allocateConnectorAccountId,
+  connectorAdapterId,
+  connectorSecretKey,
+} from "@borg/contracts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Panel } from "@borg/ui-kit";
-import { KeyRound, Mail, Save } from "lucide-solid";
-import { createSignal, onMount, type Component } from "solid-js";
+import { KeyRound, Mail, Plus, Save, Trash2 } from "lucide-solid";
+import { For, Show, createSignal, onMount, type Component } from "solid-js";
 import {
   describeImapConfigError,
-  imapChannelConfigSchema,
+  imapChannelSettingsSchema,
   parseImapChannelConfig,
+  type ImapChannelAccount,
 } from "./config";
-import { IMAP_DEFAULT_MAILBOX, IMAP_PASSWORD_SECRET_KEY } from "./runtime";
+import {
+  IMAP_CHANNEL_ADAPTER_ID,
+  IMAP_DEFAULT_MAILBOX,
+  IMAP_PASSWORD_SECRET_KEY,
+} from "./runtime";
 
 export default defineUiPlugin<Component>({
   id: "borg.channel.imap",
   activate(context) {
     const ImapSettings: Component = () => {
+      const [accounts, setAccounts] = createSignal<ImapChannelAccount[]>([]);
+      const [selectedId, setSelectedId] = createSignal("");
       const [passwordDraft, setPasswordDraft] = createSignal("");
       const [hasPassword, setHasPassword] = createSignal(false);
+      const [accountName, setAccountName] = createSignal("");
       const [enabled, setEnabled] = createSignal(false);
       const [host, setHost] = createSignal("");
       const [port, setPort] = createSignal("993");
       const [username, setUsername] = createSignal("");
       const [mailbox, setMailbox] = createSignal(IMAP_DEFAULT_MAILBOX);
       const [busy, setBusy] = createSignal(false);
+      const [creating, setCreating] = createSignal(false);
+      const [newName, setNewName] = createSignal("");
       const [notice, setNotice] = createSignal(
-        "Save host, username, mailbox, and password, then enable IMAP.",
+        "Add an IMAP account, save host, username, mailbox, and password, then enable IMAP.",
       );
       const [error, setError] = createSignal<string>();
 
-      const refresh = async (): Promise<void> => {
-        const [document, stored] = await Promise.all([
-          context.config.get(),
-          context.secrets.has(IMAP_PASSWORD_SECRET_KEY),
-        ]);
-        const parsed = parseImapChannelConfig(document);
-        setEnabled(parsed.enabled);
-        setHost(parsed.host);
-        setPort(String(parsed.port));
-        setUsername(parsed.username);
-        setMailbox(parsed.mailbox);
+      const selected = (): ImapChannelAccount | undefined =>
+        accounts().find((account) => account.id === selectedId());
+
+      const loadAccount = (
+        account: ImapChannelAccount,
+        stored: boolean,
+      ): void => {
+        setSelectedId(account.id);
+        setAccountName(account.name);
+        setEnabled(account.enabled);
+        setHost(account.host);
+        setPort(String(account.port));
+        setUsername(account.username);
+        setMailbox(account.mailbox);
+        setPasswordDraft("");
         setHasPassword(stored);
+      };
+
+      const refresh = async (selectId?: string): Promise<void> => {
+        const config = parseImapChannelConfig(await context.config.get());
+        setAccounts([...config.accounts]);
+        const next =
+          config.accounts.find((account) => account.id === selectId) ??
+          config.accounts.find((account) => account.id === selectedId()) ??
+          config.accounts[0];
+        if (!next) {
+          setSelectedId("");
+          setAccountName("");
+          setEnabled(false);
+          setHost("");
+          setPort("993");
+          setUsername("");
+          setMailbox(IMAP_DEFAULT_MAILBOX);
+          setHasPassword(false);
+          return;
+        }
+        const stored = await context.secrets.has(
+          connectorSecretKey(next.id, IMAP_PASSWORD_SECRET_KEY),
+        );
+        loadAccount(next, stored);
       };
 
       onMount(() => {
@@ -63,45 +108,129 @@ export default defineUiPlugin<Component>({
         await context.config.update({});
       };
 
+      const createAccount = (): Promise<void> =>
+        withBusy(async () => {
+          const name = newName().trim();
+          if (name.length === 0) {
+            throw new Error("Account name is required.");
+          }
+          if (name.length > CONNECTOR_ACCOUNT_NAME_MAX) {
+            throw new Error(
+              `Account name must be at most ${CONNECTOR_ACCOUNT_NAME_MAX} characters.`,
+            );
+          }
+          if (accounts().length >= MAX_CONNECTOR_ACCOUNTS) {
+            throw new Error("IMAP supports at most 8 accounts.");
+          }
+          const id = allocateConnectorAccountId(
+            name,
+            accounts().map((account) => account.id),
+          );
+          const next = [
+            ...accounts(),
+            {
+              id,
+              name,
+              enabled: false,
+              host: "",
+              port: 993,
+              username: "",
+              mailbox: IMAP_DEFAULT_MAILBOX,
+            },
+          ];
+          await context.config.update({ accounts: next });
+          setNewName("");
+          setCreating(false);
+          setNotice(
+            `Added ${name}. Save host, username, mailbox, and password, then enable IMAP.`,
+          );
+          await refresh(id);
+        });
+
+      const deleteAccount = (): Promise<void> =>
+        withBusy(async () => {
+          const account = selected();
+          if (!account) {
+            return;
+          }
+          await context.secrets.delete(
+            connectorSecretKey(account.id, IMAP_PASSWORD_SECRET_KEY),
+          );
+          const next = accounts().filter((item) => item.id !== account.id);
+          await context.config.update({ accounts: next });
+          setNotice(`Removed ${account.name}.`);
+          await refresh(next[0]?.id);
+        });
+
       const savePassword = (): Promise<void> =>
         withBusy(async () => {
+          const account = selected();
+          if (!account) {
+            throw new Error("Select an IMAP account first.");
+          }
           const value = passwordDraft().trim();
           if (value.length === 0) {
             throw new Error("Enter a password to save.");
           }
-          await context.secrets.set(IMAP_PASSWORD_SECRET_KEY, value);
+          await context.secrets.set(
+            connectorSecretKey(account.id, IMAP_PASSWORD_SECRET_KEY),
+            value,
+          );
           setPasswordDraft("");
           await syncAfterSecretWrite();
           setNotice("Password saved.");
-          await refresh();
+          await refresh(account.id);
         });
 
       const deletePassword = (): Promise<void> =>
         withBusy(async () => {
-          await context.secrets.delete(IMAP_PASSWORD_SECRET_KEY);
+          const account = selected();
+          if (!account) {
+            return;
+          }
+          await context.secrets.delete(
+            connectorSecretKey(account.id, IMAP_PASSWORD_SECRET_KEY),
+          );
           setPasswordDraft("");
           await syncAfterSecretWrite();
           setNotice("Password removed.");
-          await refresh();
+          await refresh(account.id);
         });
 
       const saveSettings = (): Promise<void> =>
         withBusy(async () => {
+          const account = selected();
+          if (!account) {
+            return;
+          }
+          const name = accountName().trim();
+          if (name.length === 0) {
+            throw new Error("Account name is required.");
+          }
           const parsedPort = Number.parseInt(port(), 10);
-          const settings = imapChannelConfigSchema.parse({
+          const settings = imapChannelSettingsSchema.parse({
             enabled: enabled(),
             host: host().trim(),
             port: parsedPort,
             username: username().trim(),
             mailbox: mailbox().trim() || IMAP_DEFAULT_MAILBOX,
           });
-          await context.config.update(settings);
+          const next = accounts().map((item) =>
+            item.id === account.id
+              ? {
+                  ...item,
+                  name,
+                  ...settings,
+                }
+              : item,
+          );
+          await context.config.update({ accounts: next });
           setNotice("IMAP settings saved.");
-          await refresh();
+          await refresh(account.id);
         });
 
       return (
-        <Panel data-testid="imap-settings-page">
+        <section data-testid="imap-settings-page">
           <div class="flex items-start gap-4">
             <div class="rounded-xl bg-[var(--accent)]/10 p-2.5 text-[var(--accent)]">
               <Mail aria-hidden="true" size={20} />
@@ -109,162 +238,286 @@ export default defineUiPlugin<Component>({
             <div class="min-w-0 flex-1">
               <h3 class="text-xl font-semibold">IMAP channel</h3>
               <p class="mt-2 text-sm text-[var(--text-muted)]">
-                Borg uses IMAP as a private mailbox destination. Save the host,
-                username, mailbox, and password. The channel registers when it
-                is enabled and those values are present.
+                Each account is a separate mailbox. Borg uses IMAP as a private
+                destination. Save the host, username, mailbox, and password.
+                The channel registers when it is enabled and those values are
+                present.
               </p>
+            </div>
+          </div>
 
-              <label
-                class="mt-5 block text-sm text-[var(--text-muted)]"
-                for="imap-password"
-              >
-                Password
-              </label>
+          <div class="mt-5 flex flex-wrap gap-2">
+            <For each={accounts()}>
+              {(account) => (
+                <button
+                  type="button"
+                  class="rounded-xl border px-3 py-2 text-left text-sm"
+                  classList={{
+                    "border-[var(--accent)] bg-[var(--accent)]/12 text-[var(--accent)]":
+                      account.id === selectedId(),
+                    "border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)]":
+                      account.id !== selectedId(),
+                  }}
+                  aria-current={account.id === selectedId() ? "true" : undefined}
+                  data-testid={`imap-account-row-${account.id}`}
+                  onClick={() => {
+                    setCreating(false);
+                    void refresh(account.id).catch((failure: unknown) =>
+                      setError(describeImapConfigError(failure)),
+                    );
+                  }}
+                >
+                  <span class="font-medium">{account.name}</span>
+                </button>
+              )}
+            </For>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={busy() || accounts().length >= MAX_CONNECTOR_ACCOUNTS}
+              data-testid="imap-account-new"
+              onClick={() => {
+                setCreating(true);
+                setError(undefined);
+                setNotice("");
+              }}
+            >
+              <Plus aria-hidden="true" size={14} />
+              New account
+            </Button>
+          </div>
+
+          <Show when={creating()}>
+            <Panel class="mt-5">
+              <p class="text-sm font-semibold">New IMAP account</p>
               <input
-                id="imap-password"
-                type="password"
-                autocomplete="off"
-                spellcheck={false}
-                value={passwordDraft()}
-                onInput={(event) => setPasswordDraft(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                placeholder={
-                  hasPassword()
-                    ? "Password saved. Enter a new password to replace it."
-                    : "Mailbox password"
-                }
-                data-testid="imap-password"
+                value={newName()}
+                onInput={(event) => setNewName(event.currentTarget.value)}
+                class="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                placeholder="Mailbox name"
+                data-testid="imap-new-account-name"
               />
-              <div class="mt-3 flex flex-wrap gap-2">
+              <div class="mt-3 flex gap-2">
                 <Button
                   type="button"
-                  disabled={busy() || passwordDraft().trim().length === 0}
-                  onClick={() => void savePassword()}
-                  data-testid="imap-save-password"
+                  disabled={busy() || newName().trim().length === 0}
+                  onClick={() => void createAccount()}
                 >
-                  <KeyRound aria-hidden="true" size={16} />
-                  Save password
+                  Add account
                 </Button>
                 <Button
                   type="button"
                   variant="ghost"
-                  disabled={busy() || !hasPassword()}
-                  onClick={() => void deletePassword()}
-                  data-testid="imap-delete-password"
-                >
-                  Remove password
-                </Button>
-              </div>
-
-              <label class="mt-6 flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={enabled()}
-                  onChange={(event) => setEnabled(event.currentTarget.checked)}
-                  data-testid="imap-enabled"
-                />
-                Enable the IMAP channel
-              </label>
-
-              <label
-                class="mt-5 block text-sm text-[var(--text-muted)]"
-                for="imap-host"
-              >
-                Host
-              </label>
-              <input
-                id="imap-host"
-                type="text"
-                autocomplete="off"
-                spellcheck={false}
-                value={host()}
-                onInput={(event) => setHost(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                placeholder="imap.example.com"
-                data-testid="imap-host"
-              />
-
-              <label
-                class="mt-4 block text-sm text-[var(--text-muted)]"
-                for="imap-port"
-              >
-                Port
-              </label>
-              <input
-                id="imap-port"
-                type="number"
-                min="1"
-                max="65535"
-                value={port()}
-                onInput={(event) => setPort(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                data-testid="imap-port"
-              />
-
-              <label
-                class="mt-4 block text-sm text-[var(--text-muted)]"
-                for="imap-username"
-              >
-                Username
-              </label>
-              <input
-                id="imap-username"
-                type="text"
-                autocomplete="off"
-                spellcheck={false}
-                value={username()}
-                onInput={(event) => setUsername(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                placeholder="borg@example.com"
-                data-testid="imap-username"
-              />
-
-              <label
-                class="mt-4 block text-sm text-[var(--text-muted)]"
-                for="imap-mailbox"
-              >
-                Mailbox
-              </label>
-              <input
-                id="imap-mailbox"
-                type="text"
-                autocomplete="off"
-                spellcheck={false}
-                value={mailbox()}
-                onInput={(event) => setMailbox(event.currentTarget.value)}
-                class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                placeholder={IMAP_DEFAULT_MAILBOX}
-                data-testid="imap-mailbox"
-              />
-
-              <div class="mt-4 flex flex-wrap gap-2">
-                <Button
-                  type="button"
                   disabled={busy()}
-                  onClick={() => void saveSettings()}
-                  data-testid="imap-save-settings"
+                  onClick={() => setCreating(false)}
                 >
-                  <Save aria-hidden="true" size={16} />
-                  Save settings
+                  Cancel
                 </Button>
               </div>
+            </Panel>
+          </Show>
 
-              <p
-                class="mt-4 text-xs"
-                classList={{
-                  "text-[var(--success)]":
-                    hasPassword() && enabled() && !error(),
-                  "text-[var(--text-muted)]":
-                    !(hasPassword() && enabled()) && !error(),
-                  "text-[var(--danger)]": Boolean(error()),
-                }}
-                data-testid="imap-status"
-              >
-                {error() ?? notice()}
-              </p>
-            </div>
-          </div>
-        </Panel>
+          <Show when={!creating() && selected()}>
+            {(account) => (
+              <Panel class="mt-5">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p
+                      class="font-mono text-xs text-[var(--text-muted)]"
+                      data-testid="imap-account-id"
+                    >
+                      {account().id}
+                    </p>
+                    <p
+                      class="mt-1 font-mono text-xs text-[var(--text-muted)]"
+                      data-testid="imap-account-adapter-id"
+                    >
+                      {connectorAdapterId(
+                        IMAP_CHANNEL_ADAPTER_ID,
+                        account().id,
+                      )}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    disabled={busy()}
+                    data-testid="imap-account-delete"
+                    onClick={() => void deleteAccount()}
+                  >
+                    <Trash2 aria-hidden="true" size={14} />
+                    Delete account
+                  </Button>
+                </div>
+
+                <label class="mt-4 block text-sm text-[var(--text-muted)]">
+                  Name
+                  <input
+                    value={accountName()}
+                    onInput={(event) =>
+                      setAccountName(event.currentTarget.value)
+                    }
+                    class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text)]"
+                    data-testid="imap-account-name"
+                  />
+                </label>
+
+                <label
+                  class="mt-5 block text-sm text-[var(--text-muted)]"
+                  for="imap-password"
+                >
+                  Password
+                </label>
+                <input
+                  id="imap-password"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck={false}
+                  value={passwordDraft()}
+                  onInput={(event) => setPasswordDraft(event.currentTarget.value)}
+                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  placeholder={
+                    hasPassword()
+                      ? "Password saved. Enter a new password to replace it."
+                      : "Mailbox password"
+                  }
+                  data-testid="imap-password"
+                />
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    disabled={busy() || passwordDraft().trim().length === 0}
+                    onClick={() => void savePassword()}
+                    data-testid="imap-save-password"
+                  >
+                    <KeyRound aria-hidden="true" size={16} />
+                    Save password
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy() || !hasPassword()}
+                    onClick={() => void deletePassword()}
+                    data-testid="imap-delete-password"
+                  >
+                    Remove password
+                  </Button>
+                </div>
+
+                <label class="mt-6 flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={enabled()}
+                    onChange={(event) =>
+                      setEnabled(event.currentTarget.checked)
+                    }
+                    data-testid="imap-enabled"
+                  />
+                  Enable the IMAP channel
+                </label>
+
+                <label
+                  class="mt-5 block text-sm text-[var(--text-muted)]"
+                  for="imap-host"
+                >
+                  Host
+                </label>
+                <input
+                  id="imap-host"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck={false}
+                  value={host()}
+                  onInput={(event) => setHost(event.currentTarget.value)}
+                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  placeholder="imap.example.com"
+                  data-testid="imap-host"
+                />
+
+                <label
+                  class="mt-4 block text-sm text-[var(--text-muted)]"
+                  for="imap-port"
+                >
+                  Port
+                </label>
+                <input
+                  id="imap-port"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  value={port()}
+                  onInput={(event) => setPort(event.currentTarget.value)}
+                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  data-testid="imap-port"
+                />
+
+                <label
+                  class="mt-4 block text-sm text-[var(--text-muted)]"
+                  for="imap-username"
+                >
+                  Username
+                </label>
+                <input
+                  id="imap-username"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck={false}
+                  value={username()}
+                  onInput={(event) => setUsername(event.currentTarget.value)}
+                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  placeholder="borg@example.com"
+                  data-testid="imap-username"
+                />
+
+                <label
+                  class="mt-4 block text-sm text-[var(--text-muted)]"
+                  for="imap-mailbox"
+                >
+                  Mailbox
+                </label>
+                <input
+                  id="imap-mailbox"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck={false}
+                  value={mailbox()}
+                  onInput={(event) => setMailbox(event.currentTarget.value)}
+                  class="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  placeholder={IMAP_DEFAULT_MAILBOX}
+                  data-testid="imap-mailbox"
+                />
+
+                <div class="mt-4 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    disabled={busy()}
+                    onClick={() => void saveSettings()}
+                    data-testid="imap-save-settings"
+                  >
+                    <Save aria-hidden="true" size={16} />
+                    Save settings
+                  </Button>
+                </div>
+
+                <p
+                  class="mt-4 text-xs"
+                  classList={{
+                    "text-[var(--success)]":
+                      hasPassword() && enabled() && !error(),
+                    "text-[var(--text-muted)]":
+                      !(hasPassword() && enabled()) && !error(),
+                    "text-[var(--danger)]": Boolean(error()),
+                  }}
+                  data-testid="imap-status"
+                >
+                  {error() ?? notice()}
+                </p>
+              </Panel>
+            )}
+          </Show>
+        </section>
       );
     };
 

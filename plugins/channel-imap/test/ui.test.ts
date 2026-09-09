@@ -11,6 +11,8 @@ describe("IMAP settings UI contract", () => {
     expect(source).toContain('label: "IMAP"');
     expect(source).toContain("order: 46");
     expect(source).toContain('data-testid="imap-settings-page"');
+    expect(source).toContain("imap-account-row-");
+    expect(source).toContain('data-testid="imap-account-new"');
     expect(source).toContain('data-testid="imap-enabled"');
     expect(source).toContain('data-testid="imap-host"');
     expect(source).toContain('data-testid="imap-port"');

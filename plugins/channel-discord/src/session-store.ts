@@ -29,12 +29,13 @@ export interface GatewaySessionStore {
 export function createGatewaySessionStore(
   store: PluginStore,
   logger: PluginLogger,
+  key: string = GATEWAY_SESSION_KEY,
 ): GatewaySessionStore {
   return {
     async load(): Promise<GatewaySessionRecord | undefined> {
       let stored: unknown;
       try {
-        stored = await store.get(GATEWAY_SESSION_KEY);
+        stored = await store.get(key);
       } catch {
         logger.warn("Discord gateway session could not be read");
         return undefined;
@@ -48,7 +49,7 @@ export function createGatewaySessionStore(
         : undefined;
       if (!parsed.success || resumeGatewayUrl === undefined) {
         logger.warn("Discord gateway session was discarded as invalid");
-        await store.delete(GATEWAY_SESSION_KEY).catch(() => undefined);
+        await store.delete(key).catch(() => undefined);
         return undefined;
       }
       return {
@@ -59,10 +60,10 @@ export function createGatewaySessionStore(
     },
     async save(record: GatewaySessionRecord | null): Promise<void> {
       if (record === null) {
-        await store.delete(GATEWAY_SESSION_KEY);
+        await store.delete(key);
         return;
       }
-      await store.set(GATEWAY_SESSION_KEY, {
+      await store.set(key, {
         version: 1,
         sessionId: record.sessionId,
         sequence: record.sequence,

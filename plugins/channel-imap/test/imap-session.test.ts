@@ -60,6 +60,7 @@ describe("ImapFakeTransport live send", () => {
       expect(appended).toContain("live outbound");
     };
     const transport = new ImapFakeTransport({
+      id: "borg.channel.imap",
       tls: fake,
       runtime: createBackgroundRuntime(),
       readPassword: async () => "secret",
@@ -87,7 +88,10 @@ describe("ImapFakeTransport live send", () => {
     await started.dispose();
     transport.dispose();
 
-    const offline = new ImapFakeTransport();
+    const offline = new ImapFakeTransport({
+      id: "borg.channel.imap",
+      readPassword: async () => undefined,
+    });
     offline.start({
       ingest: () => undefined,
       signal: new AbortController().signal,

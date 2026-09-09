@@ -1,4 +1,8 @@
 import {
+  DEFAULT_CONNECTOR_ACCOUNT_ID,
+  connectorAdapterId,
+  connectorSecretKey,
+  connectorStoreKey,
   discordChannelDisconnect,
   discordChannelGetStatus,
   discordChannelVerify,
@@ -14,9 +18,11 @@ import {
 } from "@borg/plugin-sdk";
 import {
   defaultDiscordChannelConfig,
-  discordChannelConfigSchema,
   parseDiscordChannelConfig,
+  sameDiscordAccountRuntime,
   sameDiscordChannelConfig,
+  discordChannelConfigSchema,
+  type DiscordChannelAccount,
   type DiscordChannelConfig,
 } from "./config";
 import {
@@ -27,6 +33,7 @@ import {
 import { DiscordRestClient } from "./rest";
 import { DiscordGatewayRuntime, type GatewayClock } from "./runtime";
 import {
+  GATEWAY_SESSION_KEY,
   createGatewaySessionStore,
   type GatewaySessionStore,
 } from "./session-store";
@@ -38,30 +45,30 @@ export interface DiscordControllerOptions {
   readonly random?: (() => number) | undefined;
 }
 
+interface DiscordAccountSession {
+  account: DiscordChannelAccount;
+  rest: DiscordRestClient;
+  store: GatewaySessionStore;
+  registration: Disposable | undefined;
+  runtime: DiscordGatewayRuntime | undefined;
+  task: Disposable | undefined;
+}
+
 export class DiscordChannelController {
   readonly #context: PluginContext;
-  readonly #rest: DiscordRestClient;
-  readonly #sessions: GatewaySessionStore;
   readonly #options: DiscordControllerOptions;
+  readonly #sessions = new Map<string, DiscordAccountSession>();
+  readonly #paused = new Set<string>();
+  readonly #errors = new Map<string, string>();
   #config: DiscordChannelConfig = defaultDiscordChannelConfig();
-  #registration: Disposable | undefined;
-  #runtime: DiscordGatewayRuntime | undefined;
-  #task: Disposable | undefined;
   #configWatch: Disposable | undefined;
   #queue: Promise<void> = Promise.resolve();
   #configError: string | undefined;
-  #error: string | undefined;
-  #paused = false;
   #disposed = false;
 
   constructor(context: PluginContext, options: DiscordControllerOptions = {}) {
     this.#context = context;
     this.#options = options;
-    this.#rest = new DiscordRestClient({
-      http: context.http,
-      readToken: () => context.secrets.get(DISCORD_TOKEN_SECRET_KEY),
-    });
-    this.#sessions = createGatewaySessionStore(context.store, context.logger);
   }
 
   get config(): DiscordChannelConfig {
@@ -76,12 +83,20 @@ export class DiscordChannelController {
     await this.#sync();
   }
 
-  async status(): Promise<DiscordChannelStatus> {
-    const hasToken = await this.#context.secrets.has(DISCORD_TOKEN_SECRET_KEY);
-    const snapshot = this.#runtime?.snapshot();
-    const error = this.#configError ?? snapshot?.error ?? this.#error;
+  async status(accountId?: string): Promise<DiscordChannelStatus> {
+    const account = this.#resolve(accountId);
+    const hasToken = await this.#context.secrets.has(
+      connectorSecretKey(account.id, DISCORD_TOKEN_SECRET_KEY),
+    );
+    const session = this.#sessions.get(account.id);
+    const snapshot = session?.runtime?.snapshot();
+    const error =
+      this.#configError ?? snapshot?.error ?? this.#errors.get(account.id);
     const botUserId = snapshot?.botUserId;
     return {
+      accountId: account.id,
+      name: account.name,
+      adapterId: connectorAdapterId(DISCORD_ADAPTER_ID, account.id),
       hasToken,
       connected: snapshot?.connected ?? false,
       gatewayState: snapshot?.phase ?? "idle",
@@ -90,49 +105,44 @@ export class DiscordChannelController {
     };
   }
 
-  async verify(signal?: AbortSignal | undefined): Promise<DiscordChannelStatus> {
-    const identity = await this.#rest.verifyBot(signal);
-    await this.#rest.discoverGateway(signal);
-    this.#error = undefined;
-    this.#paused = false;
+  async verify(
+    accountId?: string,
+    signal?: AbortSignal | undefined,
+  ): Promise<DiscordChannelStatus> {
+    const account = this.#resolve(accountId);
+    const rest = this.#restFor(account);
+    const identity = await rest.verifyBot(signal);
+    await rest.discoverGateway(signal);
+    this.#errors.delete(account.id);
+    this.#paused.delete(account.id);
     await this.#sync();
-    const runtime = this.#runtime;
+    const runtime = this.#sessions.get(account.id)?.runtime;
     if (runtime) {
       try {
         await runtime.whenReady(READY_TIMEOUT_MS);
       } catch (error) {
-        this.#error = describeError(error);
+        this.#errors.set(account.id, describeError(error));
       }
     }
-    const status = await this.status();
+    const status = await this.status(account.id);
     return status.botUserId === undefined
       ? { ...status, botUserId: identity.botUserId }
       : status;
   }
 
-  async disconnect(): Promise<DiscordChannelStatus> {
-    this.#paused = true;
+  async disconnect(accountId?: string): Promise<DiscordChannelStatus> {
+    const account = this.#resolve(accountId);
+    this.#paused.add(account.id);
     await this.#sync();
-    await this.#sessions.save(null).catch(() => {
-      this.#context.logger.warn("Discord gateway session could not be cleared");
-    });
-    this.#error = undefined;
-    return this.status();
-  }
-
-  async send(request: ChannelSendRequest): Promise<ChannelAdapterReceipt> {
-    if (!this.#config.allowedChannelIds.includes(request.destinationId)) {
-      throw new Error("Discord destination is not allow-listed");
-    }
-    if (request.attachments !== undefined && request.attachments.length > 0) {
-      throw new Error("Discord attachment sending is not supported");
-    }
-    const { messageId } = await this.#rest.createMessage({
-      channelId: request.destinationId,
-      content: request.text,
-      ...(request.signal ? { signal: request.signal } : {}),
-    });
-    return { externalId: messageId, sentAt: new Date().toISOString() };
+    await this.#storeFor(account.id)
+      .save(null)
+      .catch(() => {
+        this.#context.logger.warn(
+          "Discord gateway session could not be cleared",
+        );
+      });
+    this.#errors.delete(account.id);
+    return this.status(account.id);
   }
 
   async dispose(): Promise<void> {
@@ -140,6 +150,46 @@ export class DiscordChannelController {
     this.#configWatch?.dispose();
     this.#configWatch = undefined;
     await this.#sync();
+  }
+
+  #resolve(accountId?: string): DiscordChannelAccount {
+    const accounts = this.#config.accounts;
+    if (accountId !== undefined && accountId.length > 0) {
+      const match = accounts.find((account) => account.id === accountId);
+      if (!match) {
+        throw new Error(`Unknown Discord account ${accountId}`);
+      }
+      return match;
+    }
+    const fallback =
+      accounts.find((account) => account.id === DEFAULT_CONNECTOR_ACCOUNT_ID) ??
+      (accounts.length === 1 ? accounts[0] : undefined);
+    if (fallback === undefined) {
+      throw new Error(
+        accounts.length === 0
+          ? "No Discord account is configured"
+          : "Specify accountId when multiple Discord accounts exist",
+      );
+    }
+    return fallback;
+  }
+
+  #restFor(account: DiscordChannelAccount): DiscordRestClient {
+    return new DiscordRestClient({
+      http: this.#context.http,
+      readToken: () =>
+        this.#context.secrets.get(
+          connectorSecretKey(account.id, DISCORD_TOKEN_SECRET_KEY),
+        ),
+    });
+  }
+
+  #storeFor(accountId: string): GatewaySessionStore {
+    return createGatewaySessionStore(
+      this.#context.store,
+      this.#context.logger,
+      connectorStoreKey(accountId, GATEWAY_SESSION_KEY),
+    );
   }
 
   #read(candidate: unknown): DiscordChannelConfig {
@@ -162,8 +212,6 @@ export class DiscordChannelController {
       return;
     }
     this.#config = next;
-    // A settings change is an explicit intent to run again.
-    this.#paused = false;
     await this.#sync();
   }
 
@@ -174,48 +222,117 @@ export class DiscordChannelController {
   }
 
   async #syncNow(): Promise<void> {
-    await this.#teardown();
-    this.#error = undefined;
-    if (this.#disposed || this.#paused) {
+    if (this.#disposed) {
+      for (const accountId of [...this.#sessions.keys()]) {
+        await this.#stopSession(accountId);
+      }
       return;
     }
-    if (!this.#config.enabled || this.#config.allowedChannelIds.length === 0) {
+    const wanted = new Set(this.#config.accounts.map((account) => account.id));
+    for (const accountId of [...this.#sessions.keys()]) {
+      if (!wanted.has(accountId)) {
+        await this.#stopSession(accountId);
+        this.#paused.delete(accountId);
+        this.#errors.delete(accountId);
+      }
+    }
+    for (const account of this.#config.accounts) {
+      await this.#syncAccount(account);
+    }
+  }
+
+  async #syncAccount(account: DiscordChannelAccount): Promise<void> {
+    const shouldRun =
+      !this.#paused.has(account.id) &&
+      account.enabled &&
+      account.allowedChannelIds.length > 0;
+    if (!shouldRun) {
+      await this.#stopSession(account.id);
       return;
     }
-    if (!(await this.#context.secrets.has(DISCORD_TOKEN_SECRET_KEY))) {
-      this.#error = "Discord bot token is not saved";
+    if (
+      !(await this.#context.secrets.has(
+        connectorSecretKey(account.id, DISCORD_TOKEN_SECRET_KEY),
+      ))
+    ) {
+      this.#errors.set(account.id, "Discord bot token is not saved");
+      await this.#stopSession(account.id);
       return;
     }
-    const destinations = [...this.#config.allowedChannelIds];
-    this.#registration = this.#context.channels.register({
-      id: DISCORD_ADAPTER_ID,
+    const existing = this.#sessions.get(account.id);
+    if (
+      existing?.registration !== undefined &&
+      sameDiscordAccountRuntime(existing.account, account)
+    ) {
+      existing.account = account;
+      return;
+    }
+    await this.#stopSession(account.id);
+    this.#errors.delete(account.id);
+    this.#startSession(account);
+  }
+
+  #startSession(account: DiscordChannelAccount): void {
+    const session: DiscordAccountSession = {
+      account,
+      rest: this.#restFor(account),
+      store: this.#storeFor(account.id),
+      registration: undefined,
+      runtime: undefined,
+      task: undefined,
+    };
+    this.#sessions.set(account.id, session);
+    session.registration = this.#context.channels.register({
+      id: connectorAdapterId(DISCORD_ADAPTER_ID, account.id),
       capacity: "private",
-      destinations,
-      start: ({ ingest, signal }) => this.#startGateway(ingest, signal),
-      send: (request) => this.send(request),
+      destinations: [...account.allowedChannelIds],
+      start: ({ ingest, signal }) => this.#startGateway(session, ingest, signal),
+      send: (request) => this.#send(session, request),
     });
   }
 
+  async #send(
+    session: DiscordAccountSession,
+    request: ChannelSendRequest,
+  ): Promise<ChannelAdapterReceipt> {
+    if (!session.account.allowedChannelIds.includes(request.destinationId)) {
+      throw new Error("Discord destination is not allow-listed");
+    }
+    if (request.attachments !== undefined && request.attachments.length > 0) {
+      throw new Error("Discord attachment sending is not supported");
+    }
+    const { messageId } = await session.rest.createMessage({
+      channelId: request.destinationId,
+      content: request.text,
+      ...(request.signal ? { signal: request.signal } : {}),
+    });
+    return { externalId: messageId, sentAt: new Date().toISOString() };
+  }
+
   #startGateway(
+    session: DiscordAccountSession,
     ingest: (draft: ChannelInboundDraft) => void | Promise<void>,
     signal: AbortSignal,
   ): Disposable {
     const runtime = new DiscordGatewayRuntime({
       webSockets: this.#context.webSockets,
-      rest: this.#rest,
-      readToken: () => this.#context.secrets.get(DISCORD_TOKEN_SECRET_KEY),
+      rest: session.rest,
+      readToken: () =>
+        this.#context.secrets.get(
+          connectorSecretKey(session.account.id, DISCORD_TOKEN_SECRET_KEY),
+        ),
       ingest,
       policy: {
-        allowedGuildIds: [...this.#config.allowedGuildIds],
-        allowedChannelIds: [...this.#config.allowedChannelIds],
-        ignoreBots: this.#config.ignoreBots,
+        allowedGuildIds: [...session.account.allowedGuildIds],
+        allowedChannelIds: [...session.account.allowedChannelIds],
+        ignoreBots: session.account.ignoreBots,
       },
-      session: this.#sessions,
+      session: session.store,
       logger: this.#context.logger,
       ...(this.#options.clock ? { clock: this.#options.clock } : {}),
       ...(this.#options.random ? { random: this.#options.random } : {}),
     });
-    this.#runtime = runtime;
+    session.runtime = runtime;
     let task: Disposable | undefined;
     try {
       task = this.#context.runtime.spawn((taskSignal) =>
@@ -228,14 +345,14 @@ export class DiscordChannelController {
         });
       });
     }
-    this.#task = task;
+    session.task = task;
     return {
       dispose: async () => {
-        if (this.#runtime === runtime) {
-          this.#runtime = undefined;
+        if (session.runtime === runtime) {
+          session.runtime = undefined;
         }
-        if (task !== undefined && this.#task === task) {
-          this.#task = undefined;
+        if (task !== undefined && session.task === task) {
+          session.task = undefined;
         }
         task?.dispose();
         await runtime.stop({ clearSession: false });
@@ -243,9 +360,14 @@ export class DiscordChannelController {
     };
   }
 
-  async #teardown(): Promise<void> {
-    const registration = this.#registration;
-    this.#registration = undefined;
+  async #stopSession(accountId: string): Promise<void> {
+    const session = this.#sessions.get(accountId);
+    if (!session) {
+      return;
+    }
+    this.#sessions.delete(accountId);
+    const registration = session.registration;
+    session.registration = undefined;
     if (registration) {
       try {
         await registration.dispose();
@@ -255,10 +377,10 @@ export class DiscordChannelController {
         });
       }
     }
-    const runtime = this.#runtime;
-    this.#runtime = undefined;
-    const task = this.#task;
-    this.#task = undefined;
+    const runtime = session.runtime;
+    session.runtime = undefined;
+    const task = session.task;
+    session.task = undefined;
     task?.dispose();
     if (runtime) {
       await runtime.stop({ clearSession: false });
@@ -299,12 +421,14 @@ export default definePlugin({
   async activate(context) {
     const controller = new DiscordChannelController(context);
     const handles = [
-      context.bus.handle(discordChannelGetStatus, () => controller.status()),
-      context.bus.handle(discordChannelVerify, (_input, signal) =>
-        controller.verify(signal),
+      context.bus.handle(discordChannelGetStatus, (input) =>
+        controller.status(input.accountId),
       ),
-      context.bus.handle(discordChannelDisconnect, () =>
-        controller.disconnect(),
+      context.bus.handle(discordChannelVerify, (input, signal) =>
+        controller.verify(input.accountId, signal),
+      ),
+      context.bus.handle(discordChannelDisconnect, (input) =>
+        controller.disconnect(input.accountId),
       ),
     ];
     await controller.initialize();
