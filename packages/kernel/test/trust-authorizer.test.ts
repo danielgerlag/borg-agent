@@ -364,6 +364,39 @@ describe("TrustAuthorizer prompts", () => {
     });
   });
 
+  it("does not prompt for model output when a scanner flags a review finding", async () => {
+    const interactions = new InteractionService();
+    const authorizer = new TrustAuthorizer(interactions);
+    const registry = new ScannerRegistry();
+    registry.register("borg.security", {
+      id: "borg.security.injection",
+      stages: ["model_output"],
+      scan: async () => [
+        {
+          code: "review.output",
+          action: "review",
+          reason: "model output needs review",
+        },
+      ],
+    });
+    const scanReport = await registry.scan({
+      stage: "model_output",
+      text: "approved text",
+      source: { kind: "model", id: "borg.mock-llm" },
+    });
+
+    const result = await authorizer.authorize(
+      baseRequest({
+        feature: "model_output",
+        title: "Review model output safety",
+        scanReport,
+      }),
+    );
+    expect(result.allowed).toBe(true);
+    expect(result.interactionUsed).toBe(false);
+    expect(interactions.listPending()).toEqual([]);
+  });
+
   it("remembers always allowing a tool", async () => {
     const interactions = new InteractionService();
     const authorizer = new TrustAuthorizer(interactions);

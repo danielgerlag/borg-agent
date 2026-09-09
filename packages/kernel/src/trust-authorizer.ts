@@ -135,7 +135,9 @@ export class TrustAuthorizer {
         (finding) => finding.action === "review",
       ) === true;
     const scanReview =
-      scanAction === "review" && (!isModelStage || scanFindingReview);
+      scanAction === "review" &&
+      (!isModelStage ||
+        (request.feature === "model_input" && scanFindingReview));
     const classificationReview =
       classificationReasons.length > 0 && !isModelStage;
     const needsReview = policyAsk || classificationReview || scanReview;
