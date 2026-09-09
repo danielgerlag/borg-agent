@@ -8,5 +8,5 @@
     "declaration": false,
     "noEmit": true
   },
-  "include": ["src/ui.tsx"]
+  "include": ["src/ui.tsx", "src/connect.ts", "src/draw-edges.ts"]
 }
