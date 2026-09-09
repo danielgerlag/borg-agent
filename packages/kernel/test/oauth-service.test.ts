@@ -593,6 +593,82 @@ describe("OAuthService", () => {
     await expect(service.disconnect(PLUGIN_ID)).resolves.toBeUndefined();
     service.shutdown();
   });
+
+  it("keys grants by optional account id and aborts every owned grant", async () => {
+    const { secrets, store } = createSecrets();
+    const { listen, loopback } = createLoopback();
+    const opened: string[] = [];
+    const service = new OAuthService({
+      secrets,
+      allowLoopbackHttp: true,
+      listen,
+      openExternal: async (url) => {
+        opened.push(url);
+      },
+      fetch: async () =>
+        jsonResponse({
+          access_token: ACCESS,
+          refresh_token: REFRESH,
+          expires_in: 3_600,
+        }),
+    });
+
+    const defaultConnect = service.connect(PLUGIN_ID, baseRequest());
+    await completeConnect(defaultConnect, loopback, opened);
+    opened.length = 0;
+    const workConnect = service.connect(
+      PLUGIN_ID,
+      baseRequest(),
+      undefined,
+      "work",
+    );
+    await completeConnect(workConnect, loopback, opened);
+
+    expect(store.values.has(`${OAUTH_VAULT_NAMESPACE}:${PLUGIN_ID}`)).toBe(
+      true,
+    );
+    expect(
+      store.values.has(`${OAUTH_VAULT_NAMESPACE}:${PLUGIN_ID}.work`),
+    ).toBe(true);
+    await expect(service.snapshot(PLUGIN_ID)).resolves.toMatchObject({
+      connected: true,
+    });
+    await expect(service.snapshot(PLUGIN_ID, "work")).resolves.toMatchObject({
+      connected: true,
+    });
+    await expect(service.accessToken(PLUGIN_ID)).resolves.toBe(ACCESS);
+    await expect(service.accessToken(PLUGIN_ID, undefined, "work")).resolves.toBe(
+      ACCESS,
+    );
+
+    opened.length = 0;
+    const hangingDefault = service.connect(PLUGIN_ID, baseRequest());
+    const hangingWork = service.connect(
+      PLUGIN_ID,
+      baseRequest(),
+      undefined,
+      "home",
+    );
+    await vi.waitFor(() => expect(opened.length).toBe(2));
+    expect(service.countOwned(PLUGIN_ID)).toBe(2);
+    service.abortOwned(PLUGIN_ID);
+    await expect(hangingDefault).rejects.toMatchObject({
+      name: "OAuthError",
+      code: "unavailable",
+    });
+    await expect(hangingWork).rejects.toMatchObject({
+      name: "OAuthError",
+      code: "unavailable",
+    });
+    expect(service.countOwned(PLUGIN_ID)).toBe(0);
+    expect(store.values.has(`${OAUTH_VAULT_NAMESPACE}:${PLUGIN_ID}`)).toBe(
+      true,
+    );
+    expect(
+      store.values.has(`${OAUTH_VAULT_NAMESPACE}:${PLUGIN_ID}.work`),
+    ).toBe(true);
+    service.shutdown();
+  });
 });
 
 describe("OAuthError", () => {

@@ -649,10 +649,11 @@ export interface PluginOAuth {
   connect(
     request: PluginOAuthConnectRequest,
     signal?: AbortSignal,
+    accountId?: string,
   ): Promise<OAuthSessionSnapshot>;
-  snapshot(): Promise<OAuthSessionSnapshot>;
-  accessToken(signal?: AbortSignal): Promise<string>;
-  disconnect(): Promise<void>;
+  snapshot(accountId?: string): Promise<OAuthSessionSnapshot>;
+  accessToken(signal?: AbortSignal, accountId?: string): Promise<string>;
+  disconnect(accountId?: string): Promise<void>;
 }
 
 export interface GraphStepExecutionContext {

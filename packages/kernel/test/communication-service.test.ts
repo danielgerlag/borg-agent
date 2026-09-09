@@ -346,6 +346,32 @@ describe("CommunicationService registration", () => {
     ]);
   });
 
+  it("allows one plugin to register the plugin id and a dotted account adapter", () => {
+    const { service } = createFixture();
+    service.register("test.channel", createAdapter().adapter);
+    service.register(
+      "test.channel",
+      createAdapter({
+        id: "test.channel.work",
+        destinations: ["room-2"],
+      }).adapter,
+    );
+    expect(service.listAdapters()).toEqual([
+      {
+        pluginId: "test.channel",
+        adapterId: "test.channel",
+        capacity: "internal",
+        destinations: ["room-1"],
+      },
+      {
+        pluginId: "test.channel",
+        adapterId: "test.channel.work",
+        capacity: "internal",
+        destinations: ["room-2"],
+      },
+    ]);
+  });
+
   it("hands the adapter only an ingest callback and an abort signal", async () => {
     const { service } = createFixture();
     const { adapter, state } = createAdapter();
