@@ -37,6 +37,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { PluginsSettings } from "./plugins-settings";
+import { groupSettingsPages } from "./settings-groups";
 
 type Surface = "chat" | "settings" | "activity" | "developer" | "setup";
 
@@ -804,18 +805,17 @@ const SettingsSurface: Component<{
   onOpenSetup(): void;
   onOpenDeveloper(): void;
 }> = (props) => {
-  const navItems = createMemo(() => [
-    { id: "system.plugins", label: "Plugins" },
-    ...props.contributions.map((contribution) => ({
-      id: contribution.id,
-      label: contribution.label,
-    })),
-  ]);
   const [selectedId, setSelectedId] = createSignal(props.initialSectionId);
   const selected = createMemo(
     () =>
       props.contributions.find(({ id }) => id === selectedId()) ??
       props.contributions[0],
+  );
+  const groups = createMemo(() =>
+    groupSettingsPages([
+      { id: "system.plugins", label: "Plugins" },
+      ...props.contributions,
+    ]),
   );
   return (
     <section
@@ -827,23 +827,34 @@ const SettingsSurface: Component<{
           Settings
         </p>
         <h1 class="mt-2 text-2xl font-semibold">Make Borg yours</h1>
-        <nav class="mt-7 grid gap-1" aria-label="Settings sections">
-          <For each={navItems()}>
-            {(item) => (
-              <button
-                type="button"
-                class="rounded-xl px-3 py-2.5 text-left text-sm transition"
-                classList={{
-                  "bg-[var(--accent)]/12 text-[var(--accent)]":
-                    selectedId() === item.id,
-                  "text-[var(--text-muted)] hover:bg-[var(--panel-muted)] hover:text-[var(--text)]":
-                    selectedId() !== item.id,
-                }}
-                onClick={() => setSelectedId(item.id)}
-                data-testid={`settings-section-${item.id}`}
-              >
-                {item.label}
-              </button>
+        <nav class="mt-7 grid gap-5" aria-label="Settings sections">
+          <For each={groups()}>
+            {(group) => (
+              <div data-testid={`settings-group-${group.id}`}>
+                <p class="mb-2 px-3 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-subtle)]">
+                  {group.label}
+                </p>
+                <div class="grid gap-1">
+                  <For each={group.pages}>
+                    {(contribution) => (
+                      <button
+                        type="button"
+                        class="rounded-xl px-3 py-2.5 text-left text-sm transition"
+                        classList={{
+                          "bg-[var(--accent)]/12 text-[var(--accent)]":
+                            selectedId() === contribution.id,
+                          "text-[var(--text-muted)] hover:bg-[var(--panel-muted)] hover:text-[var(--text)]":
+                            selectedId() !== contribution.id,
+                        }}
+                        onClick={() => setSelectedId(contribution.id)}
+                        data-testid={`settings-section-${contribution.id}`}
+                      >
+                        {contribution.label}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </div>
             )}
           </For>
         </nav>
