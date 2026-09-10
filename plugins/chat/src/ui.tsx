@@ -64,6 +64,7 @@ import {
 import { PersonaMark } from "./persona-mark";
 import { createPersonaWizardStep } from "./persona-setup";
 import { createPersonasSettings } from "./personas-settings";
+import { createSkillsSettings } from "./skills-settings";
 
 type ChatDocument = z.infer<typeof chatDocumentSchema>;
 
@@ -1791,6 +1792,12 @@ export default defineUiPlugin<Component>({
       order: 10,
       component: createPersonasSettings(context),
     });
+    const skillsSettings = context.ui.registerSettingsPage({
+      id: "borg.chat.skills",
+      label: "Skills",
+      order: 15,
+      component: createSkillsSettings(context),
+    });
     const widget = context.ui.registerFlightDeckWidget({
       id: "borg.chat.active-sessions",
       label: "Active chats",
@@ -1800,6 +1807,7 @@ export default defineUiPlugin<Component>({
     return {
       dispose: async () => {
         await widget.dispose();
+        await skillsSettings.dispose();
         await settings.dispose();
         await wizard.dispose();
         await workspace.dispose();

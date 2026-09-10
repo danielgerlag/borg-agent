@@ -964,6 +964,9 @@ export function createPersonasSettings(
                 <p class="mt-1 text-xs text-[var(--text-muted)]">
                   Attached skill instructions are injected into the system prompt.
                 </p>
+                <p class="mt-1 text-xs text-[var(--text-muted)]">
+                  Install more from Settings, Skills.
+                </p>
                 <div class="mt-3 grid gap-2">
                   <For
                     each={catalogSkills()}

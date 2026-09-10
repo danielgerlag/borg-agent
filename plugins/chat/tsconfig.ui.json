@@ -13,6 +13,7 @@
     "src/persona-mark.tsx",
     "src/persona-setup.tsx",
     "src/personas-settings.tsx",
+    "src/skills-settings.tsx",
     "src/model-preference.ts",
     "src/chat-activity.ts"
   ]

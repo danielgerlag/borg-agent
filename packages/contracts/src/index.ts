@@ -1076,6 +1076,39 @@ export const skillSchema = z
 
 export type Skill = z.infer<typeof skillSchema>;
 
+export const githubRepoNameSchema = z
+  .string()
+  .min(1)
+  .regex(/^[A-Za-z0-9_.-]+$/);
+
+export const skillSourceSchema = z
+  .object({
+    type: z.literal("github"),
+    owner: githubRepoNameSchema,
+    repo: githubRepoNameSchema,
+    enabled: z.boolean(),
+  })
+  .strict();
+
+export type SkillSource = z.infer<typeof skillSourceSchema>;
+
+export const githubSkillSourceIdSchema = z
+  .string()
+  .regex(/^github:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+
+export const discoveredSkillSchema = z
+  .object({
+    id: skillIdSchema,
+    name: z.string().min(1),
+    description: z.string().min(1),
+    sourceId: githubSkillSourceIdSchema,
+    sourcePath: z.string(),
+    installed: z.boolean(),
+  })
+  .strict();
+
+export type DiscoveredSkill = z.infer<typeof discoveredSkillSchema>;
+
 export const modelDescriptorSchema = z
   .object({
     providerId: z.string().min(1),
@@ -1292,6 +1325,61 @@ export const chatImportWorkspaceFiles = defineCommand({
     })
     .strict(),
   output: workspaceImportResultSchema,
+});
+
+export const chatSkillsListSources = defineCommand({
+  id: "borg.chat.skills.listSources",
+  input: z.object({}).strict(),
+  output: z.object({ sources: z.array(skillSourceSchema) }).strict(),
+});
+
+export const chatSkillsSetSources = defineCommand({
+  id: "borg.chat.skills.setSources",
+  input: z.object({ sources: z.array(skillSourceSchema) }).strict(),
+  output: z.object({ sources: z.array(skillSourceSchema) }).strict(),
+});
+
+export const chatSkillsDiscover = defineCommand({
+  id: "borg.chat.skills.discover",
+  input: z.object({}).strict(),
+  output: z
+    .object({
+      skills: z.array(discoveredSkillSchema),
+      warnings: z.array(z.string()),
+    })
+    .strict(),
+  timeoutMs: 60_000,
+});
+
+export const chatSkillsPreview = defineCommand({
+  id: "borg.chat.skills.preview",
+  input: z
+    .object({
+      sourceId: githubSkillSourceIdSchema,
+      sourcePath: z.string(),
+    })
+    .strict(),
+  output: z
+    .object({
+      id: skillIdSchema,
+      name: z.string().min(1),
+      description: z.string().min(1),
+      instructions: z.string(),
+      sourceId: githubSkillSourceIdSchema,
+      sourcePath: z.string(),
+    })
+    .strict(),
+});
+
+export const chatSkillsInstall = defineCommand({
+  id: "borg.chat.skills.install",
+  input: z
+    .object({
+      sourceId: githubSkillSourceIdSchema,
+      sourcePath: z.string(),
+    })
+    .strict(),
+  output: z.object({ skill: skillSchema }).strict(),
 });
 
 export const chatMessageAppended = defineEvent({

@@ -577,7 +577,7 @@ interface Persona {
 
 Persona IDs have at least two slash-delimited segments containing letters, digits, `_`, or `-`. `system/general` is bundled and always resolvable. Bundled personas may be edited/reset and archived but not deleted.
 
-`SkillService` persists a kernel catalog under `system.skills`. A skill has `id` (same slash-delimited shape as personas), `name`, optional `description`, `instructions`, `archived`, and `bundled`. Personas attach catalog entries through `skillIds`. `PromptAssembler` injects `kernel.skills` (order 150) from those IDs. Missing or archived skills are omitted. Chat Settings creates skills and attaches them. Installing or discovering richer third-party skills may later be a plugin contribution without moving persona identity out of the kernel.
+`SkillService` persists a kernel catalog under `system.skills`. A skill has `id` (same slash-delimited shape as personas), `name`, optional `description`, `instructions`, `archived`, and `bundled`. Personas attach catalog entries through `skillIds`. `PromptAssembler` injects `kernel.skills` (order 150) from those IDs. Missing or archived skills are omitted. Chat Settings can create skills by hand and attach them. The chat plugin discovers Agent Skills (`SKILL.md`) from configured GitHub repos (defaults anthropics/openai/huggingface `skills`), previews the body, and installs into the kernel `SkillService` catalog as `github/{owner}/{repo}/{name}`. Personas still attach via `skillIds`. Supporting files/scripts are not installed. No LLM audit in v1.
 
 Sessions and bots store persona IDs, not copied provider clients or tool implementations. A loop takes a persona snapshot at start for deterministic behavior; later persona edits affect new runs.
 

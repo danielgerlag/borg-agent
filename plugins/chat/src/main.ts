@@ -14,6 +14,11 @@ import {
   chatSessionDeleted,
   chatSessionSchema,
   chatSessionUpdated,
+  chatSkillsDiscover,
+  chatSkillsInstall,
+  chatSkillsListSources,
+  chatSkillsPreview,
+  chatSkillsSetSources,
   chatSpawnSubAgent,
   chatTurnCompleted,
   chatTurnStarted,
@@ -39,6 +44,7 @@ import {
   z,
 } from "@borg/plugin-sdk";
 import { randomUUID } from "node:crypto";
+import { createSkillRegistry } from "./skill-registry";
 
 type ChatDocument = z.infer<typeof chatDocumentSchema>;
 const legacyPersistedChatDocumentSchema = z
@@ -138,6 +144,7 @@ export default definePlugin({
     "loops.start",
     "memory.write",
     "models.read",
+    "network:dynamic",
     "personas.read",
     "personas.write",
     "tools.invoke",
@@ -160,6 +167,11 @@ export default definePlugin({
       chatPreviewWorkspaceFile.id,
       chatSendMessage.id,
       chatSpawnSubAgent.id,
+      chatSkillsDiscover.id,
+      chatSkillsInstall.id,
+      chatSkillsListSources.id,
+      chatSkillsPreview.id,
+      chatSkillsSetSources.id,
     ],
     events: [
       chatMessageAppended.id,
@@ -1125,6 +1137,25 @@ export default definePlugin({
         ),
       );
     });
+
+    const skillRegistry = createSkillRegistry({
+      http: context.http,
+      skills: context.skills,
+      store: context.store,
+    });
+    context.bus.handle(chatSkillsListSources, () => skillRegistry.listSources());
+    context.bus.handle(chatSkillsSetSources, (input) =>
+      skillRegistry.setSources(input),
+    );
+    context.bus.handle(chatSkillsDiscover, (_input, signal) =>
+      skillRegistry.discover(signal),
+    );
+    context.bus.handle(chatSkillsPreview, (input, signal) =>
+      skillRegistry.preview(input, signal),
+    );
+    context.bus.handle(chatSkillsInstall, (input, signal) =>
+      skillRegistry.install(input, signal),
+    );
 
     const embeddedContent = context.bus.on(
       embeddedContentRegistered,

@@ -348,6 +348,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
         "loops.start",
         "memory.write",
         "models.read",
+        "network:dynamic",
         "personas.read",
         "personas.write",
         "tools.invoke",
@@ -369,7 +370,12 @@ export const bundledMainPlugins: readonly PluginSource[] = [
           "borg.chat.listWorkspace",
           "borg.chat.previewWorkspaceFile",
           "borg.chat.sendMessage",
-          "borg.chat.spawnSubAgent"
+          "borg.chat.spawnSubAgent",
+          "borg.chat.skills.discover",
+          "borg.chat.skills.install",
+          "borg.chat.skills.listSources",
+          "borg.chat.skills.preview",
+          "borg.chat.skills.setSources"
         ],
         "events": [
           "borg.chat.message.appended",
