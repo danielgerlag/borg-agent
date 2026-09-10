@@ -1758,4 +1758,63 @@ describe("HiveMindGraphEngine", () => {
       output: "rescued",
     });
   });
+
+  it("does not skip an onError goto target that sits on the failed node's outgoing path", async () => {
+    const fixture = createGraphHarness();
+    const engine = await initializedEngine(fixture);
+    const definition: GraphDefinition = {
+      ...linearDefinition({
+        id: "goto-on-path",
+        taskKind: "call_tool",
+        taskConfig: { toolId: "missing.tool", input: {} },
+        endConfig: { output: "$vars.result" },
+        permissions: ["*"],
+      }),
+      nodes: [
+        {
+          id: "start",
+          type: "trigger",
+          kind: "manual",
+          config: {},
+          onError: { action: "fail" },
+        },
+        {
+          id: "boom",
+          type: "task",
+          kind: "call_tool",
+          config: { toolId: "missing.tool", input: {} },
+          onError: { action: "goto", nodeId: "rescue" },
+        },
+        {
+          id: "rescue",
+          type: "task",
+          kind: "set_variable",
+          config: { name: "result", value: "rescued-on-path" },
+          onError: { action: "fail" },
+        },
+        {
+          id: "end",
+          type: "control",
+          kind: "end",
+          config: { output: "$vars.result" },
+          onError: { action: "fail" },
+        },
+      ],
+      edges: [
+        { id: "start-boom", source: "start", target: "boom" },
+        { id: "boom-rescue", source: "boom", target: "rescue" },
+        { id: "rescue-end", source: "rescue", target: "end" },
+      ],
+    };
+    await engine.saveDefinition(definition);
+    const instanceId = await engine.launch({
+      graphId: definition.id,
+      security: GRAPH_LAUNCH_SECURITY,
+    });
+    await fixture.flush();
+    expect(engine.getInstance(instanceId)).toMatchObject({
+      status: "completed",
+      output: "rescued-on-path",
+    });
+  });
 });

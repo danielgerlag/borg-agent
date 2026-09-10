@@ -1741,7 +1741,11 @@ export class HiveMindGraphEngine {
       changed = false;
       for (const node of record.definition.nodes) {
         const state = this.#state(record, node.id);
-        if (state.status !== "pending" || node.type === "trigger") {
+        if (
+          state.status !== "pending" ||
+          node.type === "trigger" ||
+          record.forcedNodes.includes(node.id)
+        ) {
           continue;
         }
         const incoming = record.definition.edges.filter(

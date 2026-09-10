@@ -1640,6 +1640,63 @@ export function generateBattleScenarios(): readonly BattleScenario[] {
     expect: { status: "completed", output: "rescued" },
   });
   add({
+    id: "err-goto-on-path",
+    family: "error-policy",
+    complexity: "complex",
+    mode: "run",
+    definition: graph(
+      "err-goto-on-path",
+      [
+        node("start", "trigger", "manual"),
+        node(
+          "boom",
+          "task",
+          "call_tool",
+          { toolId: "tools.fail", input: {} },
+          { onError: { action: "goto", nodeId: "rescue" } },
+        ),
+        node("rescue", "task", "set_variable", {
+          name: "result",
+          value: "rescued-on-path",
+        }),
+        node("end", "control", "end", { output: "$vars.result" }),
+      ],
+      [
+        { id: "e1", source: "start", target: "boom" },
+        { id: "e2", source: "boom", target: "rescue" },
+        { id: "e3", source: "rescue", target: "end" },
+      ],
+      { permissions: ["*"] },
+    ),
+    expect: { status: "completed", output: "rescued-on-path" },
+  });
+  add({
+    id: "err-goto-end",
+    family: "error-policy",
+    complexity: "complex",
+    mode: "run",
+    definition: graph(
+      "err-goto-end",
+      [
+        node("start", "trigger", "manual"),
+        node(
+          "boom",
+          "task",
+          "call_tool",
+          { toolId: "tools.fail", input: {} },
+          { onError: { action: "goto", nodeId: "end" } },
+        ),
+        node("end", "control", "end", { output: "jumped-to-end" }),
+      ],
+      [
+        { id: "e1", source: "start", target: "boom" },
+        { id: "e2", source: "boom", target: "end" },
+      ],
+      { permissions: ["*"] },
+    ),
+    expect: { status: "completed", output: "jumped-to-end" },
+  });
+  add({
     id: "err-skip-then-var",
     family: "error-policy",
     complexity: "complex",
