@@ -979,12 +979,31 @@ export class PluginManager {
                 `Command ${operation.commandId} context is no longer active`,
               );
             }
+            let completionRequest = { ...request, tools: [] };
+            if (
+              completionRequest.providerId === undefined &&
+              completionRequest.modelId === undefined &&
+              this.#options.personas
+            ) {
+              const personas = requirePersonas();
+              const persona = completionRequest.personaId
+                ? personas.get(completionRequest.personaId)
+                : personas.getDefault();
+              const target = requireModels().resolveAuxiliaryTarget(persona);
+              if (target) {
+                completionRequest = {
+                  ...completionRequest,
+                  providerId: target.providerId,
+                  modelId: target.modelId,
+                };
+              }
+            }
             return requireModels().complete(
               {
                 ownerPluginId: manifest.id,
                 feature: "plugin_completion",
               },
-              { ...request, tools: [] },
+              completionRequest,
               signal
                 ? AbortSignal.any([
                     signal,

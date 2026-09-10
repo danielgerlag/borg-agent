@@ -252,7 +252,9 @@ export default defineUiPlugin({
                   onChange={setPersonaId}
                   options={personas().map((persona) => ({
                     value: persona.id,
-                    label: persona.name,
+                    label: persona.avatar
+                      ? `${persona.avatar} ${persona.name}`
+                      : persona.name,
                   }))}
                 />
                 <TextField

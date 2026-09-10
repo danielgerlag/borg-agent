@@ -34,6 +34,7 @@ const bundledGeneralPersona = personaSchema.parse({
   toolExecutionMode: "sequential-partial",
   skillIds: [],
   contextMapStrategy: "general",
+  promptTemplates: [],
   archived: false,
   bundled: true,
 });

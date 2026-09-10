@@ -648,6 +648,7 @@ describe("GraphEngine", () => {
       {
         executionId: graphExecution.id,
         operationKey: `graph/${instanceId}/node/${modelNodeSegment("work")}/attempt/1/prompt`,
+        personaId: "system/general",
         providerId: MODEL_PROVIDER_ID,
         modelId: MODEL_ID,
         messages: [
@@ -745,6 +746,7 @@ describe("GraphEngine", () => {
       {
         executionId: graphExecution.id,
         operationKey,
+        personaId: "system/general",
         providerId: MODEL_PROVIDER_ID,
         modelId: MODEL_ID,
         messages: [{ role: "user", content: "Release this result" }],
@@ -768,6 +770,7 @@ describe("GraphEngine", () => {
       {
         executionId: graphExecution.id,
         operationKey,
+        personaId: "system/general",
         providerId: MODEL_PROVIDER_ID,
         modelId: MODEL_ID,
         messages: [{ role: "user", content: "Release this result" }],
@@ -852,6 +855,7 @@ describe("GraphEngine", () => {
       {
         executionId: graphExecution.id,
         operationKey,
+        personaId: "system/general",
         providerId: MODEL_PROVIDER_ID,
         modelId: MODEL_ID,
         messages: [{ role: "user", content: "Changed request" }],

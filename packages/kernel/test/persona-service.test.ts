@@ -116,6 +116,33 @@ describe("PersonaService", () => {
     expect(personas.list(true)).toHaveLength(2);
   });
 
+  it("persists avatar, color, secondary models, and prompt templates", async () => {
+    const personas = createService();
+    await personas.initialize();
+    const updated = await personas.update(DEFAULT_PERSONA_ID, {
+      avatar: "🤖",
+      color: "#0d9488",
+      secondaryModels: ["borg.mock-llm:mock:scripted"],
+      promptTemplates: [
+        {
+          id: "plan",
+          name: "Plan",
+          prompt: "Help me plan a feature",
+        },
+      ],
+    });
+    expect(updated.avatar).toBe("🤖");
+    expect(updated.color).toBe("#0d9488");
+    expect(updated.secondaryModels).toEqual(["borg.mock-llm:mock:scripted"]);
+    expect(updated.promptTemplates).toEqual([
+      {
+        id: "plan",
+        name: "Plan",
+        prompt: "Help me plan a feature",
+      },
+    ]);
+  });
+
   it("resolves the default persona, model, and system prompt for loops", async () => {
     const personas = createService();
     await personas.initialize();

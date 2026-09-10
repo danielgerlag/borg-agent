@@ -10,6 +10,7 @@
   },
   "include": [
     "src/ui.tsx",
+    "src/persona-mark.tsx",
     "src/persona-setup.tsx",
     "src/personas-settings.tsx",
     "src/model-preference.ts",

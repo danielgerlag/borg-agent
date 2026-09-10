@@ -3,6 +3,7 @@ import type { PluginUiContext } from "@borg/plugin-sdk";
 import { Select } from "@borg/ui-kit";
 import { UserRoundCog } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";
+import { personaGlyph } from "./persona-mark";
 import { displayModelName, matchesModelPreference } from "./model-preference";
 
 export function createPersonaWizardStep(
@@ -136,7 +137,7 @@ export function createPersonaWizardStep(
           onChange={(value) => void choose(value)}
           options={personas().map((persona) => ({
             value: persona.id,
-            label: persona.name,
+            label: `${personaGlyph(persona)} ${persona.name}`,
           }))}
           data-testid="wizard-persona-select"
         />

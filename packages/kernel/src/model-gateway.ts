@@ -17,6 +17,7 @@ import {
   type ModelOperationKey,
   type ModelToolDefinition,
   type ModelUsage,
+  type Persona,
   type ProviderEgress,
   type ReleasedModelCompletion,
 } from "@borg/contracts";
@@ -518,6 +519,24 @@ export class ModelGateway {
       }
     }
     return undefined;
+  }
+
+  resolveAuxiliaryTarget(
+    persona: Persona | undefined,
+  ):
+    | {
+        readonly providerId: string;
+        readonly modelId: string;
+      }
+    | undefined {
+    if (!persona) {
+      return undefined;
+    }
+    const preferences =
+      persona.secondaryModels.length > 0
+        ? persona.secondaryModels
+        : persona.preferredModels;
+    return this.resolvePreferences(preferences);
   }
 
   async complete(

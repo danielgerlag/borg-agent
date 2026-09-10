@@ -1950,10 +1950,12 @@ export class GraphEngine {
           `Prompt for ${node.id}`,
         );
         const system = optionalString(resolved, "system");
+        const defaultPersona = this.context.personas.getDefault();
         const completion = await this.context.models.complete(
           {
             executionId: record.security.executionId,
             operationKey: `graph/${record.instance.id}/node/${operationIdSegment(node.id)}/attempt/${state.attempts}/prompt`,
+            ...(defaultPersona ? { personaId: defaultPersona.id } : {}),
             ...(optionalString(resolved, "providerId")
               ? { providerId: optionalString(resolved, "providerId") }
               : {}),

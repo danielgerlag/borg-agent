@@ -2,12 +2,25 @@ import type { ModelDescriptor, Persona, Skill } from "@borg/contracts";
 import { Button, Checkbox, Panel, Select, TextField } from "@borg/ui-kit";
 import type { PluginUiContext } from "@borg/plugin-sdk";
 import { Plus, Star, Trash2 } from "lucide-solid";
-import { For, Show, createSignal, onMount, type Component } from "solid-js";
+import {
+  For,
+  Index,
+  Show,
+  createSignal,
+  onMount,
+  type Component,
+} from "solid-js";
+import {
+  PERSONA_COLOR_PRESETS,
+  PersonaMark,
+} from "./persona-mark";
 import {
   displayModelName,
   displayProviderName,
   matchesModelPreference,
 } from "./model-preference";
+
+type PromptTemplate = Persona["promptTemplates"][number];
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -55,6 +68,12 @@ export function createPersonasSettings(
     const [description, setDescription] = createSignal("");
     const [instructions, setInstructions] = createSignal("");
     const [preferredModels, setPreferredModels] = createSignal<string[]>([]);
+    const [secondaryModels, setSecondaryModels] = createSignal<string[]>([]);
+    const [avatar, setAvatar] = createSignal("");
+    const [color, setColor] = createSignal("");
+    const [promptTemplates, setPromptTemplates] = createSignal<
+      PromptTemplate[]
+    >([]);
     const [loopStrategy, setLoopStrategy] = createSignal<"react" | "code-act">(
       "react",
     );
@@ -86,6 +105,14 @@ export function createPersonasSettings(
           ),
       );
 
+    const unusedSecondaryModels = (): readonly ModelDescriptor[] =>
+      models().filter(
+        (model) =>
+          !secondaryModels().some((preference) =>
+            matchesModelPreference(model, preference),
+          ),
+      );
+
     const primaryModelValue = (): string => {
       const connected = preferredModels()
         .map((preference) =>
@@ -105,6 +132,12 @@ export function createPersonasSettings(
       setDescription(persona.description ?? "");
       setInstructions(persona.instructions);
       setPreferredModels([...persona.preferredModels]);
+      setSecondaryModels([...persona.secondaryModels]);
+      setAvatar(persona.avatar ?? "");
+      setColor(persona.color ?? "");
+      setPromptTemplates(
+        persona.promptTemplates.map((template) => ({ ...template })),
+      );
       setLoopStrategy(persona.loopStrategy);
       setSkillIds([...persona.skillIds]);
       setAllowAllTools(persona.allowedTools.includes("*"));
@@ -159,6 +192,45 @@ export function createPersonasSettings(
         setPreferredModels(previous);
         setError(describeError(failure));
       }
+    };
+
+    const persistSecondaryModels = async (
+      next: readonly string[],
+    ): Promise<void> => {
+      const persona = selected();
+      if (!persona) {
+        return;
+      }
+      const previous = secondaryModels();
+      setSecondaryModels([...next]);
+      setError(undefined);
+      try {
+        const updated = await context.personas.update(persona.id, {
+          secondaryModels: [...next],
+        });
+        setPersonas((current) =>
+          current.map((item) => (item.id === updated.id ? updated : item)),
+        );
+      } catch (failure) {
+        setSecondaryModels(previous);
+        setError(describeError(failure));
+      }
+    };
+
+    const addSecondaryModel = (preferenceId: string): void => {
+      if (
+        !preferenceId ||
+        secondaryModels().some((preference) => preference === preferenceId)
+      ) {
+        return;
+      }
+      void persistSecondaryModels([...secondaryModels(), preferenceId]);
+    };
+
+    const removeSecondaryModel = (preferenceId: string): void => {
+      void persistSecondaryModels(
+        secondaryModels().filter((preference) => preference !== preferenceId),
+      );
     };
 
     const toggleSkill = (skillId: string, attached: boolean): void => {
@@ -228,6 +300,14 @@ export function createPersonasSettings(
           skillIds: skillIds(),
           allowedTools: tools.length > 0 ? tools : ["*"],
           contextMapStrategy: contextMapStrategy(),
+          secondaryModels: secondaryModels(),
+          avatar: avatar().trim() || undefined,
+          color: color().trim() || undefined,
+          promptTemplates: promptTemplates().filter(
+            (template) =>
+              template.name.trim().length > 0 &&
+              template.prompt.trim().length > 0,
+          ),
         });
         await reload(persona.id);
         setStatus(`Saved ${name().trim()}.`);
@@ -385,7 +465,10 @@ export function createPersonasSettings(
                 data-testid={`persona-row-${persona.id}`}
                 onClick={() => loadDraft(persona)}
               >
-                <span class="font-medium">{persona.name}</span>
+                <span class="flex items-center gap-2">
+                  <PersonaMark persona={persona} class="size-6" />
+                  <span class="font-medium">{persona.name}</span>
+                </span>
                 <Show when={persona.id === defaultId()}>
                   <span class="ml-2 text-xs">Default</span>
                 </Show>
@@ -635,6 +718,185 @@ export function createPersonasSettings(
                   )}
                   data-testid="persona-add-model"
                 />
+              </div>
+
+              <div class="mt-5">
+                <p class="text-sm font-medium">Secondary models</p>
+                <p class="mt-1 text-xs text-[var(--text-muted)]">
+                  Used for one-shot prompts such as graph invoke_prompt. Falls
+                  back to preferred models when empty.
+                </p>
+                <div class="mt-3 grid gap-2">
+                  <For
+                    each={secondaryModels()}
+                    fallback={
+                      <p class="text-sm text-[var(--text-muted)]">
+                        No secondary models. Auxiliary calls use preferred
+                        models.
+                      </p>
+                    }
+                  >
+                    {(preference) => (
+                      <div
+                        class="flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2"
+                        data-testid={`persona-secondary-${preference}`}
+                      >
+                        <p class="min-w-0 flex-1 text-sm">
+                          {resolvePreferenceLabel(preference, models())}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeSecondaryModel(preference)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    )}
+                  </For>
+                </div>
+                <Select
+                  class="mt-3"
+                  label="Add a secondary model"
+                  value=""
+                  placeholder="Select a model"
+                  onOpenChange={(open) => {
+                    if (open) void refreshModels();
+                  }}
+                  onChange={(value) => {
+                    addSecondaryModel(value);
+                  }}
+                  groups={groupModelsByProvider(unusedSecondaryModels()).map(
+                    ([providerId, group]) => ({
+                      label: displayProviderName(providerId),
+                      options: group.map((model) => ({
+                        value: model.preferenceId,
+                        label: displayModelName(model),
+                      })),
+                    }),
+                  )}
+                  data-testid="persona-add-secondary-model"
+                />
+              </div>
+
+              <div class="mt-5">
+                <p class="text-sm font-medium">Appearance</p>
+                <TextField
+                  class="mt-3"
+                  label="Avatar"
+                  value={avatar()}
+                  onChange={setAvatar}
+                  data-testid="persona-avatar"
+                />
+                <p class="mt-1 text-xs text-[var(--text-muted)]">
+                  Emoji or short mark shown next to the persona name.
+                </p>
+                <p class="mt-3 text-xs font-medium">Color</p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <For each={[...PERSONA_COLOR_PRESETS]}>
+                    {(preset) => (
+                      <button
+                        type="button"
+                        class="size-7 rounded-full border"
+                        classList={{
+                          "border-[var(--text)]": color() === preset,
+                          "border-transparent": color() !== preset,
+                        }}
+                        style={{ "background-color": preset }}
+                        aria-label={`Persona color ${preset}`}
+                        data-testid={`persona-color-${preset.slice(1)}`}
+                        onClick={() => setColor(preset)}
+                      />
+                    )}
+                  </For>
+                </div>
+                <TextField
+                  class="mt-3"
+                  label="Color hex"
+                  value={color()}
+                  onChange={setColor}
+                  data-testid="persona-color"
+                />
+              </div>
+
+              <div class="mt-5">
+                <p class="text-sm font-medium">Prompt templates</p>
+                <p class="mt-1 text-xs text-[var(--text-muted)]">
+                  Saved prompts appear as starters in new chats.
+                </p>
+                <div class="mt-3 grid gap-3">
+                  <Index each={promptTemplates()}>
+                    {(template, index) => (
+                      <div class="rounded-xl border border-[var(--border)] p-3">
+                        <TextField
+                          label="Template name"
+                          value={template().name}
+                          onChange={(value) =>
+                            setPromptTemplates((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, name: value }
+                                  : item,
+                              ),
+                            )
+                          }
+                          data-testid={`persona-template-name-${index}`}
+                        />
+                        <TextField
+                          class="mt-3"
+                          label="Template prompt"
+                          value={template().prompt}
+                          onChange={(value) =>
+                            setPromptTemplates((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, prompt: value }
+                                  : item,
+                              ),
+                            )
+                          }
+                          rows={3}
+                          data-testid={`persona-template-prompt-${index}`}
+                        />
+                        <Button
+                          class="mt-3"
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setPromptTemplates((current) =>
+                              current.filter(
+                                (_item, itemIndex) => itemIndex !== index,
+                              ),
+                            )
+                          }
+                        >
+                          Remove template
+                        </Button>
+                      </div>
+                    )}
+                  </Index>
+                </div>
+                <Button
+                  class="mt-3"
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  data-testid="persona-template-add"
+                  onClick={() =>
+                    setPromptTemplates((current) => [
+                      ...current,
+                      {
+                        id: `tpl${Date.now().toString(36)}`,
+                        name: "New prompt",
+                        prompt: "Help me with ",
+                      },
+                    ])
+                  }
+                >
+                  Add prompt template
+                </Button>
               </div>
 
               <Select

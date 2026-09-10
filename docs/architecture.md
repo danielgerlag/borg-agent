@@ -558,15 +558,16 @@ interface Persona {
   description?: string;
   instructions: string;
   preferredModels: string[];     // ordered provider:model IDs or patterns
-  secondaryModels?: string[];
+  secondaryModels?: string[];    // auxiliary one-shot completions
+  promptTemplates: { id: string; name: string; prompt: string }[];
   allowedTools: string[];        // exact IDs/globs, "*" means all
   mcpServers: McpServerConfig[];
   loopStrategy: "react" | "code-act";
   toolExecutionMode: "sequential-partial" | "sequential-full" | "parallel";
   skillIds: string[];
   contextMapStrategy?: "general" | "code" | "advanced";
-  avatar?: string;
-  color?: string;
+  avatar?: string;               // emoji or short mark
+  color?: string;                // #rgb or #rrggbb
   archived: boolean;
   bundled: boolean;
 }
@@ -579,6 +580,8 @@ Persona IDs have at least two slash-delimited segments containing letters, digit
 `SkillService` persists a kernel catalog under `system.skills`. A skill has `id` (same slash-delimited shape as personas), `name`, optional `description`, `instructions`, `archived`, and `bundled`. Personas attach catalog entries through `skillIds`. `PromptAssembler` injects `kernel.skills` (order 150) from those IDs. Missing or archived skills are omitted. Chat Settings creates skills and attaches them. Installing or discovering richer third-party skills may later be a plugin contribution without moving persona identity out of the kernel.
 
 Sessions and bots store persona IDs, not copied provider clients or tool implementations. A loop takes a persona snapshot at start for deterministic behavior; later persona edits affect new runs.
+
+`ctx.models.complete` is auxiliary work: if the request omits provider and model, the kernel resolves `secondaryModels`, then `preferredModels`. Chat Settings edits avatar, color, secondary models, and prompt templates. Templates appear as starters in an empty chat and as insert chips above the composer.
 
 ## Model routing and the single loop runtime
 

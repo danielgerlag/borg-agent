@@ -61,6 +61,7 @@ import {
   toolLabel,
   type ChatLiveActivity,
 } from "./chat-activity";
+import { PersonaMark } from "./persona-mark";
 import { createPersonaWizardStep } from "./persona-setup";
 import { createPersonasSettings } from "./personas-settings";
 
@@ -265,12 +266,42 @@ export default defineUiPlugin<Component>({
         },
       );
 
-      const personaName = createMemo(() => {
+      const activePersona = createMemo((): Persona | undefined => {
         const personaId =
           document()?.session.personaId ?? defaultPersonaId();
-        return (
-          personas().find(({ id }) => id === personaId)?.name ?? "Assistant"
-        );
+        return personas().find(({ id }) => id === personaId);
+      });
+
+      const personaName = createMemo(
+        () => activePersona()?.name ?? "Assistant",
+      );
+
+      const starterPrompts = createMemo(() => {
+        const templates = activePersona()?.promptTemplates ?? [];
+        if (templates.length > 0) {
+          return templates.map((template) => ({
+            id: template.id,
+            label: template.name,
+            prompt: template.prompt,
+          }));
+        }
+        return [
+          {
+            id: "plan",
+            label: "Plan a feature",
+            prompt: "Help me plan a new feature",
+          },
+          {
+            id: "review",
+            label: "Review an approach",
+            prompt: "Review an approach for bugs",
+          },
+          {
+            id: "explain",
+            label: "Explain the codebase",
+            prompt: "Explain this codebase to me",
+          },
+        ];
       });
 
       const emptyConversation = createMemo(
@@ -1068,9 +1099,12 @@ export default defineUiPlugin<Component>({
                     {displayStatus(document()?.session.status ?? "idle")}
                   </p>
                   <p
-                    class="text-xs text-[var(--text-subtle)]"
+                    class="flex items-center gap-2 text-xs text-[var(--text-subtle)]"
                     data-testid="chat-session-persona"
                   >
+                    <Show when={activePersona()}>
+                      {(persona) => <PersonaMark persona={persona()} class="size-5 text-[9px]" />}
+                    </Show>
                     Talking with {personaName()}
                   </p>
                   <Show when={document()}>
@@ -1147,25 +1181,19 @@ export default defineUiPlugin<Component>({
                           prompt to get moving.
                         </p>
                         <div class="mt-6 grid w-full gap-2 sm:grid-cols-3">
-                          <For
-                            each={[
-                              "Help me plan a new feature",
-                              "Review an approach for bugs",
-                              "Explain this codebase to me",
-                            ]}
-                          >
-                            {(prompt, index) => (
+                          <For each={starterPrompts()}>
+                            {(item, index) => (
                               <button
                                 type="button"
                                 class="rounded-xl border border-[var(--border)] bg-[var(--panel-muted)]/45 px-3 py-3 text-left text-xs leading-relaxed transition hover:border-[var(--accent)] hover:bg-[var(--accent)]/5"
                                 onClick={() => {
-                                  setDraft(prompt);
+                                  setDraft(item.prompt);
                                   focusComposer();
                                 }}
                                 data-testid="chat-prompt-suggestion"
                                 data-prompt-index={index()}
                               >
-                                {prompt}
+                                {item.label}
                               </button>
                             )}
                           </For>
@@ -1372,6 +1400,29 @@ export default defineUiPlugin<Component>({
                     </Collapsible>
                   </Show>
 
+                  <Show
+                    when={
+                      (activePersona()?.promptTemplates.length ?? 0) > 0
+                    }
+                  >
+                    <div class="flex flex-wrap gap-2 border-t border-[var(--border)] px-4 pt-3">
+                      <For each={activePersona()?.promptTemplates ?? []}>
+                        {(template) => (
+                          <button
+                            type="button"
+                            class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]"
+                            data-testid={`chat-template-${template.id}`}
+                            onClick={() => {
+                              setDraft(template.prompt);
+                              focusComposer();
+                            }}
+                          >
+                            {template.name}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
                   <div class="flex gap-3 border-t border-[var(--border)] p-4">
                     <TextField
                       class="min-w-0 flex-1"

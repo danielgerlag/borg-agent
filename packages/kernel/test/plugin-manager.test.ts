@@ -35,6 +35,7 @@ import {
   ModelGateway,
   NetworkService,
   OAuthService,
+  PersonaService,
   PluginManager,
   PersistenceRegistry,
   PLUGIN_ENABLEMENT_NAMESPACE,
@@ -1140,6 +1141,91 @@ describe("PluginManager", () => {
     });
     expect(costs.list()).toHaveLength(1);
     expect(costs.list()[0]?.runId).toBeUndefined();
+  });
+
+  it("routes auxiliary completions through persona secondary models", async () => {
+    const bus = new CommandEventBus();
+    const persistence = new PersistenceRegistry();
+    persistence.registerConfigStore("test.model-store", new MemoryConfigStore());
+    const store = new StoreFacade(persistence);
+    const personas = new PersonaService(store);
+    await personas.initialize();
+    const { costs, executions, models } = createModelRuntime();
+    registerModelProvider(models, "primary.provider", {
+      id: "primary.provider",
+      models: ["primary:model"],
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
+        return {
+          content: "primary",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+    registerModelProvider(models, "secondary.provider", {
+      id: "secondary.provider",
+      models: ["secondary:model"],
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(request, permit) {
+        await permit.commit();
+        expect(request.modelId).toBe("secondary:model");
+        return {
+          content: "secondary",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+    await personas.update("system/general", {
+      preferredModels: ["primary.provider:primary:model"],
+      secondaryModels: ["secondary.provider:secondary:model"],
+    });
+    const complete = defineCommand({
+      id: "test.secondary-complete",
+      input: z.object({}).strict(),
+      output: z.object({ content: z.string() }).strict(),
+    });
+    const manifest = {
+      id: "test.secondary-consumer",
+      version: "0.1.0",
+      engines: { borg: "^0.1.0" },
+      main: "test.secondary-consumer/main",
+      permissions: ["models.complete"],
+      contributes: { commands: [complete.id] },
+    } as const satisfies BorgPluginManifest;
+    const execution = await bindTestExecution(
+      executions,
+      manifest.id,
+      "secondary-model-completion",
+    );
+    const manager = new PluginManager(bus, "0.1.0", {
+      models,
+      executions,
+      personas,
+    });
+    await manager.activate({
+      manifest,
+      loadMain: async () =>
+        definePlugin({
+          ...manifest,
+          activate(context) {
+            context.bus.handle(complete, async () => {
+              const completion = await context.models.complete({
+                executionId: execution.id,
+                operationKey: modelOperationKeySchema.parse(
+                  "plugin-manager/secondary-completion",
+                ),
+                messages: [{ role: "user", content: "summarize" }],
+              });
+              return { content: completion.content ?? "" };
+            });
+          },
+        }),
+    });
+    await expect(bus.invoke(complete, {})).resolves.toEqual({
+      content: "secondary",
+    });
+    expect(costs.list()[0]?.modelId).toBe("secondary:model");
   });
 
   it("does not start a loop after its owning command times out", async () => {

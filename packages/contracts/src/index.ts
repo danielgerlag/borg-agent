@@ -637,6 +637,7 @@ export const modelGatewayRequestSchema = z
   .object({
     executionId: executionIdSchema,
     operationKey: modelOperationKeySchema,
+    personaId: z.string().min(1).optional(),
     providerId: z.string().min(1).optional(),
     modelId: z.string().min(1).optional(),
     messages: z.array(modelMessageSchema).min(1).readonly(),
@@ -1014,8 +1015,23 @@ export const personaSchema = z
     contextMapStrategy: z
       .enum(["general", "code", "advanced"])
       .optional(),
-    avatar: z.string().optional(),
-    color: z.string().optional(),
+    avatar: z.string().trim().min(1).max(16).optional(),
+    color: z
+      .string()
+      .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/)
+      .optional(),
+    promptTemplates: z
+      .array(
+        z
+          .object({
+            id: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
+            name: z.string().trim().min(1).max(80),
+            prompt: z.string().min(1).max(8_000),
+          })
+          .strict(),
+      )
+      .max(32)
+      .default([]),
     archived: z.boolean().default(false),
     bundled: z.boolean().default(false),
   })
@@ -1029,6 +1045,16 @@ export const personaSchema = z
         code: "custom",
         path: ["mcpServers"],
         message: "MCP server IDs must be unique within a persona",
+      });
+    }
+    if (
+      new Set(value.promptTemplates.map(({ id }) => id)).size !==
+      value.promptTemplates.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["promptTemplates"],
+        message: "Prompt template IDs must be unique within a persona",
       });
     }
   });

@@ -42,6 +42,7 @@ function createPersona(id: string, sessionMarker: string) {
     loopStrategy: "react" as const,
     toolExecutionMode: "sequential-partial" as const,
     skillIds: [],
+    promptTemplates: [],
     archived: false,
     bundled: false,
   };
