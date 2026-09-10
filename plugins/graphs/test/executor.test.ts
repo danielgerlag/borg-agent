@@ -1698,4 +1698,64 @@ describe("HiveMindGraphEngine", () => {
     };
     expect(() => validateGraphDefinition(cyclic)).toThrow(/contains a cycle/i);
   });
+
+  it("executes an onError goto target that has no incoming edges", async () => {
+    const fixture = createGraphHarness();
+    const engine = await initializedEngine(fixture);
+    const definition: GraphDefinition = {
+      ...linearDefinition({
+        id: "goto-rescue",
+        taskKind: "call_tool",
+        taskConfig: { toolId: "missing.tool", input: {} },
+        endConfig: { output: "$vars.result" },
+        permissions: ["*"],
+      }),
+      nodes: [
+        {
+          id: "start",
+          type: "trigger",
+          kind: "manual",
+          config: {},
+          onError: { action: "fail" },
+        },
+        {
+          id: "boom",
+          type: "task",
+          kind: "call_tool",
+          config: { toolId: "missing.tool", input: {} },
+          onError: { action: "goto", nodeId: "rescue" },
+        },
+        {
+          id: "rescue",
+          type: "task",
+          kind: "set_variable",
+          config: { name: "result", value: "rescued" },
+          onError: { action: "fail" },
+        },
+        {
+          id: "end",
+          type: "control",
+          kind: "end",
+          config: { output: "$vars.result" },
+          onError: { action: "fail" },
+        },
+      ],
+      edges: [
+        { id: "start-boom", source: "start", target: "boom" },
+        { id: "boom-end", source: "boom", target: "end" },
+        { id: "rescue-end", source: "rescue", target: "end" },
+      ],
+    };
+    expect(() => validateGraphDefinition(definition)).not.toThrow();
+    await engine.saveDefinition(definition);
+    const instanceId = await engine.launch({
+      graphId: definition.id,
+      security: GRAPH_LAUNCH_SECURITY,
+    });
+    await fixture.flush();
+    expect(engine.getInstance(instanceId)).toMatchObject({
+      status: "completed",
+      output: "rescued",
+    });
+  });
 });

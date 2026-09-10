@@ -642,6 +642,7 @@ export function validateGraphDefinition(
   const ends = definition.nodes.filter(
     (node) => node.type === "control" && node.kind === "end",
   );
+  const gotoTargets = new Set<string>();
   if (triggers.length !== 1) {
     throw new Error(`Graph ${definition.id} must contain exactly one trigger`);
   }
@@ -672,13 +673,19 @@ export function validateGraphDefinition(
     } else {
       validateNodeConfig(node);
     }
-    if (
-      node.onError.action === "goto" &&
-      !nodes.has(node.onError.nodeId)
-    ) {
-      throw new Error(
-        `Graph node ${node.id} has an unknown goto target ${node.onError.nodeId}`,
-      );
+    if (node.onError.action === "goto") {
+      const target = nodes.get(node.onError.nodeId);
+      if (!target) {
+        throw new Error(
+          `Graph node ${node.id} has an unknown goto target ${node.onError.nodeId}`,
+        );
+      }
+      if (target.type === "trigger") {
+        throw new Error(
+          `Graph node ${node.id} cannot goto trigger ${node.onError.nodeId}`,
+        );
+      }
+      gotoTargets.add(node.onError.nodeId);
     }
   }
 
@@ -713,7 +720,11 @@ export function validateGraphDefinition(
     throw new Error(`End node ${end.id} cannot have outgoing edges`);
   }
   for (const node of definition.nodes) {
-    if (node.id !== trigger.id && incoming.get(node.id)!.length === 0) {
+    if (
+      node.id !== trigger.id &&
+      incoming.get(node.id)!.length === 0 &&
+      !gotoTargets.has(node.id)
+    ) {
       throw new Error(`Graph node ${node.id} has no incoming edge`);
     }
     if (node.id !== end.id && outgoing.get(node.id)!.length === 0) {
@@ -732,6 +743,9 @@ export function validateGraphDefinition(
     }
   };
   visit(trigger.id);
+  for (const target of gotoTargets) {
+    visit(target);
+  }
   const unreachable = definition.nodes.filter((node) => !reachable.has(node.id));
   if (unreachable.length > 0) {
     throw new Error(
@@ -778,6 +792,9 @@ export function validateGraphDefinition(
     visited.add(nodeId);
   };
   assertAcyclic(trigger.id);
+  for (const target of gotoTargets) {
+    assertAcyclic(target);
+  }
 
   return cloneDefinition(definition);
 }
