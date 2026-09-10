@@ -44,6 +44,7 @@ import {
   outputPortId,
   portPosition,
 } from "./draw-edges";
+import { GRAPH_ENGINE_ID } from "./engine-id";
 import {
   type ToolCatalogItem,
 } from "./field-renderer";
@@ -90,8 +91,6 @@ interface PaletteItem {
   readonly label: string;
   readonly type: NodeType;
 }
-
-const ENGINE_ID = "borg.graphs.hivemind-v1";
 
 const cytoscapeStyles: cytoscape.StylesheetJson = [
   {
@@ -230,7 +229,7 @@ function createDefaultGraph(): GraphDefinition {
     id: `graph-${Date.now().toString(36)}-${graphSequence}`,
     name: "Untitled graph",
     version: "1.0.0",
-    engineId: ENGINE_ID,
+    engineId: GRAPH_ENGINE_ID,
     description: "",
     mode: "chat",
     inputSchema: {},

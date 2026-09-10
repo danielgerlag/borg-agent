@@ -16,7 +16,7 @@ const desktopApp = path.join(projectRoot, "apps/desktop");
 const electronPath = require(
   require.resolve("electron", { paths: [desktopApp] }),
 ) as string;
-const graphEngineId = "borg.graphs.hivemind-v1";
+const graphEngineId = "borg.graphs.v1";
 
 let application: ElectronApplication | undefined;
 let page: Page;

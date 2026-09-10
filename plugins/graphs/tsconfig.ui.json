@@ -9,6 +9,7 @@
     "noEmit": true
   },
   "include": [
+    "src/engine-id.ts",
     "src/ui.tsx",
     "src/connect.ts",
     "src/draw-edges.ts",

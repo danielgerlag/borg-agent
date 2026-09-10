@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GraphDefinition } from "@borg/contracts";
 import { connectNodes } from "../src/connect";
 import { outputPortId, portPosition } from "../src/draw-edges";
+import { GRAPH_ENGINE_ID } from "../src/engine-id";
 
 function graph(
   nodes: GraphDefinition["nodes"],
@@ -11,7 +12,7 @@ function graph(
     id: "demo",
     name: "Demo",
     version: "1.0.0",
-    engineId: "borg.graphs.hivemind-v1",
+    engineId: GRAPH_ENGINE_ID,
     mode: "background",
     inputSchema: {},
     variablesSchema: {},

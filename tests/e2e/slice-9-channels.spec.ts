@@ -98,7 +98,7 @@ test("starts an explicitly bound graph from mock channel inbound", async () => {
         id,
         name: "Slice 9 inbound graph",
         version: "1.0.0",
-        engineId: "borg.graphs.hivemind-v1",
+        engineId: "borg.graphs.v1",
         description: "Runs only for an incoming channel message.",
         mode: "background",
         inputSchema: {},

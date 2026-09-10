@@ -22,7 +22,7 @@ import {
   graphsSaveDefinition,
 } from "@borg/contracts";
 import { definePlugin, defineTool, z } from "@borg/plugin-sdk";
-import { HiveMindGraphEngine } from "./executor";
+import { GraphEngine } from "./executor";
 
 export default definePlugin({
   id: "borg.graphs",
@@ -81,7 +81,7 @@ export default definePlugin({
     ],
   },
   async activate(context) {
-    const engine = new HiveMindGraphEngine(context);
+    const engine = new GraphEngine(context);
 
     context.bus.handle(graphsSaveDefinition, async ({ definition }) => ({
       definition: await engine.saveDefinition(definition),

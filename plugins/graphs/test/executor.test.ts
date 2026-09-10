@@ -27,7 +27,8 @@ import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSecurityRuntime } from "../../../packages/kernel/test/security-runtime";
 import {
-  HiveMindGraphEngine,
+  GRAPH_ENGINE_ID,
+  GraphEngine,
   validateGraphDefinition,
 } from "../src/executor";
 import {
@@ -42,7 +43,7 @@ const GRAPH_LAUNCH_SECURITY = {
     kind: "plugin",
     id: "graph-executor-test",
   },
-} satisfies Parameters<HiveMindGraphEngine["launch"]>[0]["security"];
+} satisfies Parameters<GraphEngine["launch"]>[0]["security"];
 
 const MODEL_PROVIDER_ID = "borg.mock-llm";
 const MODEL_ID = "mock:scripted";
@@ -333,12 +334,12 @@ function convertPersistedInstanceToLegacy(
   storedValues.set(key, legacy);
 }
 
-const engines: HiveMindGraphEngine[] = [];
+const engines: GraphEngine[] = [];
 
 async function initializedEngine(
   fixture: ReturnType<typeof createGraphHarness>,
-): Promise<HiveMindGraphEngine> {
-  const engine = new HiveMindGraphEngine(fixture.context);
+): Promise<GraphEngine> {
+  const engine = new GraphEngine(fixture.context);
   engines.push(engine);
   await engine.initialize();
   return engine;
@@ -353,7 +354,7 @@ afterEach(async () => {
   }
 });
 
-describe("HiveMindGraphEngine", () => {
+describe("GraphEngine", () => {
   it("completes a manual fixture and preserves versioned definition snapshots", async () => {
     const fixture = createGraphHarness();
     const engine = await initializedEngine(fixture);
@@ -1697,6 +1698,14 @@ describe("HiveMindGraphEngine", () => {
       ],
     };
     expect(() => validateGraphDefinition(cyclic)).toThrow(/contains a cycle/i);
+  });
+
+  it("rewrites the legacy graph engine id on validate", () => {
+    const rewritten = validateGraphDefinition({
+      ...linearDefinition({ id: "legacy-engine" }),
+      engineId: "borg.graphs.hivemind-v1",
+    });
+    expect(rewritten.engineId).toBe(GRAPH_ENGINE_ID);
   });
 
   it("executes an onError goto target that has no incoming edges", async () => {

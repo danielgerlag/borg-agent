@@ -1,7 +1,7 @@
 import { feedbackAsk } from "@borg/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  HiveMindGraphEngine,
+  GraphEngine,
   validateGraphDefinition,
 } from "../src/executor";
 import {
@@ -20,13 +20,13 @@ const GRAPH_LAUNCH_SECURITY = {
   },
 };
 
-const engines: HiveMindGraphEngine[] = [];
+const engines: GraphEngine[] = [];
 const scenarios = generateBattleScenarios();
 
 async function initializedEngine(
   fixture: ReturnType<typeof createGraphHarness>,
-): Promise<HiveMindGraphEngine> {
-  const engine = new HiveMindGraphEngine(fixture.context);
+): Promise<GraphEngine> {
+  const engine = new GraphEngine(fixture.context);
   engines.push(engine);
   await engine.initialize();
   return engine;

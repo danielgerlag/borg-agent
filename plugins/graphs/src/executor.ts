@@ -32,7 +32,9 @@ import {
 } from "@borg/plugin-sdk";
 import { createHash, randomUUID } from "node:crypto";
 
-export const GRAPH_ENGINE_ID = "borg.graphs.hivemind-v1";
+import { GRAPH_ENGINE_ID, resolveGraphEngineId } from "./engine-id";
+
+export { GRAPH_ENGINE_ID };
 
 const DEFINITION_PREFIX = "definitions/current/";
 const DEFINITION_VERSION_PREFIX = "definitions/versions/";
@@ -603,12 +605,17 @@ export function validateGraphDefinition(
     readonly triggers?: readonly GraphTriggerContribution[];
   },
 ): GraphDefinition {
-  const definition = graphDefinitionSchema.parse(candidate);
-  if (definition.engineId !== GRAPH_ENGINE_ID) {
+  const parsed = graphDefinitionSchema.parse(candidate);
+  const engineId = resolveGraphEngineId(parsed.engineId);
+  if (engineId !== GRAPH_ENGINE_ID) {
     throw new Error(
-      `Graph ${definition.id} requires unavailable engine ${definition.engineId}`,
+      `Graph ${parsed.id} requires unavailable engine ${parsed.engineId}`,
     );
   }
+  const definition =
+    parsed.engineId === GRAPH_ENGINE_ID
+      ? parsed
+      : { ...parsed, engineId: GRAPH_ENGINE_ID };
 
   const allowedKinds: Record<GraphNode["type"], ReadonlySet<string>> = {
     trigger: new Set([
@@ -799,7 +806,7 @@ export function validateGraphDefinition(
   return cloneDefinition(definition);
 }
 
-export class HiveMindGraphEngine {
+export class GraphEngine {
   readonly #definitions = new Map<string, GraphDefinition>();
   readonly #instances = new Map<string, InstanceRecord>();
   readonly #activeTasks = new Map<string, Disposable>();
@@ -1316,7 +1323,7 @@ export class HiveMindGraphEngine {
           : legacyPersistedInstanceSchema.parse(stored.value);
         const definition = this.#validateDefinition(parsed.definition);
         if (
-          parsed.instance.engineId !== GRAPH_ENGINE_ID ||
+          resolveGraphEngineId(parsed.instance.engineId) !== GRAPH_ENGINE_ID ||
           parsed.instance.graphId !== definition.id ||
           parsed.instance.definitionVersion !== definition.version
         ) {
@@ -1324,10 +1331,14 @@ export class HiveMindGraphEngine {
             `Persisted graph instance ${parsed.instance.id} has an invalid definition snapshot`,
           );
         }
+        const instance = {
+          ...parsed.instance,
+          engineId: GRAPH_ENGINE_ID,
+        };
         const record: InstanceRecord = current.success
           ? {
               version: 2,
-              instance: parsed.instance,
+              instance,
               security: current.data.security,
               definition,
               edgeStates: parsed.edgeStates,
@@ -1347,7 +1358,7 @@ export class HiveMindGraphEngine {
             }
           : {
               version: 2,
-              instance: parsed.instance,
+              instance,
               security: {
                 executionId: (
                   await this.context.executions.bind({
