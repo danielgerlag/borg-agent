@@ -1147,8 +1147,8 @@ export default definePlugin({
     context.bus.handle(chatSkillsSetSources, (input) =>
       skillRegistry.setSources(input),
     );
-    context.bus.handle(chatSkillsDiscover, (_input, signal) =>
-      skillRegistry.discover(signal),
+    context.bus.handle(chatSkillsDiscover, (input, signal) =>
+      skillRegistry.discover(input.sourceId, signal),
     );
     context.bus.handle(chatSkillsPreview, (input, signal) =>
       skillRegistry.preview(input, signal),

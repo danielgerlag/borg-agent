@@ -167,6 +167,33 @@ describe("skill registry", () => {
     await expect(registry.listSources()).resolves.toEqual(result);
   });
 
+  it("discovers one source when sourceId is passed", async () => {
+    const registry = createRegistry({
+      fetch: async (input) => {
+        const url = String(input);
+        if (url === treeUrl("acme", "skills")) {
+          return jsonResponse({
+            tree: [{ path: "skills/pdf/SKILL.md", type: "blob" }],
+          });
+        }
+        if (url === rawUrl("acme", "skills", "skills/pdf/SKILL.md")) {
+          return textResponse(PDF_SKILL_MD);
+        }
+        throw new Error(`Unexpected fetch ${url}`);
+      },
+    });
+    await registry.setSources({
+      sources: [
+        { type: "github", owner: "acme", repo: "skills", enabled: true },
+        { type: "github", owner: "other", repo: "box", enabled: true },
+      ],
+    });
+    const result = await registry.discover("github:acme/skills");
+    expect(result.skills.map((skill) => skill.sourceId)).toEqual([
+      "github:acme/skills",
+    ]);
+  });
+
   it("discovers SKILL.md entries from a mocked GitHub tree", async () => {
     const registry = createRegistry({
       fetch: async (input) => {

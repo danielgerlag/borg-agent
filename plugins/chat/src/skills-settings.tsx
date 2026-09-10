@@ -10,7 +10,7 @@ import {
 } from "@borg/contracts";
 import type { PluginUiContext } from "@borg/plugin-sdk";
 import { Button, Checkbox, Dialog, Panel, TextField } from "@borg/ui-kit";
-import { Plus, Trash2 } from "lucide-solid";
+import { LoaderCircle, Plus, Trash2 } from "lucide-solid";
 import {
   For,
   Show,
@@ -43,6 +43,7 @@ export function createSkillsSettings(
     const [repo, setRepo] = createSignal("");
     const [warnings, setWarnings] = createSignal<readonly string[]>([]);
     const [error, setError] = createSignal<string>();
+    const [status, setStatus] = createSignal("");
     const [busy, setBusy] = createSignal(false);
     const [candidate, setCandidate] = createSignal<DiscoveredSkill>();
     const [preview, setPreview] = createSignal<{
@@ -102,12 +103,44 @@ export function createSkillsSettings(
     const scan = async (): Promise<void> => {
       setBusy(true);
       setError(undefined);
+      setWarnings([]);
+      setDiscovered([]);
       try {
-        const result = await context.bus.invoke(chatSkillsDiscover, {});
-        setDiscovered(result.skills);
-        setWarnings(result.warnings);
+        const listed = await context.bus.invoke(chatSkillsListSources, {});
+        setSources(listed.sources);
+        const enabled = listed.sources.filter((source) => source.enabled);
+        if (enabled.length === 0) {
+          setError("Enable a GitHub source first.");
+          setStatus("");
+          return;
+        }
+        let found = 0;
+        const nextWarnings: string[] = [];
+        for (const source of enabled) {
+          const sourceId = `github:${source.owner}/${source.repo}`;
+          setStatus(`Scanning ${source.owner}/${source.repo}…`);
+          try {
+            const result = await context.bus.invoke(chatSkillsDiscover, {
+              sourceId,
+            });
+            found += result.skills.length;
+            setDiscovered((current) => [...current, ...result.skills]);
+            nextWarnings.push(...result.warnings);
+            setWarnings(nextWarnings);
+            setStatus(
+              `Scanning ${source.owner}/${source.repo}… ${found} found.`,
+            );
+          } catch (failure) {
+            nextWarnings.push(`${sourceId}: ${describeError(failure)}`);
+            setWarnings(nextWarnings);
+          }
+        }
+        setStatus(
+          found === 0 ? "No skills found." : `Found ${found} skills.`,
+        );
       } catch (failure) {
         setError(describeError(failure));
+        setStatus("");
       } finally {
         setBusy(false);
       }
@@ -156,6 +189,7 @@ export function createSkillsSettings(
       }
       setDialogBusy(true);
       setDialogError(undefined);
+      setStatus(`Installing ${skill.name}…`);
       try {
         await context.bus.invoke(chatSkillsInstall, {
           sourceId: skill.sourceId,
@@ -167,6 +201,7 @@ export function createSkillsSettings(
             item.id === skill.id ? { ...item, installed: true } : item,
           ),
         );
+        setStatus(`Installed ${skill.name}.`);
         closeInstall();
       } catch (failure) {
         setDialogError(describeError(failure));
@@ -300,7 +335,14 @@ export function createSkillsSettings(
               data-testid="skills-discover-scan"
               onClick={() => void scan()}
             >
-              Scan
+              <Show when={busy()}>
+                <LoaderCircle
+                  aria-hidden="true"
+                  class="animate-spin"
+                  size={14}
+                />
+              </Show>
+              {busy() ? "Scanning…" : "Scan"}
             </Button>
             <TextField
               class="min-w-56 flex-1"
@@ -310,6 +352,22 @@ export function createSkillsSettings(
               data-testid="skills-discover-search"
             />
           </div>
+          <Show when={status()}>
+            <p
+              class="mt-3 flex items-center gap-2 text-sm text-[var(--text-muted)]"
+              aria-live="polite"
+              data-testid="skills-status"
+            >
+              <Show when={busy()}>
+                <LoaderCircle
+                  aria-hidden="true"
+                  class="animate-spin"
+                  size={14}
+                />
+              </Show>
+              {status()}
+            </p>
+          </Show>
           <Show when={warnings().length > 0}>
             <ul class="mt-3 grid gap-1 text-xs text-[var(--text-muted)]">
               <For each={warnings()}>{(warning) => <li>{warning}</li>}</For>
@@ -320,9 +378,11 @@ export function createSkillsSettings(
               each={filteredDiscovered()}
               fallback={
                 <p class="text-sm text-[var(--text-muted)]">
-                  {discovered().length === 0
-                    ? "Scan enabled GitHub sources to list SKILL.md files."
-                    : "No skills match that search."}
+                  {busy()
+                    ? "Fetching SKILL.md files from GitHub. Results appear as each registry finishes."
+                    : discovered().length === 0
+                      ? "Scan enabled GitHub sources to list SKILL.md files."
+                      : "No skills match that search."}
                 </p>
               }
             >
@@ -468,7 +528,14 @@ export function createSkillsSettings(
           data-testid="skills-preview"
         >
           <Show when={dialogBusy() && !preview()}>
-            <p class="mt-3 text-xs text-[var(--text-muted)]">Loading preview…</p>
+            <p class="mt-3 flex items-center gap-2 text-sm text-[var(--text-muted)]">
+              <LoaderCircle
+                aria-hidden="true"
+                class="animate-spin"
+                size={14}
+              />
+              Fetching SKILL.md from GitHub…
+            </p>
           </Show>
           <Show when={preview()}>
             {(current) => (
@@ -476,6 +543,16 @@ export function createSkillsSettings(
                 {current().instructions}
               </pre>
             )}
+          </Show>
+          <Show when={dialogBusy() && preview()}>
+            <p class="mt-3 flex items-center gap-2 text-sm text-[var(--text-muted)]">
+              <LoaderCircle
+                aria-hidden="true"
+                class="animate-spin"
+                size={14}
+              />
+              Installing into the catalog…
+            </p>
           </Show>
           <Show when={dialogError()}>
             <p
@@ -500,7 +577,14 @@ export function createSkillsSettings(
               data-testid="skills-install-confirm"
               onClick={() => void confirmInstall()}
             >
-              Confirm
+              <Show when={dialogBusy() && preview()}>
+                <LoaderCircle
+                  aria-hidden="true"
+                  class="animate-spin"
+                  size={14}
+                />
+              </Show>
+              {dialogBusy() && preview() ? "Installing…" : "Install"}
             </Button>
           </div>
         </Dialog>

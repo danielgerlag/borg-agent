@@ -64,7 +64,10 @@ export interface SkillRegistry {
   setSources(input: { sources: SkillSource[] }): Promise<{
     sources: SkillSource[];
   }>;
-  discover(signal?: AbortSignal): Promise<{
+  discover(
+    sourceId?: string,
+    signal?: AbortSignal,
+  ): Promise<{
     skills: DiscoveredSkill[];
     warnings: string[];
   }>;
@@ -110,9 +113,14 @@ export function createSkillRegistry(options: {
   };
 
   const discover = async (
+    sourceId?: string,
     signal?: AbortSignal,
   ): Promise<{ skills: DiscoveredSkill[]; warnings: string[] }> => {
-    const sources = (await loadSources()).filter((source) => source.enabled);
+    const listed = await loadSources();
+    const sources =
+      sourceId === undefined
+        ? listed.filter((source) => source.enabled)
+        : selectSource(listed, sourceId);
     const skillsFound: DiscoveredSkill[] = [];
     const warnings: string[] = [];
     let failedSources = 0;
@@ -398,6 +406,20 @@ export function createSkillRegistry(options: {
 
 function defaultSources(): SkillSource[] {
   return DEFAULT_SKILL_SOURCES.map((source) => ({ ...source }));
+}
+
+function selectSource(
+  listed: readonly SkillSource[],
+  sourceId: string,
+): SkillSource[] {
+  const parsed = githubSkillSourceIdSchema.parse(sourceId);
+  const match = listed.find(
+    (source) => githubSourceId(source.owner, source.repo) === parsed,
+  );
+  if (!match) {
+    throw new Error(`Unknown skill source ${parsed}`);
+  }
+  return [match];
 }
 
 function dedupeSources(sources: readonly SkillSource[]): SkillSource[] {

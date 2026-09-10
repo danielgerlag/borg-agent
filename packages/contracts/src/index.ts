@@ -1341,7 +1341,11 @@ export const chatSkillsSetSources = defineCommand({
 
 export const chatSkillsDiscover = defineCommand({
   id: "borg.chat.skills.discover",
-  input: z.object({}).strict(),
+  input: z
+    .object({
+      sourceId: githubSkillSourceIdSchema.optional(),
+    })
+    .strict(),
   output: z
     .object({
       skills: z.array(discoveredSkillSchema),
