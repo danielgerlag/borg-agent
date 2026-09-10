@@ -148,6 +148,8 @@ Generic graph support in the kernel is limited to `GraphContributionRegistry`, `
 - a test harness;
 - no bundled feature implementation.
 
+The method catalog, permission strings, and kind checks are listed in `docs/plugin-api.md`.
+
 Kernel implementation types that plugins do not consume stay in `packages/kernel`. Shared Solid components and tokens stay in `packages/ui-kit`.
 
 ## Plugin package and manifest
