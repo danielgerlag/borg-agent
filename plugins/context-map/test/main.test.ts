@@ -80,6 +80,10 @@ describe("borg.context-map", () => {
     let slot: PromptSlotContribution | undefined;
     const context = {
       pluginId: plugin.id,
+      personas: {
+        get: (personaId: string) =>
+          personaId === DEFAULT_PERSONA_ID ? personas.getDefault() : undefined,
+      },
       prompts: {
         registerSlot: (contribution: PromptSlotContribution) => {
           slot = contribution;
@@ -112,6 +116,45 @@ describe("borg.context-map", () => {
         personaId: DEFAULT_PERSONA_ID,
       }),
     ).toBeUndefined();
+    await harness.deactivate();
+  });
+
+  it("lists only source files for the code context-map strategy", async () => {
+    const registry = new PersistenceRegistry();
+    registry.registerConfigStore("test.config", new MemoryConfigStore());
+    const personas = new PersonaService(new StoreFacade(registry));
+    await personas.initialize();
+    await personas.update(DEFAULT_PERSONA_ID, {
+      contextMapStrategy: "code",
+    });
+    const assembler = new PromptAssembler(personas);
+    const root = await mkdtemp(path.join(os.tmpdir(), "borg-context-map-"));
+    const workspaces = new WorkspaceService(root);
+    const sessionId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const context = {
+      pluginId: plugin.id,
+      personas: {
+        get: (personaId: string) =>
+          personaId === DEFAULT_PERSONA_ID ? personas.getDefault() : undefined,
+      },
+      prompts: {
+        registerSlot: (contribution: PromptSlotContribution) =>
+          assembler.registerSlot(contribution),
+      },
+    } as unknown as PluginContext;
+    const harness = await createTestHarness(plugin, context);
+    const handle = workspaces.allocate("borg.chat", sessionId);
+    await writeFile(path.join(handle.rootPath, "note.txt"), "hello", "utf8");
+    await writeFile(path.join(handle.rootPath, "app.ts"), "export {}", "utf8");
+    const assembled = await assembler.assemble({
+      personaId: DEFAULT_PERSONA_ID,
+      sessionId,
+      workspace: {
+        listFiles: () => workspaces.listFiles("borg.chat", sessionId),
+      },
+    });
+    expect(assembled.system).toContain("app.ts");
+    expect(assembled.system).not.toContain("note.txt");
     await harness.deactivate();
   });
 });

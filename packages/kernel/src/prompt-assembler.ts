@@ -1,4 +1,4 @@
-import type { WorkspaceFile } from "@borg/contracts";
+import type { WorkspaceFile, WorkspacePreview } from "@borg/contracts";
 import type {
   Disposable,
   MemoryRecord,
@@ -6,6 +6,7 @@ import type {
 } from "@borg/plugin-sdk";
 import type { MemoryFacade } from "./memory-facade";
 import type { PersonaService } from "./persona-service";
+import type { SkillService } from "./skill-service";
 
 export interface PromptAssemblyContext {
   readonly personaId: string;
@@ -15,6 +16,7 @@ export interface PromptAssemblyContext {
   readonly workspace?:
     | {
         listFiles(): Promise<readonly WorkspaceFile[]>;
+        readFile?(relativePath: string): Promise<WorkspacePreview>;
       }
     | undefined;
 }
@@ -37,6 +39,7 @@ export class PromptAssembler {
   constructor(
     readonly personas: PersonaService,
     readonly memory?: MemoryFacade,
+    readonly skills?: SkillService,
   ) {}
 
   registerSlot(slot: PromptSlot): Disposable {
@@ -95,6 +98,15 @@ export class PromptAssembler {
         order: 100,
         content: persona.instructions,
       },
+      ...(this.skills
+        ? [
+            {
+              id: "kernel.skills",
+              order: 150,
+              content: this.#skills(persona.skillIds),
+            },
+          ]
+        : []),
       ...(this.memory
         ? [
             {
@@ -119,6 +131,19 @@ export class PromptAssembler {
         ),
       ),
     });
+  }
+
+  #skills(skillIds: readonly string[]): string | undefined {
+    if (!this.skills || skillIds.length === 0) {
+      return undefined;
+    }
+    const blocks = this.skills.resolve(skillIds).map(
+      (skill) => `${skill.name}\n${skill.instructions}`,
+    );
+    if (blocks.length === 0) {
+      return undefined;
+    }
+    return ["Active skills:", ...blocks].join("\n\n");
   }
 
   async #recall(context: PromptAssemblyContext): Promise<string | undefined> {

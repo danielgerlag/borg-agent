@@ -452,7 +452,8 @@ export const bundledMainPlugins: readonly PluginSource[] = [
       },
       "main": "@borg/plugin-context-map/main",
       "permissions": [
-        "prompts.register"
+        "prompts.register",
+        "personas.read"
       ],
       "contributes": {
         "kinds": [

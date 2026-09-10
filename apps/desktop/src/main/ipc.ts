@@ -8,6 +8,7 @@ import {
   type ModelGateway,
   type NotificationService,
   type PersonaService,
+  type SkillService,
   type PluginManager,
   type SecretFacade,
   type WorkspaceService,
@@ -31,6 +32,7 @@ import {
   interactionResponseSchema,
   loopStartInputSchema,
   personaIdSchema,
+  skillIdSchema,
 } from "@borg/contracts";
 import {
   GNOME_COPIED_FILES_TYPE,
@@ -214,6 +216,42 @@ const kernelCallSchema = z.discriminatedUnion("method", [
       capability: z.string().uuid(),
       personaId: personaIdSchema,
       patch: z.record(z.string(), z.unknown()),
+    }),
+  }),
+  z.object({
+    method: z.literal("skills.list"),
+    args: z.object({
+      capability: z.string().uuid(),
+      includeArchived: z.boolean().optional(),
+    }),
+  }),
+  z.object({
+    method: z.literal("skills.get"),
+    args: z.object({
+      capability: z.string().uuid(),
+      skillId: skillIdSchema,
+    }),
+  }),
+  z.object({
+    method: z.literal("skills.create"),
+    args: z.object({
+      capability: z.string().uuid(),
+      candidate: z.unknown(),
+    }),
+  }),
+  z.object({
+    method: z.literal("skills.update"),
+    args: z.object({
+      capability: z.string().uuid(),
+      skillId: skillIdSchema,
+      patch: z.record(z.string(), z.unknown()),
+    }),
+  }),
+  z.object({
+    method: z.literal("skills.archive"),
+    args: z.object({
+      capability: z.string().uuid(),
+      skillId: skillIdSchema,
     }),
   }),
   z.object({
@@ -418,6 +456,7 @@ export interface IpcBridgeOptions {
   readonly interactions: InteractionService;
   readonly loops: LoopManager;
   readonly personas: PersonaService;
+  readonly skills: SkillService;
   readonly models: ModelGateway;
   readonly costs: CostLedger;
   readonly workspaces: WorkspaceService;
@@ -885,6 +924,54 @@ export function registerIpcBridge(options: IpcBridgeOptions): () => Promise<void
               request.args.patch,
             ),
           );
+        }
+        case "skills.list": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.read",
+          );
+          return success(
+            options.skills.list(request.args.includeArchived === true),
+          );
+        }
+        case "skills.get": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.read",
+          );
+          return success(options.skills.get(request.args.skillId));
+        }
+        case "skills.create": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.write",
+          );
+          return success(await options.skills.create(request.args.candidate));
+        }
+        case "skills.update": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.write",
+          );
+          return success(
+            await options.skills.update(
+              request.args.skillId,
+              request.args.patch,
+            ),
+          );
+        }
+        case "skills.archive": {
+          resolveUiPlugin(
+            options.plugins,
+            request.args.capability,
+            "personas.write",
+          );
+          await options.skills.archive(request.args.skillId);
+          return success(undefined);
         }
         case "events.subscribe": {
           if (!options.plugins.hasDeclaredEvent(request.args.eventId)) {

@@ -1,5 +1,5 @@
-import type { ModelDescriptor, Persona } from "@borg/contracts";
-import { Button, Panel, Select, TextField } from "@borg/ui-kit";
+import type { ModelDescriptor, Persona, Skill } from "@borg/contracts";
+import { Button, Checkbox, Panel, Select, TextField } from "@borg/ui-kit";
 import type { PluginUiContext } from "@borg/plugin-sdk";
 import { Plus, Star, Trash2 } from "lucide-solid";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";
@@ -58,6 +58,15 @@ export function createPersonasSettings(
     const [loopStrategy, setLoopStrategy] = createSignal<"react" | "code-act">(
       "react",
     );
+    const [skillIds, setSkillIds] = createSignal<string[]>([]);
+    const [catalogSkills, setCatalogSkills] = createSignal<readonly Skill[]>([]);
+    const [allowAllTools, setAllowAllTools] = createSignal(true);
+    const [allowedPatterns, setAllowedPatterns] = createSignal("");
+    const [contextMapStrategy, setContextMapStrategy] = createSignal<
+      "general" | "code" | "advanced"
+    >("general");
+    const [newSkillName, setNewSkillName] = createSignal("");
+    const [newSkillInstructions, setNewSkillInstructions] = createSignal("");
     const [addModelId, setAddModelId] = createSignal("");
     const [status, setStatus] = createSignal("");
     const [error, setError] = createSignal<string>();
@@ -97,17 +106,26 @@ export function createPersonasSettings(
       setInstructions(persona.instructions);
       setPreferredModels([...persona.preferredModels]);
       setLoopStrategy(persona.loopStrategy);
+      setSkillIds([...persona.skillIds]);
+      setAllowAllTools(persona.allowedTools.includes("*"));
+      setAllowedPatterns(
+        persona.allowedTools.filter((pattern) => pattern !== "*").join("\n"),
+      );
+      setContextMapStrategy(persona.contextMapStrategy ?? "general");
       setCreating(false);
     };
 
     const reload = async (selectId?: string): Promise<void> => {
-      const [available, current, availableModels] = await Promise.all([
-        context.personas.list(),
-        context.personas.getDefault(),
-        context.models.list(),
-      ]);
+      const [available, current, availableModels, availableSkills] =
+        await Promise.all([
+          context.personas.list(),
+          context.personas.getDefault(),
+          context.models.list(),
+          context.skills.list(),
+        ]);
       setPersonas(available);
       setModels(availableModels);
+      setCatalogSkills(availableSkills);
       setDefaultId(current.id);
       const next =
         available.find(({ id }) => id === selectId) ??
@@ -143,6 +161,47 @@ export function createPersonasSettings(
       }
     };
 
+    const toggleSkill = (skillId: string, attached: boolean): void => {
+      setSkillIds((current) =>
+        attached
+          ? current.includes(skillId)
+            ? current
+            : [...current, skillId]
+          : current.filter((id) => id !== skillId),
+      );
+    };
+
+    const createSkill = async (): Promise<void> => {
+      const slug = slugify(newSkillName());
+      if (!slug || !newSkillInstructions().trim()) {
+        setError("Skill name and instructions are required.");
+        return;
+      }
+      setBusy(true);
+      setError(undefined);
+      try {
+        const skill = await context.skills.create({
+          id: `user/${slug}`,
+          name: newSkillName().trim(),
+          instructions: newSkillInstructions().trim(),
+        });
+        setCatalogSkills((current) =>
+          [...current, skill].sort((left, right) =>
+            left.name.localeCompare(right.name),
+          ),
+        );
+        setSkillIds((current) =>
+          current.includes(skill.id) ? current : [...current, skill.id],
+        );
+        setNewSkillName("");
+        setNewSkillInstructions("");
+      } catch (failure) {
+        setError(describeError(failure));
+      } finally {
+        setBusy(false);
+      }
+    };
+
     const save = async (): Promise<void> => {
       const persona = selected();
       if (!persona) {
@@ -155,11 +214,20 @@ export function createPersonasSettings(
       setBusy(true);
       setError(undefined);
       try {
+        const tools = allowAllTools()
+          ? ["*"]
+          : allowedPatterns()
+              .split("\n")
+              .map((pattern) => pattern.trim())
+              .filter((pattern) => pattern.length > 0);
         await context.personas.update(persona.id, {
           name: name().trim(),
           description: description().trim() || undefined,
           instructions: instructions().trim(),
           loopStrategy: loopStrategy(),
+          skillIds: skillIds(),
+          allowedTools: tools.length > 0 ? tools : ["*"],
+          contextMapStrategy: contextMapStrategy(),
         });
         await reload(persona.id);
         setStatus(`Saved ${name().trim()}.`);
@@ -567,6 +635,114 @@ export function createPersonasSettings(
                   )}
                   data-testid="persona-add-model"
                 />
+              </div>
+
+              <Select
+                class="mt-4"
+                label="Context map"
+                value={contextMapStrategy()}
+                onChange={(value) =>
+                  setContextMapStrategy(
+                    value === "code"
+                      ? "code"
+                      : value === "advanced"
+                        ? "advanced"
+                        : "general",
+                  )
+                }
+                options={[
+                  {
+                    value: "general",
+                    label: "General. List workspace files.",
+                  },
+                  {
+                    value: "code",
+                    label: "Code. List source files only.",
+                  },
+                  {
+                    value: "advanced",
+                    label: "Advanced. List files and include small file contents.",
+                  },
+                ]}
+                data-testid="persona-context-map"
+              />
+
+              <div class="mt-5">
+                <p class="text-sm font-medium">Tools</p>
+                <p class="mt-1 text-xs text-[var(--text-muted)]">
+                  Patterns are exact IDs or globs such as filesystem.*.
+                </p>
+                <Checkbox
+                  class="mt-3"
+                  checked={allowAllTools()}
+                  onChange={setAllowAllTools}
+                  label="Allow all tools"
+                  data-testid="persona-allow-all-tools"
+                />
+                <Show when={!allowAllTools()}>
+                  <TextField
+                    class="mt-3"
+                    label="Allowed tool patterns"
+                    value={allowedPatterns()}
+                    onChange={setAllowedPatterns}
+                    rows={4}
+                    inputClass="min-h-24 font-mono text-xs"
+                    data-testid="persona-allowed-tools"
+                  />
+                </Show>
+              </div>
+
+              <div class="mt-5">
+                <p class="text-sm font-medium">Skills</p>
+                <p class="mt-1 text-xs text-[var(--text-muted)]">
+                  Attached skill instructions are injected into the system prompt.
+                </p>
+                <div class="mt-3 grid gap-2">
+                  <For
+                    each={catalogSkills()}
+                    fallback={
+                      <p class="text-sm text-[var(--text-muted)]">
+                        No skills yet. Create one below.
+                      </p>
+                    }
+                  >
+                    {(skill) => (
+                      <Checkbox
+                        checked={skillIds().includes(skill.id)}
+                        onChange={(checked) => toggleSkill(skill.id, checked)}
+                        label={skill.name}
+                        data-testid={`persona-skill-${skill.id}`}
+                      />
+                    )}
+                  </For>
+                </div>
+                <TextField
+                  class="mt-4"
+                  label="New skill name"
+                  value={newSkillName()}
+                  onChange={setNewSkillName}
+                  data-testid="persona-skill-name"
+                />
+                <TextField
+                  class="mt-3"
+                  label="New skill instructions"
+                  value={newSkillInstructions()}
+                  onChange={setNewSkillInstructions}
+                  rows={4}
+                  inputClass="min-h-24"
+                  data-testid="persona-skill-instructions"
+                />
+                <Button
+                  class="mt-3"
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy()}
+                  data-testid="persona-skill-create"
+                  onClick={() => void createSkill()}
+                >
+                  Create and attach skill
+                </Button>
               </div>
 
               <div class="mt-5">

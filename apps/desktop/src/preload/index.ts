@@ -365,6 +365,37 @@ const bridge = Object.freeze({
         args: { capability, personaId, patch },
       }),
   }),
+  skills: Object.freeze({
+    list: (capability: string, includeArchived = false): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "skills.list",
+        args: { capability, includeArchived },
+      }),
+    get: (capability: string, skillId: string): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "skills.get",
+        args: { capability, skillId },
+      }),
+    create: (capability: string, candidate: unknown): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "skills.create",
+        args: { capability, candidate },
+      }),
+    update: (
+      capability: string,
+      skillId: string,
+      patch: Readonly<Record<string, unknown>>,
+    ): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "skills.update",
+        args: { capability, skillId, patch },
+      }),
+    archive: (capability: string, skillId: string): Promise<unknown> =>
+      invokeKernel("borg:kernel:call", {
+        method: "skills.archive",
+        args: { capability, skillId },
+      }),
+  }),
   models: Object.freeze({
     list: (capability: string): Promise<unknown> =>
       invokeKernel("borg:kernel:call", {

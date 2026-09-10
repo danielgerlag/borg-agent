@@ -8,6 +8,7 @@ import type {
   ModelDescriptor,
   PendingInteraction,
   Persona,
+  Skill,
 } from "@borg/contracts";
 
 export {};
@@ -158,6 +159,20 @@ declare global {
         personaId: string,
         patch: Readonly<Record<string, unknown>>,
       ): Promise<Persona>;
+    };
+    readonly skills: {
+      list(
+        capability: string,
+        includeArchived?: boolean,
+      ): Promise<readonly Skill[]>;
+      get(capability: string, skillId: string): Promise<Skill | undefined>;
+      create(capability: string, candidate: unknown): Promise<Skill>;
+      update(
+        capability: string,
+        skillId: string,
+        patch: Readonly<Record<string, unknown>>,
+      ): Promise<Skill>;
+      archive(capability: string, skillId: string): Promise<void>;
     };
     readonly models: {
       list(capability: string): Promise<readonly ModelDescriptor[]>;

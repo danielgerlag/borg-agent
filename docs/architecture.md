@@ -576,7 +576,7 @@ interface Persona {
 
 Persona IDs have at least two slash-delimited segments containing letters, digits, `_`, or `-`. `system/general` is bundled and always resolvable. Bundled personas may be edited/reset and archived but not deleted.
 
-Skills referenced by a persona are persona assets managed with the persona record. Their instructions enter the prompt through the kernel's skills prompt slot. Installing/discovering richer skills may later be added as a plugin contribution without moving persona identity out of the kernel.
+`SkillService` persists a kernel catalog under `system.skills`. A skill has `id` (same slash-delimited shape as personas), `name`, optional `description`, `instructions`, `archived`, and `bundled`. Personas attach catalog entries through `skillIds`. `PromptAssembler` injects `kernel.skills` (order 150) from those IDs. Missing or archived skills are omitted. Chat Settings creates skills and attaches them. Installing or discovering richer third-party skills may later be a plugin contribution without moving persona identity out of the kernel.
 
 Sessions and bots store persona IDs, not copied provider clients or tool implementations. A loop takes a persona snapshot at start for deterministic behavior; later persona edits affect new runs.
 
@@ -929,6 +929,8 @@ other plugin slots by priority and stable ID
 current task/input
 ```
 
+`kernel.skills` is assembled from `SkillService.resolve(persona.skillIds)`. `borg.context-map` reads `persona.contextMapStrategy`: `general` lists all workspace files, `code` lists source files, and `advanced` lists files and includes contents of small text files. An auxiliary mapping loop is not used.
+
 A prompt slot declares ID, phase, priority, maximum budget, cache key, source classification, and an async resolver. The assembler:
 
 - snapshots the active slot set at run start;
@@ -942,7 +944,7 @@ Plugins cannot mutate a shared prompt string or insert after final policy instru
 
 `MemoryFacade` exposes semantic write/retrieve operations and selects one `memoryProvider`. Graph entity/edge APIs remain future work. `borg.memory.knowledge` implements semantic persistence through `ctx.store`. Retrieval always receives persona/session/classification scope and returns classified records plus provenance. The kernel injects recall as `kernel.memory`; the knowledge plugin does not register a prompt slot.
 
-Chat, bots, graph agent steps, and A2A call the same memory facade. `borg.context-map` uses workspace handles and contributes a prompt slot. An advanced map that needs tool use starts a kernel loop; it does not run a private hidden tool executor.
+Chat, bots, graph agent steps, and A2A call the same memory facade. `borg.context-map` uses workspace handles and contributes a prompt slot. `contextMapStrategy` `advanced` includes small text-file contents. It does not start a nested mapping loop.
 
 ## Cost, audit, and observability
 

@@ -30,6 +30,7 @@ import type {
   ParentExecutionGrant,
   PendingInteraction,
   Persona,
+  Skill,
   ProviderEgress,
   PromptScanFinding,
   PromptScanStage,
@@ -402,6 +403,17 @@ export interface PluginPersonas {
   archive(personaId: string): Promise<void>;
 }
 
+export interface PluginSkills {
+  get(skillId: string): Skill | undefined;
+  list(includeArchived?: boolean): readonly Skill[];
+  create(candidate: unknown): Promise<Skill>;
+  update(
+    skillId: string,
+    patch: Readonly<Record<string, unknown>>,
+  ): Promise<Skill>;
+  archive(skillId: string): Promise<void>;
+}
+
 export interface PluginWorkspace {
   allocate(sessionId: string): {
     readonly sessionId: string;
@@ -431,6 +443,7 @@ export interface PromptSlotContext {
   readonly workspace?:
     | {
         listFiles(): Promise<readonly WorkspaceFile[]>;
+        readFile?(relativePath: string): Promise<WorkspacePreview>;
       }
     | undefined;
 }
@@ -811,6 +824,7 @@ export interface PluginContext {
   readonly interactions: PluginInteractions;
   readonly cost: PluginCost;
   readonly personas: PluginPersonas;
+  readonly skills: PluginSkills;
   readonly workspace: PluginWorkspace;
   readonly prompts: PluginPrompts;
   readonly memory: PluginMemory;
@@ -1042,6 +1056,17 @@ export interface PluginUiPersonas {
   ): Promise<Persona>;
 }
 
+export interface PluginUiSkills {
+  get(skillId: string): Promise<Skill | undefined>;
+  list(includeArchived?: boolean): Promise<readonly Skill[]>;
+  create(candidate: unknown): Promise<Skill>;
+  update(
+    skillId: string,
+    patch: Readonly<Record<string, unknown>>,
+  ): Promise<Skill>;
+  archive(skillId: string): Promise<void>;
+}
+
 export interface PluginUiModels {
   list(): Promise<readonly ModelDescriptor[]>;
 }
@@ -1067,6 +1092,7 @@ export interface PluginUiContext<TComponent = unknown> {
   readonly loops: PluginUiLoops;
   readonly interactions: PluginUiInteractions;
   readonly personas: PluginUiPersonas;
+  readonly skills: PluginUiSkills;
   readonly models: PluginUiModels;
   readonly cost: PluginUiCost;
   readonly files: PluginUiFiles;

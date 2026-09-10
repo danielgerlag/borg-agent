@@ -264,6 +264,13 @@ export async function createBotHarness(
       update: async () => unavailable("Persona mutation"),
       archive: async () => unavailable("Persona archival"),
     },
+    skills: {
+      get: () => undefined,
+      list: () => [],
+      create: async () => unavailable("Skill creation"),
+      update: async () => unavailable("Skill mutation"),
+      archive: async () => unavailable("Skill archival"),
+    },
     workspace: {
       allocate: (sessionId) => {
         const workspace = {

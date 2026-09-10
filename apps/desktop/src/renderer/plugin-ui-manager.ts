@@ -334,6 +334,45 @@ export async function activatePluginUi(
             );
           },
         },
+        skills: {
+          get: (skillId) => {
+            if (!plugin.permissions.includes("personas.read")) {
+              throw new Error(`Plugin ${plugin.id} cannot inspect skills`);
+            }
+            return window.borg.skills.get(plugin.uiCapability, skillId);
+          },
+          list: (includeArchived) => {
+            if (!plugin.permissions.includes("personas.read")) {
+              throw new Error(`Plugin ${plugin.id} cannot inspect skills`);
+            }
+            return window.borg.skills.list(
+              plugin.uiCapability,
+              includeArchived,
+            );
+          },
+          create: (candidate) => {
+            if (!plugin.permissions.includes("personas.write")) {
+              throw new Error(`Plugin ${plugin.id} cannot create skills`);
+            }
+            return window.borg.skills.create(plugin.uiCapability, candidate);
+          },
+          update: (skillId, patch) => {
+            if (!plugin.permissions.includes("personas.write")) {
+              throw new Error(`Plugin ${plugin.id} cannot update skills`);
+            }
+            return window.borg.skills.update(
+              plugin.uiCapability,
+              skillId,
+              patch,
+            );
+          },
+          archive: (skillId) => {
+            if (!plugin.permissions.includes("personas.write")) {
+              throw new Error(`Plugin ${plugin.id} cannot archive skills`);
+            }
+            return window.borg.skills.archive(plugin.uiCapability, skillId);
+          },
+        },
         models: {
           list: () => {
             if (!plugin.permissions.includes("models.read")) {

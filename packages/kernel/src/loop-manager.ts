@@ -225,6 +225,12 @@ export class LoopManager {
                 ? {
                     listFiles: () =>
                       workspaces.listFiles(ownerPluginId, sessionId),
+                    readFile: (relativePath: string) =>
+                      workspaces.readFile(
+                        ownerPluginId,
+                        sessionId,
+                        relativePath,
+                      ),
                   }
                 : undefined,
           })

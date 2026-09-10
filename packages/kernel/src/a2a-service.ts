@@ -10,6 +10,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomUUID } from "node:crypto";
 import type { LoopManager } from "./loop-manager";
 import type { PersonaService } from "./persona-service";
+import type { SkillService } from "./skill-service";
 import type { WorkspaceService } from "./workspace-service";
 
 export const A2A_OWNER_PLUGIN_ID = "borg.a2a";
@@ -82,6 +83,7 @@ export type A2ACreateServer = typeof createServer;
 export interface A2AServiceOptions {
   readonly loops: LoopManager;
   readonly personas?: PersonaService | undefined;
+  readonly skills?: SkillService | undefined;
   readonly workspaces?: WorkspaceService | undefined;
   readonly createServer?: A2ACreateServer | undefined;
   readonly hostVersion?: string | undefined;
@@ -192,6 +194,7 @@ function taskIdFromParams(params: unknown): string | undefined {
 export class A2AService {
   readonly #loops: LoopManager;
   readonly #personas: PersonaService | undefined;
+  readonly #skills: SkillService | undefined;
   readonly #workspaces: WorkspaceService | undefined;
   readonly #createServer: A2ACreateServer;
   readonly #hostVersion: string;
@@ -202,6 +205,7 @@ export class A2AService {
   constructor(options: A2AServiceOptions) {
     this.#loops = options.loops;
     this.#personas = options.personas;
+    this.#skills = options.skills;
     this.#workspaces = options.workspaces;
     this.#createServer = options.createServer ?? createServer;
     this.#hostVersion = options.hostVersion ?? "0.1.0";
@@ -345,7 +349,14 @@ export class A2AService {
       },
       defaultInputModes: ["text/plain"],
       defaultOutputModes: ["text/plain"],
-      skills: [],
+      skills: this.#skills
+        ? this.#skills.resolve(persona?.skillIds ?? []).map((skill) => ({
+            id: skill.id,
+            name: skill.name,
+            description: skill.description ?? skill.instructions,
+            tags: [],
+          }))
+        : [],
       supportedInterfaces: [
         {
           protocolBinding: "JSONRPC",

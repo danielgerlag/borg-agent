@@ -71,6 +71,7 @@ export {
   type ProviderDispatchPermit,
 } from "./model-gateway";
 export { PersonaService, DEFAULT_PERSONA_ID } from "./persona-service";
+export { SkillService } from "./skill-service";
 export {
   PromptAssembler,
   type AssembledPrompt,

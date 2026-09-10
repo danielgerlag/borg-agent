@@ -29,6 +29,7 @@ import type { MemoryFacade } from "./memory-facade";
 import type { ModelGateway } from "./model-gateway";
 import type { NotificationService } from "./notification-service";
 import type { PersonaService } from "./persona-service";
+import type { SkillService } from "./skill-service";
 import type { PromptAssembler } from "./prompt-assembler";
 import type { SchedulerCore } from "./scheduler-core";
 import type { ScannerRegistry } from "./scanner-registry";
@@ -104,6 +105,7 @@ export interface PluginManagerOptions {
   readonly interactions?: InteractionService;
   readonly costs?: CostLedger;
   readonly personas?: PersonaService;
+  readonly skills?: SkillService;
   readonly prompts?: PromptAssembler;
   readonly memory?: MemoryFacade;
   readonly workspaces?: WorkspaceService;
@@ -461,6 +463,14 @@ export class PluginManager {
           throw new Error("Persona service is unavailable");
         }
         return this.#options.personas;
+      };
+      const requireSkills = (): SkillService => {
+        assertContextActive();
+        assertOrdinaryContext();
+        if (!this.#options.skills) {
+          throw new Error("Skill service is unavailable");
+        }
+        return this.#options.skills;
       };
       const requireWorkspaces = (): WorkspaceService => {
         assertContextActive();
@@ -1117,6 +1127,28 @@ export class PluginManager {
           archive: (personaId) => {
             assertPermission("personas.write");
             return requirePersonas().archive(personaId);
+          },
+        },
+        skills: {
+          get: (skillId) => {
+            assertPermission("personas.read");
+            return requireSkills().get(skillId);
+          },
+          list: (includeArchived) => {
+            assertPermission("personas.read");
+            return requireSkills().list(includeArchived);
+          },
+          create: (candidate) => {
+            assertPermission("personas.write");
+            return requireSkills().create(candidate);
+          },
+          update: (skillId, patch) => {
+            assertPermission("personas.write");
+            return requireSkills().update(skillId, patch);
+          },
+          archive: (skillId) => {
+            assertPermission("personas.write");
+            return requireSkills().archive(skillId);
           },
         },
         workspace: {

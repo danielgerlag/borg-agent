@@ -1035,6 +1035,21 @@ export const personaSchema = z
 
 export type Persona = z.infer<typeof personaSchema>;
 
+export const skillIdSchema = personaIdSchema;
+
+export const skillSchema = z
+  .object({
+    id: skillIdSchema,
+    name: z.string().min(1),
+    description: z.string().optional(),
+    instructions: z.string().min(1),
+    archived: z.boolean().default(false),
+    bundled: z.boolean().default(false),
+  })
+  .strict();
+
+export type Skill = z.infer<typeof skillSchema>;
+
 export const modelDescriptorSchema = z
   .object({
     providerId: z.string().min(1),

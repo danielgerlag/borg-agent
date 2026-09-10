@@ -412,6 +412,13 @@ function createChatHarnessContext(
       update: async () => unavailable("personas.update"),
       archive: async () => unavailable("personas.archive"),
     },
+    skills: {
+      get: () => undefined,
+      list: () => [],
+      create: async () => unavailable("skills.create"),
+      update: async () => unavailable("skills.update"),
+      archive: async () => unavailable("skills.archive"),
+    },
     workspace: {
       allocate: (sessionId: string) => {
         const workspace = {

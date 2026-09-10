@@ -22,6 +22,7 @@ import {
   PluginManager,
   ProcessSupervisor,
   PromptAssembler,
+  SkillService,
   SandboxFactory,
   SchedulerCore,
   ScannerRegistry,
@@ -527,8 +528,13 @@ if (!app.requestSingleInstanceLock()) {
       },
     });
     const personaService = new PersonaService(storeFacade);
+    const skillService = new SkillService(storeFacade);
     const memoryFacade = new MemoryFacade();
-    const promptAssembler = new PromptAssembler(personaService, memoryFacade);
+    const promptAssembler = new PromptAssembler(
+      personaService,
+      memoryFacade,
+      skillService,
+    );
     const workspaceService = new WorkspaceService(
       path.join(app.getPath("userData"), "workspaces", "sessions"),
     );
@@ -570,6 +576,7 @@ if (!app.requestSingleInstanceLock()) {
     a2aService = new A2AService({
       loops: loopManager,
       personas: personaService,
+      skills: skillService,
       workspaces: workspaceService,
       hostVersion: KERNEL_VERSION,
     });
@@ -586,6 +593,7 @@ if (!app.requestSingleInstanceLock()) {
       interactions: interactionService,
       costs,
       personas: personaService,
+      skills: skillService,
       prompts: promptAssembler,
       memory: memoryFacade,
       workspaces: workspaceService,
@@ -655,6 +663,7 @@ if (!app.requestSingleInstanceLock()) {
       }
       await executions.initialize();
       await personaService.initialize();
+      await skillService.initialize();
 
       setupSchemaRegistration = configFacade.registerSchema(
         "system.setup",
@@ -751,6 +760,7 @@ if (!app.requestSingleInstanceLock()) {
       interactions: interactionService,
       loops: loopManager,
       personas: personaService,
+      skills: skillService,
       models,
       costs,
       workspaces: workspaceService,
