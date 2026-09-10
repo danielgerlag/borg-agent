@@ -817,6 +817,210 @@ export const loopRunSnapshotSchema = z
 export type LoopStartInput = z.input<typeof loopStartInputSchema>;
 export type LoopRunSnapshot = z.infer<typeof loopRunSnapshotSchema>;
 
+export const remoteRuntimeIdSchema = z.enum([
+  "local",
+  "azure-vm",
+  "kubernetes",
+]);
+
+export const remoteWorkerStatusSchema = z.enum([
+  "pending",
+  "provisioning",
+  "installing",
+  "ready",
+  "busy",
+  "stopping",
+  "stopped",
+  "failed",
+  "destroyed",
+]);
+
+export const remoteRunStatusSchema = z.enum([
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const remoteWorkerIdSchema = z
+  .string()
+  .regex(/^(local|azure-vm|kubernetes)\/[A-Za-z0-9_-]+$/);
+
+const remoteScriptedReplySchema = z
+  .object({
+    content: z.string().optional(),
+    toolCalls: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            name: z.string().min(1),
+            input: z.unknown(),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
+
+export const remoteRunSpecSchema = z
+  .object({
+    version: z.literal(1),
+    runId: z.string().uuid(),
+    prompt: z.string().min(1),
+    unattended: z.literal(true),
+    persona: z
+      .object({
+        id: z
+          .string()
+          .regex(/^[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/),
+        name: z.string().min(1),
+        instructions: z.string().min(1),
+        preferredModels: z.array(z.string().min(1)).min(1),
+        allowedTools: z.array(z.string().min(1)).min(1),
+        loopStrategy: z.enum(["react", "code-act"]).default("react"),
+      })
+      .strict()
+      .superRefine((value, context) => {
+        if (value.allowedTools.includes("*")) {
+          context.addIssue({
+            code: "custom",
+            path: ["allowedTools"],
+            message: "Detached runs require an explicit tool allowlist",
+          });
+        }
+      }),
+    provider: z.discriminatedUnion("kind", [
+      z
+        .object({
+          kind: z.literal("scripted"),
+          replies: z.array(remoteScriptedReplySchema).min(1),
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal("openai-compat"),
+          baseUrl: z.string().url(),
+          apiKey: z.string().min(1),
+          model: z.string().min(1),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
+export type RemoteRunSpec = z.infer<typeof remoteRunSpecSchema>;
+
+export const remoteRunStatusDocumentSchema = z
+  .object({
+    version: z.literal(1),
+    runId: z.string().uuid(),
+    status: remoteRunStatusSchema,
+    output: z.string().optional(),
+    error: z.string().optional(),
+    updatedAt: z.string().datetime(),
+  })
+  .strict();
+
+export type RemoteRunStatusDocument = z.infer<
+  typeof remoteRunStatusDocumentSchema
+>;
+
+export const remoteWorkerSchema = z
+  .object({
+    id: remoteWorkerIdSchema,
+    runtime: remoteRuntimeIdSchema,
+    displayName: z.string().min(1),
+    status: remoteWorkerStatusSchema,
+    error: z.string().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .strict();
+
+export type RemoteWorker = z.infer<typeof remoteWorkerSchema>;
+
+export const remoteListWorkers = defineCommand({
+  id: "borg.remote.listWorkers",
+  input: z.object({}).strict(),
+  output: z.object({ workers: z.array(remoteWorkerSchema) }).strict(),
+});
+
+export const remoteProvision = defineCommand({
+  id: "borg.remote.provision",
+  input: z
+    .object({
+      runtime: remoteRuntimeIdSchema,
+      displayName: z.string().min(1).max(80).optional(),
+      azure: z
+        .object({
+          subscriptionId: z.string().min(1),
+          resourceGroup: z.string().min(1),
+          location: z.string().min(1),
+          vmSize: z.string().min(1).default("Standard_B2s"),
+        })
+        .strict()
+        .optional(),
+      kubernetes: z
+        .object({
+          kubeconfig: z.string().min(1),
+          namespace: z.string().min(1).default("default"),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+  output: z.object({ worker: remoteWorkerSchema }).strict(),
+  timeoutMs: 120_000,
+});
+
+export const remoteDestroy = defineCommand({
+  id: "borg.remote.destroy",
+  input: z.object({ workerId: remoteWorkerIdSchema }).strict(),
+  output: z.object({ destroyed: z.boolean() }).strict(),
+  timeoutMs: 120_000,
+});
+
+export const remoteSubmitRun = defineCommand({
+  id: "borg.remote.submitRun",
+  input: z
+    .object({
+      workerId: remoteWorkerIdSchema,
+      spec: remoteRunSpecSchema,
+    })
+    .strict(),
+  output: z.object({ runId: z.string().uuid() }).strict(),
+  timeoutMs: 60_000,
+});
+
+export const remoteGetRun = defineCommand({
+  id: "borg.remote.getRun",
+  input: z
+    .object({
+      workerId: remoteWorkerIdSchema,
+      runId: z.string().uuid(),
+    })
+    .strict(),
+  output: remoteRunStatusDocumentSchema,
+});
+
+export const UNATTENDED_TOOL_ALLOWLIST = ["tools.echo", "filesystem.read"] as const;
+
+export function assertUnattendedAllowlist(
+  allowedTools: readonly string[],
+): void {
+  for (const toolId of allowedTools) {
+    if (
+      !(UNATTENDED_TOOL_ALLOWLIST as readonly string[]).includes(toolId)
+    ) {
+      throw new Error(
+        `Detached runs cannot use ${toolId}. Unattended tools are ${UNATTENDED_TOOL_ALLOWLIST.join(", ")}.`,
+      );
+    }
+  }
+}
+
 const loopEventBaseSchema = z.object({
   runId: z.string().uuid(),
   timestamp: z.string().datetime(),

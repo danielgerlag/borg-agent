@@ -1,0 +1,26 @@
+{
+  "name": "@borg/remote-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "borg-runtime": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@borg/contracts": "workspace:*",
+    "@borg/kernel": "workspace:*",
+    "@borg/plugin-sdk": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}
