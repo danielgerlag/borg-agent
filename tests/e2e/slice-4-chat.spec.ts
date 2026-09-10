@@ -9,7 +9,7 @@ import {
   type Page,
 } from "@playwright/test";
 import type { ChildProcess } from "node:child_process";
-import { completeSetup } from "./setup";
+import { closePersonaEditor, completeSetup } from "./setup";
 
 const projectRoot = path.resolve(__dirname, "../..");
 const desktopApp = path.join(projectRoot, "apps/desktop");
@@ -343,10 +343,13 @@ test("answers feedback in the shared interaction UI and finishes in thread", asy
   await expect(page.getByTestId("chat-session-status")).toHaveText("Ready");
 });
 
-test("scrolls settings when the persona editor exceeds the window", async () => {
+test("edits a persona in a dialog without growing the settings page", async () => {
   await page.getByTestId("nav-settings").click();
   await page.getByTestId("settings-section-borg.chat.personas").click();
   await expect(page.getByTestId("personas-settings-page")).toBeVisible();
+  await expect(page.getByTestId("persona-editor")).not.toBeVisible();
+
+  await page.getByTestId("persona-row-system/general").click();
   await expect(page.getByTestId("persona-editor")).toBeVisible();
   await expect(page.getByTestId("persona-save")).toBeAttached();
 
@@ -363,16 +366,10 @@ test("scrolls settings when the persona editor exceeds the window", async () => 
         height: style.height,
       };
     };
-    const settings = document.querySelector('[data-testid="surface-settings"]');
     const pane = document.querySelector('[data-testid="settings-page"]');
-    const save = document.querySelector('[data-testid="persona-save"]');
     return {
       innerHeight: window.innerHeight,
-      body: measure(document.body),
-      shell: measure(document.querySelector('[data-testid="app-shell"]')),
-      settings: measure(settings),
       pane: measure(pane),
-      saveBottom: save?.getBoundingClientRect().bottom,
     };
   });
 
@@ -381,16 +378,13 @@ test("scrolls settings when the persona editor exceeds the window", async () => 
     `layout ${JSON.stringify(metrics)}`,
   ).toBeDefined();
   expect(
-    metrics.pane!.scrollHeight,
-    `persona editor is not taller than the pane ${JSON.stringify(metrics)}`,
-  ).toBeGreaterThan(metrics.pane!.clientHeight);
-  expect(
     metrics.pane!.clientHeight,
     `settings pane grew past the window ${JSON.stringify(metrics)}`,
   ).toBeLessThanOrEqual(metrics.innerHeight);
 
-  await page.getByTestId("persona-save").scrollIntoViewIfNeeded();
   await expect(page.getByTestId("persona-save")).toBeInViewport();
+
+  await closePersonaEditor(page);
 
   await page.getByTestId("settings-section-borg.azure.settings").click();
   const azurePane = await page.getByTestId("settings-page").evaluate((element) => ({

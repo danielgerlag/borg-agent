@@ -9,7 +9,12 @@ import {
   type Page,
 } from "@playwright/test";
 import type { ChildProcess } from "node:child_process";
-import { completeSetup, expectTypingKeepsFocus } from "./setup";
+import {
+  closePersonaEditor,
+  completeSetup,
+  expectTypingKeepsFocus,
+  openPersonaEditor,
+} from "./setup";
 
 const projectRoot = path.resolve(__dirname, "../..");
 const desktopApp = path.join(projectRoot, "apps/desktop");
@@ -87,8 +92,9 @@ test("keeps focus while typing across chat, settings, and graphs", async () => {
 
   await test.step("persona name", async () => {
     await openSettings("borg.chat.personas");
-    await expect(page.getByTestId("persona-editor")).toBeVisible();
+    await openPersonaEditor(page);
     await expectTypingKeepsFocus(page.getByTestId("persona-name"), "x");
+    await closePersonaEditor(page);
   });
 
   await test.step("azure endpoint", async () => {

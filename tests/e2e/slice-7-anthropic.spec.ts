@@ -15,7 +15,12 @@ import {
   type Page,
 } from "@playwright/test";
 import type { ChildProcess } from "node:child_process";
-import { completeSetup, selectControlOption } from "./setup";
+import {
+  closePersonaEditor,
+  completeSetup,
+  openPersonaEditor,
+  selectControlOption,
+} from "./setup";
 
 const projectRoot = path.resolve(__dirname, "../..");
 const desktopApp = path.join(projectRoot, "apps/desktop");
@@ -207,7 +212,7 @@ async function connectAnthropic(): Promise<void> {
 async function pickSonnet(): Promise<void> {
   await page.getByTestId("settings-section-borg.chat.personas").click();
   await expect(page.getByTestId("personas-settings-page")).toBeVisible();
-  await expect(page.getByTestId("persona-editor")).toBeVisible();
+  await openPersonaEditor(page);
   await selectControlOption(
     page.getByTestId("persona-primary-model"),
     "borg.anthropic:claude-sonnet-5",
@@ -215,6 +220,7 @@ async function pickSonnet(): Promise<void> {
   await expect(page.getByTestId("persona-primary-model")).toHaveValue(
     "borg.anthropic:claude-sonnet-5",
   );
+  await closePersonaEditor(page);
 }
 
 test.beforeEach(async () => {

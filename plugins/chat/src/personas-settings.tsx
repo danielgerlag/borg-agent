@@ -1,5 +1,5 @@
 import type { ModelDescriptor, Persona, Skill } from "@borg/contracts";
-import { Button, Checkbox, Panel, Select, TextField } from "@borg/ui-kit";
+import { Button, Checkbox, Dialog, Select, TextField } from "@borg/ui-kit";
 import type { PluginUiContext } from "@borg/plugin-sdk";
 import { Plus, Star, Trash2 } from "lucide-solid";
 import {
@@ -90,7 +90,9 @@ export function createPersonasSettings(
     const [status, setStatus] = createSignal("");
     const [error, setError] = createSignal<string>();
     const [busy, setBusy] = createSignal(false);
-    const [creating, setCreating] = createSignal(false);
+    const [dialog, setDialog] = createSignal<"closed" | "create" | "edit">(
+      "closed",
+    );
     const [newName, setNewName] = createSignal("");
     const [newInstructions, setNewInstructions] = createSignal("");
 
@@ -145,7 +147,6 @@ export function createPersonasSettings(
         persona.allowedTools.filter((pattern) => pattern !== "*").join("\n"),
       );
       setContextMapStrategy(persona.contextMapStrategy ?? "general");
-      setCreating(false);
     };
 
     const reload = async (selectId?: string): Promise<void> => {
@@ -370,7 +371,7 @@ export function createPersonasSettings(
         await context.personas.setDefault(persona.id);
         setNewName("");
         setNewInstructions("");
-        setCreating(false);
+        setDialog("closed");
         await reload(persona.id);
         setStatus(`${persona.name} is the default for new chats.`);
       } catch (failure) {
@@ -389,6 +390,7 @@ export function createPersonasSettings(
       setError(undefined);
       try {
         await context.personas.update(persona.id, { archived: true });
+        setDialog("closed");
         await reload();
         setStatus(`Archived ${persona.name}.`);
       } catch (failure) {
@@ -463,7 +465,12 @@ export function createPersonasSettings(
                 }}
                 aria-current={persona.id === selectedId() ? "true" : undefined}
                 data-testid={`persona-row-${persona.id}`}
-                onClick={() => loadDraft(persona)}
+                onClick={() => {
+                  loadDraft(persona);
+                  setDialog("edit");
+                  setError(undefined);
+                  setStatus("");
+                }}
               >
                 <span class="flex items-center gap-2">
                   <PersonaMark persona={persona} class="size-6" />
@@ -482,7 +489,7 @@ export function createPersonasSettings(
             disabled={busy()}
             data-testid="persona-new"
             onClick={() => {
-              setCreating(true);
+              setDialog("create");
               setError(undefined);
               setStatus("");
             }}
@@ -491,10 +498,19 @@ export function createPersonasSettings(
             New persona
           </Button>
         </div>
+        <p class="mt-3 text-xs text-[var(--text-muted)]">
+          Open a persona to edit it.
+        </p>
 
-        <Show when={creating()}>
-          <Panel class="mt-5" data-testid="persona-create-form">
-            <p class="text-sm font-semibold">New persona</p>
+        <Show when={dialog() === "create"}>
+          <Dialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setDialog("closed");
+            }}
+            title="New persona"
+            data-testid="persona-create-form"
+          >
             <TextField
               class="mt-3"
               value={newName()}
@@ -511,7 +527,26 @@ export function createPersonasSettings(
               placeholder="Instructions. This is who the persona is and how it should work."
               data-testid="settings-persona-instructions"
             />
-            <div class="mt-3 flex gap-2">
+            <Show when={error()}>
+              <p
+                class="mt-3 text-sm text-[var(--danger)]"
+                data-testid="persona-error"
+              >
+                {error()}
+              </p>
+            </Show>
+            <Show when={status() && !error()}>
+              <p class="mt-3 text-xs text-[var(--text-muted)]">{status()}</p>
+            </Show>
+            <div class="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy()}
+                onClick={() => setDialog("closed")}
+              >
+                Cancel
+              </Button>
               <Button
                 type="button"
                 disabled={busy()}
@@ -520,61 +555,31 @@ export function createPersonasSettings(
               >
                 Create and use
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={busy()}
-                onClick={() => setCreating(false)}
-              >
-                Cancel
-              </Button>
             </div>
-          </Panel>
+          </Dialog>
         </Show>
 
-        <Show when={!creating() && selected()}>
+        <Show when={dialog() === "edit" ? selected() : undefined}>
           {(persona) => (
-            <Panel class="mt-5" data-testid="persona-editor">
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p class="font-mono text-xs text-[var(--text-muted)]">
-                    {persona().id}
+            <Dialog
+              open
+              onOpenChange={(open) => {
+                if (!open) setDialog("closed");
+              }}
+              title={name() || persona().name}
+              description={persona().id}
+              class="max-w-2xl"
+              data-testid="persona-editor"
+            >
+              <div class="mt-4 max-h-[min(40rem,75vh)] overflow-y-auto pr-1">
+                <p class="font-mono text-xs text-[var(--text-muted)]">
+                  {persona().id}
+                </p>
+                <Show when={persona().bundled}>
+                  <p class="mt-1 text-xs text-[var(--text-muted)]">
+                    Built-in. You can edit it. You cannot archive it.
                   </p>
-                  <Show when={persona().bundled}>
-                    <p class="mt-1 text-xs text-[var(--text-muted)]">
-                      Built-in. You can edit it. You cannot archive it.
-                    </p>
-                  </Show>
-                </div>
-                <div class="flex flex-wrap gap-2">
-                  <Show when={persona().id !== defaultId()}>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      disabled={busy()}
-                      data-testid="persona-set-default"
-                      onClick={() => void setAsDefault()}
-                    >
-                      <Star aria-hidden="true" size={14} />
-                      Use for new chats
-                    </Button>
-                  </Show>
-                  <Show when={!persona().bundled}>
-                    <Button
-                      type="button"
-                      variant="danger"
-                      size="sm"
-                      disabled={busy()}
-                      data-testid="persona-archive"
-                      onClick={() => void archivePersona()}
-                    >
-                      <Trash2 aria-hidden="true" size={14} />
-                      Archive
-                    </Button>
-                  </Show>
-                </div>
-              </div>
+                </Show>
 
               <TextField
                 class="mt-4"
@@ -1006,8 +1011,48 @@ export function createPersonasSettings(
                   Create and attach skill
                 </Button>
               </div>
+              </div>
 
-              <div class="mt-5">
+              <Show when={error()}>
+                <p
+                  class="mt-4 text-sm text-[var(--danger)]"
+                  data-testid="persona-error"
+                >
+                  {error()}
+                </p>
+              </Show>
+              <Show when={status() && !error()}>
+                <p class="mt-4 text-xs text-[var(--text-muted)]">{status()}</p>
+              </Show>
+              <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
+                <div class="flex flex-wrap gap-2">
+                  <Show when={!persona().bundled}>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="sm"
+                      disabled={busy()}
+                      data-testid="persona-archive"
+                      onClick={() => void archivePersona()}
+                    >
+                      <Trash2 aria-hidden="true" size={14} />
+                      Archive
+                    </Button>
+                  </Show>
+                  <Show when={persona().id !== defaultId()}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy()}
+                      data-testid="persona-set-default"
+                      onClick={() => void setAsDefault()}
+                    >
+                      <Star aria-hidden="true" size={14} />
+                      Use for new chats
+                    </Button>
+                  </Show>
+                </div>
                 <Button
                   type="button"
                   disabled={busy()}
@@ -1017,17 +1062,22 @@ export function createPersonasSettings(
                   Save persona
                 </Button>
               </div>
-            </Panel>
+            </Dialog>
           )}
         </Show>
 
-        <Show when={error()}>
-          <p class="mt-4 text-sm text-[var(--danger)]" data-testid="persona-error">
-            {error()}
-          </p>
-        </Show>
-        <Show when={status() && !error()}>
-          <p class="mt-4 text-xs text-[var(--text-muted)]">{status()}</p>
+        <Show when={dialog() === "closed"}>
+          <Show when={error()}>
+            <p
+              class="mt-4 text-sm text-[var(--danger)]"
+              data-testid="persona-error"
+            >
+              {error()}
+            </p>
+          </Show>
+          <Show when={status() && !error()}>
+            <p class="mt-4 text-xs text-[var(--text-muted)]">{status()}</p>
+          </Show>
         </Show>
       </section>
     );

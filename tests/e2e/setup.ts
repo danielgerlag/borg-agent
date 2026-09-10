@@ -64,6 +64,23 @@ async function skipOptionalLlmSetupSteps(
   }
 }
 
+export async function openPersonaEditor(
+  page: Page,
+  personaId = "system/general",
+): Promise<void> {
+  await page.getByTestId(`persona-row-${personaId}`).click();
+  await expect(page.getByTestId("persona-editor")).toBeVisible();
+}
+
+export async function closePersonaEditor(page: Page): Promise<void> {
+  const editor = page.getByTestId("persona-editor");
+  if (!(await editor.isVisible())) {
+    return;
+  }
+  await editor.getByRole("button", { name: "Close" }).click();
+  await expect(editor).not.toBeVisible();
+}
+
 export async function completeSetup(page: Page): Promise<void> {
   await expect(page.getByTestId("surface-wizard")).toBeVisible();
   await expect(page.getByTestId("setup-welcome")).toBeVisible();
