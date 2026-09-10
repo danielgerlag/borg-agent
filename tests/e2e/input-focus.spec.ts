@@ -131,11 +131,13 @@ test("keeps focus while typing across chat, settings, and graphs", async () => {
       page.getByTestId("graph-assignment-value-0"),
       "xyz",
     );
+    await page.getByRole("button", { name: "Done" }).click();
     await page.getByTestId("graph-node-option-end").click();
     await expectTypingKeepsFocus(
       page.locator('[data-testid="graph-node-fields"] input').first(),
       "x",
     );
+    await page.getByRole("button", { name: "Done" }).click();
     await page.getByRole("button", { name: "Graph inputs" }).click();
     await page
       .getByTestId("graph-input-schema")

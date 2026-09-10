@@ -189,7 +189,6 @@ async function graphDesignerMetrics(): Promise<{
   readonly canvasLayerHeight: number;
   readonly opaquePixels: number;
   readonly addNodeVisibleWidth: number;
-  readonly inspectorVisibleWidth: number;
   readonly overflowWidth: number;
 }> {
   return page.getByTestId("graph-canvas").evaluate((canvas) => {
@@ -224,13 +223,9 @@ async function graphDesignerMetrics(): Promise<{
       '[data-testid="graph-designer"]',
     );
     const addNode = document.querySelector('[data-testid="graph-add-node"]');
-    const inspector = document.querySelector(
-      '[data-testid="graph-node-inspector"]',
-    );
     if (
       !(designer instanceof HTMLElement) ||
-      !(addNode instanceof HTMLElement) ||
-      !(inspector instanceof HTMLElement)
+      !(addNode instanceof HTMLElement)
     ) {
       throw new Error("Graph designer controls are unavailable");
     }
@@ -247,7 +242,6 @@ async function graphDesignerMetrics(): Promise<{
       canvasLayerHeight: layers[0]?.height ?? 0,
       opaquePixels: countSampledOpaquePixels(layers),
       addNodeVisibleWidth: visibleWidth(addNode),
-      inspectorVisibleWidth: visibleWidth(inspector),
       overflowWidth: designer.scrollWidth - designer.clientWidth,
     };
   });
@@ -341,10 +335,6 @@ test("renders the graph canvas and keeps editor controls usable at supported win
       metrics.addNodeVisibleWidth,
       `${size.name} add-step width`,
     ).toBeGreaterThan(100);
-    expect(
-      metrics.inspectorVisibleWidth,
-      `${size.name} inspector width`,
-    ).toBeGreaterThan(150);
     expect(metrics.overflowWidth, `${size.name} overflow`).toBeLessThanOrEqual(
       1,
     );

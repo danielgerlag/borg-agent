@@ -24,6 +24,7 @@ import { defineUiPlugin, type Disposable } from "@borg/plugin-sdk";
 import {
   Button,
   Collapsible,
+  Dialog,
   EmptyState,
   Panel,
   Select,
@@ -1208,7 +1209,7 @@ export default defineUiPlugin<Component>({
           class="h-full min-h-0 overflow-hidden bg-[var(--panel)]"
           data-testid="graph-designer"
         >
-          <div class="grid h-full min-h-0 grid-cols-[10rem_minmax(20rem,1fr)_12rem] lg:grid-cols-[14rem_minmax(28rem,1fr)_20rem]">
+          <div class="grid h-full min-h-0 grid-cols-[10rem_minmax(20rem,1fr)_12rem] lg:grid-cols-[14rem_minmax(28rem,1fr)_16rem]">
             <aside class="flex min-h-0 flex-col border-r border-[var(--border)] bg-[var(--panel-muted)]/45 p-2 lg:p-3">
               <Button
                 type="button"
@@ -1573,18 +1574,18 @@ export default defineUiPlugin<Component>({
                 </div>
               </section>
 
-              <section
-                class="mt-5 border-t border-[var(--border)] pt-5"
-                data-testid="graph-node-inspector"
-              >
+              <section class="mt-5 border-t border-[var(--border)] pt-5">
                 <div class="flex items-center gap-2">
                   <Workflow
                     aria-hidden="true"
                     size={16}
                     class="text-[var(--accent)]"
                   />
-                  <h3 class="text-sm font-semibold">Step inspector</h3>
+                  <h3 class="text-sm font-semibold">Steps</h3>
                 </div>
+                <p class="mt-1 text-[10px] leading-4 text-[var(--text-subtle)]">
+                  Click a step or the canvas to edit it.
+                </p>
                 <div
                   class="mt-3 flex flex-wrap gap-1.5"
                   aria-label="Graph steps"
@@ -1607,65 +1608,6 @@ export default defineUiPlugin<Component>({
                     )}
                   </For>
                 </div>
-                <Show
-                  when={selectedNode()}
-                  fallback={
-                    <p class="mt-3 text-xs leading-5 text-[var(--text-subtle)]">
-                      Select a step above or on the canvas to inspect its ID and
-                      edit its configuration.
-                    </p>
-                  }
-                >
-                  {(node) => (
-                    <>
-                      <dl class="mt-3 grid gap-2 text-xs">
-                        <div>
-                          <dt class="text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">
-                            Selected node ID
-                          </dt>
-                          <dd
-                            class="mt-1 break-all font-mono text-[var(--text)]"
-                            data-testid="graph-selected-node-id"
-                          >
-                            {node().id}
-                          </dd>
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                          <div>
-                            <dt class="text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">
-                              Kind
-                            </dt>
-                            <dd class="mt-1">{formatKind(node().kind)}</dd>
-                          </div>
-                          <div>
-                            <dt class="text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">
-                              Type
-                            </dt>
-                            <dd class="mt-1 capitalize">{node().type}</dd>
-                          </div>
-                        </div>
-                      </dl>
-                      <NodeInspector
-                        node={node()}
-                        configText={configText()}
-                        configError={configError() ?? ""}
-                        catalog={inspectorCatalog()}
-                        onConfigObject={patchSelectedConfig}
-                        onConfigText={updateConfig}
-                      />
-                      <Button
-                        type="button"
-                        variant="danger"
-                        size="sm"
-                        class="mt-3 w-full"
-                        onClick={removeSelectedNode}
-                      >
-                        <Trash2 aria-hidden="true" size={14} />
-                        Remove step
-                      </Button>
-                    </>
-                  )}
-                </Show>
               </section>
               <Show when={draft()}>
                 {(current) => (
@@ -1713,6 +1655,52 @@ export default defineUiPlugin<Component>({
               </Show>
             </aside>
           </div>
+          <Show when={selectedNode()}>
+            {(node) => (
+              <Dialog
+                open
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setSelectedNode();
+                  }
+                }}
+                title={formatKind(node().kind)}
+                description={`${node().id} · ${node().type}`}
+                class="max-w-2xl"
+                data-testid="graph-node-inspector"
+              >
+                <div class="mt-4 max-h-[min(36rem,70vh)] overflow-y-auto">
+                  <NodeInspector
+                    node={node()}
+                    configText={configText()}
+                    configError={configError() ?? ""}
+                    catalog={inspectorCatalog()}
+                    onConfigObject={patchSelectedConfig}
+                    onConfigText={updateConfig}
+                  />
+                </div>
+                <div class="mt-4 flex justify-between gap-2">
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    onClick={removeSelectedNode}
+                  >
+                    <Trash2 aria-hidden="true" size={14} />
+                    Remove step
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setSelectedNode()}
+                  >
+                    Done
+                  </Button>
+                </div>
+              </Dialog>
+            )}
+          </Show>
           <Portal>
             <Show when={launchOpen() && draft()}>
               <LaunchDialog
