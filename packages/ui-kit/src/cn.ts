@@ -32,9 +32,12 @@ export const labelClassSm =
   "block text-[10px] font-medium uppercase tracking-wider text-[var(--text-subtle)]";
 
 export const overlayInputStyle = {
+  appearance: "none",
+  background: "transparent",
   border: "0",
   clip: "auto",
   "clip-path": "none",
+  cursor: "pointer",
   height: "100%",
   margin: "0",
   overflow: "visible",

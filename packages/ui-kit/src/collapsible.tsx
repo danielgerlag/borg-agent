@@ -27,14 +27,27 @@ export const Collapsible: ParentComponent<CollapsibleProps> = (props) => (
   >
     <KobalteCollapsible.Trigger
       class={cn(
-        "flex w-full cursor-pointer items-center justify-between text-left text-sm font-semibold outline-none",
+        "group flex w-full cursor-pointer items-center justify-between gap-2 text-left text-sm font-semibold outline-none",
         props.triggerClass,
       )}
       {...omitUndefined({ "data-testid": props["data-testid"] })}
     >
-      {props.trigger}
+      <span>{props.trigger}</span>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="size-4 shrink-0 text-[var(--text-subtle)] transition-transform duration-150 group-data-[expanded]:rotate-180"
+        aria-hidden="true"
+      >
+        <path d="m6 9 6 6 6-6" />
+      </svg>
     </KobalteCollapsible.Trigger>
-    <KobalteCollapsible.Content class="mt-2">
+    <KobalteCollapsible.Content class="overflow-hidden data-[closed]:h-0 data-[closed]:m-0 data-[expanded]:mt-2">
       {props.children}
     </KobalteCollapsible.Content>
   </KobalteCollapsible>

@@ -29,8 +29,22 @@ export const Checkbox: Component<CheckboxProps> = (props) => (
       style={overlayInputStyle}
       {...omitUndefined({ "data-testid": props["data-testid"] })}
     />
-    <KobalteCheckbox.Control class="pointer-events-none flex size-4 shrink-0 items-center justify-center rounded border border-[var(--border)] bg-[var(--background)] outline-none data-[checked]:border-[var(--accent)] data-[checked]:bg-[var(--accent)]">
-      <KobalteCheckbox.Indicator class="size-2.5 rounded-[1px] bg-[var(--accent-contrast)]" />
+    <KobalteCheckbox.Control class="pointer-events-none flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border)] bg-[var(--background)] outline-none ui-checked:border-[var(--accent)] ui-checked:bg-[var(--accent)] data-[checked]:border-[var(--accent)] data-[checked]:bg-[var(--accent)]">
+      <KobalteCheckbox.Indicator class="flex items-center justify-center text-[var(--accent-contrast)]">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="size-3"
+          aria-hidden="true"
+        >
+          <path d="M2 6.2 4.8 9 10 3" />
+        </svg>
+      </KobalteCheckbox.Indicator>
     </KobalteCheckbox.Control>
     <Show when={props.label}>
       <KobalteCheckbox.Label class={cn(labelClass, "text-[var(--text)]")}>

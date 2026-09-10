@@ -13,13 +13,14 @@ import type {
 import { Button, Panel } from "@borg/ui-kit";
 import {
   Activity,
+  Bot,
   Check,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
   Code2,
+  GitBranch,
   MessageCircle,
-  Minus,
   Settings,
   Sparkles,
   WandSparkles,
@@ -39,7 +40,7 @@ import { Dynamic } from "solid-js/web";
 import { PluginsSettings } from "./plugins-settings";
 import { groupSettingsPages } from "./settings-groups";
 
-type Surface = "chat" | "settings" | "activity" | "developer" | "setup";
+type Surface = "workspace" | "settings" | "activity" | "developer" | "setup";
 
 interface AppProps {
   readonly kernelVersion: string;
@@ -59,7 +60,6 @@ interface AppProps {
   readonly toasts: readonly RendererNotification[];
   completeSetup(): Promise<void>;
   dismissToast(id: string): void;
-  hideWindow(): Promise<void>;
   respondToInteraction(
     interactionId: string,
     response: InteractionResponse,
@@ -68,8 +68,9 @@ interface AppProps {
 
 export const App: Component<AppProps> = (props) => {
   const [surface, setSurface] = createSignal<Surface>(
-    props.setupCompleted ? "chat" : "setup",
+    props.setupCompleted ? "workspace" : "setup",
   );
+  const [workspaceId, setWorkspaceId] = createSignal<string>();
   const [wizardStep, setWizardStep] = createSignal(0);
   const [completingSetup, setCompletingSetup] = createSignal(false);
   const [setupError, setSetupError] = createSignal<string>();
@@ -98,6 +99,18 @@ export const App: Component<AppProps> = (props) => {
   const primaryViews = createMemo(() =>
     props.workspaceViews.filter(({ placement }) => placement !== "developer"),
   );
+  const selectedWorkspace = createMemo(
+    () =>
+      primaryViews().find(({ id }) => id === workspaceId()) ??
+      primaryViews()[0],
+  );
+  const setupSteps = createMemo(() =>
+    props.wizardSteps.filter((step) => step.required === true),
+  );
+  const openWorkspace = (id: string): void => {
+    setWorkspaceId(id);
+    setSurface("workspace");
+  };
   const developerViews = createMemo(() =>
     props.workspaceViews.filter(({ placement }) => placement === "developer"),
   );
@@ -138,13 +151,11 @@ export const App: Component<AppProps> = (props) => {
     props.pluginErrors.length === 0 &&
     props.wizardSteps.every(isWizardStepComplete);
   const firstIncompleteWizardIndex = (): number | undefined => {
-    const index = props.wizardSteps.findIndex(
-      (step) => !isWizardStepComplete(step),
-    );
+    const index = setupSteps().findIndex((step) => !isWizardStepComplete(step));
     return index >= 0 ? index + 1 : undefined;
   };
-  const finalWizardIndex = () => props.wizardSteps.length + 1;
-  const activeContribution = () => props.wizardSteps[wizardStep() - 1];
+  const finalWizardIndex = () => setupSteps().length + 1;
+  const activeContribution = () => setupSteps()[wizardStep() - 1];
   const canContinue = () => {
     if (wizardStep() === finalWizardIndex()) {
       return wizardReady();
@@ -154,7 +165,7 @@ export const App: Component<AppProps> = (props) => {
   };
   const wizardLabels = createMemo(() => [
     "Welcome",
-    ...props.wizardSteps.map((step) => {
+    ...setupSteps().map((step) => {
       if (step.label.toLowerCase().includes("secret")) {
         return "Secure storage";
       }
@@ -177,7 +188,7 @@ export const App: Component<AppProps> = (props) => {
     setSetupError(undefined);
     try {
       await props.completeSetup();
-      setSurface("chat");
+      setSurface("workspace");
     } catch (error) {
       setSetupError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -249,13 +260,24 @@ export const App: Component<AppProps> = (props) => {
             </div>
 
             <nav class="mt-7 flex flex-1 flex-col gap-1" aria-label="Main navigation">
-              <RailButton
-                label="Chat"
-                active={surface() === "chat"}
-                testId="nav-chat"
-                onClick={() => setSurface("chat")}
-                icon={MessageCircle}
-              />
+              <For each={primaryViews()}>
+                {(view) => (
+                  <RailButton
+                    label={view.label}
+                    active={
+                      surface() === "workspace" &&
+                      selectedWorkspace()?.id === view.id
+                    }
+                    testId={
+                      view.id === "borg.chat.workspace"
+                        ? "nav-chat"
+                        : `workspace-view-tab-${view.id}`
+                    }
+                    onClick={() => openWorkspace(view.id)}
+                    icon={workspaceIcon(view.id)}
+                  />
+                )}
+              </For>
               <RailButton
                 label="Activity"
                 active={surface() === "activity"}
@@ -274,19 +296,12 @@ export const App: Component<AppProps> = (props) => {
                 onClick={() => setSurface("settings")}
                 icon={Settings}
               />
-              <RailButton
-                label="Hide Borg"
-                active={false}
-                testId="window-hide"
-                onClick={() => void props.hideWindow()}
-                icon={Minus}
-              />
             </div>
           </aside>
 
           <main class="min-h-0 min-w-0 overflow-hidden">
-            <Show when={surface() === "chat"}>
-              <PrimarySurface contributions={primaryViews()} />
+            <Show when={surface() === "workspace"}>
+              <PrimarySurface contribution={selectedWorkspace()} />
             </Show>
             <Show when={surface() === "settings"}>
               <SettingsSurface
@@ -575,7 +590,7 @@ const SetupWizard: Component<{
                       <Check aria-hidden="true" size={13} />
                     </Show>
                   </span>
-                  <span class="hidden md:inline">{label}</span>
+                  <span>{label}</span>
                 </button>
               </>
             );
@@ -728,74 +743,43 @@ const SetupWizard: Component<{
   </section>
 );
 
+function workspaceIcon(id: string): typeof MessageCircle {
+  if (id.includes(".graphs.")) {
+    return GitBranch;
+  }
+  if (id.includes(".bots.")) {
+    return Bot;
+  }
+  return MessageCircle;
+}
+
 const PrimarySurface: Component<{
-  readonly contributions: readonly WorkspaceViewContribution<Component>[];
-}> = (props) => {
-  const [selectedId, setSelectedId] = createSignal(
-    props.contributions[0]?.id ?? "",
-  );
-  const selected = createMemo(
-    () =>
-      props.contributions.find(({ id }) => id === selectedId()) ??
-      props.contributions[0],
-  );
-  return (
-    <section
-      class="flex h-full min-h-0 flex-col"
-      data-testid="surface-workspace"
-    >
-      <Show when={props.contributions.length > 1}>
-        <nav
-          class="flex shrink-0 gap-1 border-b border-[var(--border)] bg-[var(--sidebar)] px-4 py-2"
-          aria-label="Workspace views"
-        >
-          <For each={props.contributions}>
-            {(contribution) => (
-              <button
-                type="button"
-                class="rounded-lg px-3 py-2 text-xs font-medium transition"
-                classList={{
-                  "bg-[var(--accent)]/12 text-[var(--accent)]":
-                    selected()?.id === contribution.id,
-                  "text-[var(--text-muted)] hover:bg-[var(--panel-muted)]":
-                    selected()?.id !== contribution.id,
-                }}
-                onClick={() => setSelectedId(contribution.id)}
-                aria-current={
-                  selected()?.id === contribution.id ? "page" : undefined
-                }
-                data-testid={`workspace-view-tab-${contribution.id}`}
-              >
-                {contribution.label}
-              </button>
-            )}
-          </For>
-        </nav>
+  readonly contribution: WorkspaceViewContribution<Component> | undefined;
+}> = (props) => (
+  <section class="flex h-full min-h-0 flex-col" data-testid="surface-workspace">
+    <div class="min-h-0 flex-1">
+      <Show
+        keyed
+        when={props.contribution}
+        fallback={
+          <div class="grid h-full place-items-center p-8">
+            <Panel class="max-w-md border-dashed text-center">
+              <p class="text-sm text-[var(--text-muted)]">
+                Chat is not available right now.
+              </p>
+            </Panel>
+          </div>
+        }
+      >
+        {(contribution) => (
+          <ContributionBoundary label={contribution.label}>
+            <Dynamic component={contribution.component} />
+          </ContributionBoundary>
+        )}
       </Show>
-      <div class="min-h-0 flex-1">
-        <Show
-          keyed
-          when={selected()}
-          fallback={
-            <div class="grid h-full place-items-center p-8">
-              <Panel class="max-w-md border-dashed text-center">
-                <p class="text-sm text-[var(--text-muted)]">
-                  Chat is not available right now.
-                </p>
-              </Panel>
-            </div>
-          }
-        >
-          {(contribution) => (
-            <ContributionBoundary label={contribution.label}>
-              <Dynamic component={contribution.component} />
-            </ContributionBoundary>
-          )}
-        </Show>
-      </div>
-    </section>
-  );
-};
+    </div>
+  </section>
+);
 
 const SettingsSurface: Component<{
   readonly contributions: readonly SettingsPageContribution<Component>[];

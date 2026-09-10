@@ -1298,8 +1298,8 @@ export default defineUiPlugin<Component>({
                 {(current) => (
                   <>
                     <header class="border-b border-[var(--border)] px-3 py-3 lg:px-5">
-                      <div class="flex flex-wrap items-start gap-2 lg:flex-nowrap lg:gap-3">
-                        <div class="min-w-0 flex-1 basis-full lg:basis-auto">
+                      <div class="flex flex-nowrap items-start gap-2 lg:gap-3">
+                        <div class="min-w-0 flex-1">
                           <TextField
                             value={current().name}
                             onChange={(name) => {
@@ -1332,8 +1332,9 @@ export default defineUiPlugin<Component>({
                           />
                         </div>
                         <Select
-                          label="Mode"
                           value={current().mode}
+                          aria-label="Mode"
+                          class="w-36 shrink-0"
                           onChange={(mode) => {
                             if (mode !== "chat" && mode !== "background") {
                               return;

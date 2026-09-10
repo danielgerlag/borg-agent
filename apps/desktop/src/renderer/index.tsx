@@ -43,9 +43,6 @@ async function start(root: HTMLElement): Promise<void> {
             await window.borg.setup.complete(snapshot.shellCapability);
           }}
           dismissToast={(id) => toastStore.dismiss(id)}
-          hideWindow={async () => {
-            await window.borg.window.hide(snapshot.shellCapability);
-          }}
           respondToInteraction={(interactionId, response) =>
             interactionStore.respond(interactionId, response)
           }

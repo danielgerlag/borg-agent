@@ -33,6 +33,7 @@ export interface SelectProps {
   readonly labelClass?: string | undefined;
   readonly size?: "sm" | "md" | undefined;
   readonly "data-testid"?: string | undefined;
+  readonly "aria-label"?: string | undefined;
   readonly onOpenChange?: ((open: boolean) => void) | undefined;
 }
 
@@ -102,13 +103,19 @@ export const Select: Component<SelectProps> = (props) => {
           {props.label}
         </KobalteSelect.Label>
       </Show>
-      <KobalteSelect.HiddenSelect data-testid={props["data-testid"]} />
+      <KobalteSelect.HiddenSelect
+        {...omitUndefined({
+          "data-testid": props["data-testid"],
+          "aria-label": props["aria-label"],
+        })}
+      />
       <KobalteSelect.Trigger
         class={cn(
           props.size === "sm" ? controlClassSm : controlClass,
           "flex items-center justify-between gap-2 text-left",
           props.triggerClass,
         )}
+        {...omitUndefined({ "aria-label": props["aria-label"] })}
       >
         <KobalteSelect.Value<SelectOption>>
           {(state) =>
