@@ -31,6 +31,7 @@
     "@borg/plugin-ollama": "workspace:*",
     "@borg/plugin-openai": "workspace:*",
     "@borg/plugin-openrouter": "workspace:*",
+    "@borg/plugin-remote": "workspace:*",
     "@borg/plugin-sdk": "workspace:*",
     "@borg/plugin-secrets-dev": "workspace:*",
     "@borg/plugin-search-brave": "workspace:*",

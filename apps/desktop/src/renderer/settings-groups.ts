@@ -45,6 +45,7 @@ function inferSettingsGroup(id: string): SettingsGroupId {
     id.includes("borg.chat.") ||
     id.includes("borg.graphs.") ||
     id.includes("borg.a2a.") ||
+    id.includes("borg.remote.") ||
     id.includes("borg.feedback.")
   ) {
     return "agents";

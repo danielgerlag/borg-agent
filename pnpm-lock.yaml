@@ -113,6 +113,9 @@ importers:
       '@borg/plugin-openrouter':
         specifier: workspace:*
         version: link:../../plugins/openrouter
+      '@borg/plugin-remote':
+        specifier: workspace:*
+        version: link:../../plugins/remote
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
@@ -615,6 +618,27 @@ importers:
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.40.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
+  plugins/remote:
+    dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/remote-runtime':
+        specifier: workspace:*
+        version: link:../../packages/remote-runtime
       '@borg/ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui-kit

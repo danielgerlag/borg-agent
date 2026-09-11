@@ -846,6 +846,38 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.remote",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-remote/main",
+      "ui": "@borg/plugin-remote/ui",
+      "permissions": [
+        "ui.settings",
+        "network:dynamic",
+        "secrets:read",
+        "secrets:write",
+        "fs:pluginData"
+      ],
+      "contributes": {
+        "commands": [
+          "borg.remote.listWorkers",
+          "borg.remote.provision",
+          "borg.remote.destroy",
+          "borg.remote.submitRun",
+          "borg.remote.getRun"
+        ],
+        "kinds": [
+          "settingsPage"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-remote/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.search.brave",
       "version": "0.1.0",
       "engines": {

@@ -28,6 +28,7 @@ export const bundledUiPlugins: Readonly<Record<string, UiPluginLoader>> = {
   "borg.ollama": async () => import("@borg/plugin-ollama/ui"),
   "borg.openai": async () => import("@borg/plugin-openai/ui"),
   "borg.openrouter": async () => import("@borg/plugin-openrouter/ui"),
+  "borg.remote": async () => import("@borg/plugin-remote/ui"),
   "borg.search.brave": async () => import("@borg/plugin-search-brave/ui"),
   "borg.search.tavily": async () => import("@borg/plugin-search-tavily/ui"),
   "borg.secrets.dev": async () => import("@borg/plugin-secrets-dev/ui"),

@@ -1,0 +1,28 @@
+{
+  "id": "borg.remote",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-remote/main",
+  "ui": "@borg/plugin-remote/ui",
+  "permissions": [
+    "ui.settings",
+    "network:dynamic",
+    "secrets:read",
+    "secrets:write",
+    "fs:pluginData"
+  ],
+  "contributes": {
+    "commands": [
+      "borg.remote.listWorkers",
+      "borg.remote.provision",
+      "borg.remote.destroy",
+      "borg.remote.submitRun",
+      "borg.remote.getRun"
+    ],
+    "kinds": [
+      "settingsPage"
+    ]
+  }
+}
