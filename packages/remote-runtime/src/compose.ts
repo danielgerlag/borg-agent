@@ -20,6 +20,8 @@ import {
   TrustAuthorizer,
   WorkspaceService,
 } from "@borg/kernel";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   defineTool,
   z,
@@ -235,6 +237,38 @@ export async function composeRuntime(options: {
       sideEffect: false,
       execute: ({ text }) => ({ echoed: text }),
     }),
+  );
+  tools.register(
+    "borg.tools.core",
+    defineTool({
+      id: "filesystem.read",
+      description: "Read a UTF-8 text file from the session workspace",
+      input: z.object({ path: z.string().min(1) }).strict(),
+      output: z
+        .object({ path: z.string(), content: z.string() })
+        .strict(),
+      approval: "auto",
+      sideEffect: false,
+      async execute(input, execution) {
+        const root = execution.workspaceRoot;
+        if (!root) {
+          throw new Error("Workspace is unavailable");
+        }
+        const resolvedRoot = path.resolve(root);
+        const target = path.resolve(resolvedRoot, input.path);
+        const prefix = resolvedRoot.endsWith(path.sep)
+          ? resolvedRoot
+          : `${resolvedRoot}${path.sep}`;
+        if (target !== resolvedRoot && !target.startsWith(prefix)) {
+          throw new Error("Path escapes the workspace");
+        }
+        return {
+          path: input.path,
+          content: await readFile(target, "utf8"),
+        };
+      },
+    }),
+    { workspaceAccess: true },
   );
   const provider =
     options.spec.provider.kind === "scripted"

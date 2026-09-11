@@ -332,7 +332,7 @@ Handler timeout comes from `command.timeoutMs` when set.
 | `borg.remote.listWorkers` | Workers the plugin has provisioned |
 | `borg.remote.provision` | Create a `local`, `azure-vm`, or `kubernetes` worker |
 | `borg.remote.destroy` | Forget the worker. Azure also DELETEs the VM |
-| `borg.remote.submitRun` | Write the spec and start `borg-runtime` on that worker |
+| `borg.remote.submitRun` | Write the spec. Local spawns detached `borg-runtime`. Azure PUTs spec and status blobs. Kubernetes POSTs a Job and ConfigMap |
 | `borg.remote.getRun` | Read `status.json` (local file, Azure blob, or Kubernetes ConfigMap) |
 
 `submitRun` calls `assertUnattendedAllowlist` before the provider. Local spawn uses detached `node:child_process`, not `ctx.process.spawn`, so the child is not killed with the supervisor. Azure and Kubernetes use `ctx.http.fetch`. There is no `ctx.runtimes` field and no `agentRuntime` kind.

@@ -116,6 +116,16 @@ async function waitForTerminal(
   runId: string,
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (next: () => void): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      subscription.dispose();
+      next();
+    };
     const done = (): void => {
       const snapshot = loops.get(runId, "borg.runtime");
       if (
@@ -124,15 +134,13 @@ async function waitForTerminal(
           snapshot.status === "failed" ||
           snapshot.status === "cancelled")
       ) {
-        subscription.dispose();
-        resolve();
+        finish(resolve);
       }
     };
     const subscription = loops.subscribeRun(runId, "borg.runtime", done);
-    done();
-    setTimeout(() => {
-      subscription.dispose();
-      reject(new Error("Detached run timed out"));
+    const timer = setTimeout(() => {
+      finish(() => reject(new Error("Detached run timed out")));
     }, 60_000);
+    done();
   });
 }
