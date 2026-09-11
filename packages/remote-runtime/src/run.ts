@@ -1,6 +1,5 @@
 import {
   remoteRunSpecSchema,
-  type RemoteRunSpec,
   type RemoteRunStatusDocument,
 } from "@borg/contracts";
 import { LoopManager } from "@borg/kernel";
@@ -14,29 +13,31 @@ import {
 } from "./status";
 
 export async function runDetachedLoop(root: string): Promise<void> {
-  const spec = remoteRunSpecSchema.parse(
-    JSON.parse(await readFile(path.join(root, SPEC_FILE), "utf8")),
-  ) as RemoteRunSpec;
-  const workspaceRoot = path.join(root, WORKSPACE_DIR);
-  await mkdir(workspaceRoot, { recursive: true });
-  await writeStatus(root, {
-    version: 1,
-    runId: spec.runId,
-    status: "running",
-    updatedAt: new Date().toISOString(),
-  });
-  const { loops, workspaces } = await composeRuntime({
-    spec,
-    workspaceRoot,
-  });
-  workspaces.allocate("borg.runtime", spec.runId);
-  const providerId =
-    spec.provider.kind === "scripted"
-      ? "borg.runtime.scripted"
-      : "borg.runtime.openai";
-  const modelId =
-    spec.provider.kind === "scripted" ? "scripted" : spec.provider.model;
+  let runId: string | undefined;
   try {
+    const spec = remoteRunSpecSchema.parse(
+      JSON.parse(await readFile(path.join(root, SPEC_FILE), "utf8")),
+    );
+    runId = spec.runId;
+    const workspaceRoot = path.join(root, WORKSPACE_DIR);
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeStatus(root, {
+      version: 1,
+      runId: spec.runId,
+      status: "running",
+      updatedAt: new Date().toISOString(),
+    });
+    const { loops, workspaces } = await composeRuntime({
+      spec,
+      workspaceRoot,
+    });
+    workspaces.allocate("borg.runtime", spec.runId);
+    const providerId =
+      spec.provider.kind === "scripted"
+        ? "borg.runtime.scripted"
+        : "borg.runtime.openai";
+    const modelId =
+      spec.provider.kind === "scripted" ? "scripted" : spec.provider.model;
     const snapshot = await loops.start(
       {
         prompt: spec.prompt,
@@ -61,7 +62,12 @@ export async function runDetachedLoop(root: string): Promise<void> {
       },
       "borg.runtime",
     );
-    await waitForTerminal(loops, snapshot.id);
+    try {
+      await waitForTerminal(loops, snapshot.id, spec.deadlineMs);
+    } catch (error) {
+      loops.cancel(snapshot.id, "borg.runtime");
+      throw error;
+    }
     const finished = loops.get(snapshot.id, "borg.runtime");
     if (finished?.status === "completed") {
       await writeStatus(
@@ -83,12 +89,14 @@ export async function runDetachedLoop(root: string): Promise<void> {
       ),
     );
   } catch (error) {
-    await writeStatus(
-      root,
-      statusDocument(spec.runId, "failed", {
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    if (runId !== undefined) {
+      await writeStatus(
+        root,
+        statusDocument(runId, "failed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
     throw error;
   }
 }
@@ -114,6 +122,7 @@ function statusDocument(
 async function waitForTerminal(
   loops: LoopManager,
   runId: string,
+  deadlineMs: number,
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     let settled = false;
@@ -140,7 +149,7 @@ async function waitForTerminal(
     const subscription = loops.subscribeRun(runId, "borg.runtime", done);
     const timer = setTimeout(() => {
       finish(() => reject(new Error("Detached run timed out")));
-    }, 60_000);
+    }, deadlineMs);
     done();
   });
 }

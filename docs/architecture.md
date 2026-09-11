@@ -614,7 +614,7 @@ Plugins that need a non-agent auxiliary completion use `ctx.models.complete` wit
 - structured-output validation;
 - cost/audit correlation.
 
-Closing the laptop lid suspends Electron. A loop that lives only in `LoopManager` stops with it. Unattended runs therefore execute in a headless `borg-runtime` process on a worker the user owns: a local detached child for the protocol proof, an Azure VM, or a Kubernetes Job. The desktop plugin `borg.remote` provisions the worker, writes a `RemoteRunSpec`, and later reads `status.json`. It does not keep the ReAct loop in the laptop process. Specs set `unattended: true` and an explicit tool allowlist. `UNATTENDED_TOOL_ALLOWLIST` is `tools.echo` and `filesystem.read`. Tools that need a human, including ask, are rejected before spawn or HTTP. Borg does not operate a hosted relay.
+Closing the laptop lid suspends Electron. A loop that lives only in `LoopManager` stops with it. Unattended runs therefore execute in a headless `borg-runtime` process on a worker the user owns: a local detached child for the protocol proof, an Azure VM, or a Kubernetes Job. The desktop plugin `borg.remote` provisions the worker, writes a `RemoteRunSpec`, and later reads `status.json`. Local spawn sets `ELECTRON_RUN_AS_NODE=1` so the Electron binary runs the CLI as Node. Azure status goes to a user-owned storage account. Kubernetes Jobs mount the spec ConfigMap. Specs set `unattended: true` and only `tools.echo` or `filesystem.read`. Borg does not operate a hosted relay.
 
 The public strategy boundary is:
 

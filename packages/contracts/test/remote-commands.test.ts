@@ -29,7 +29,7 @@ describe("remote runtime contracts", () => {
     expect(() => remoteWorkerIdSchema.parse("laptop/dev")).toThrow();
   });
 
-  it("rejects wildcard tool allowlists and attended specs", () => {
+  it("rejects wildcard tool allowlists, attended specs, and code-act", () => {
     const persona = {
       id: "user/detached",
       name: "Detached",
@@ -47,7 +47,7 @@ describe("remote runtime contracts", () => {
         persona,
         provider: { kind: "scripted", replies: [{ content: "done" }] },
       }),
-    ).toThrow(/explicit tool allowlist/);
+    ).toThrow();
     expect(() =>
       remoteRunSpecSchema.parse({
         version: 1,
@@ -55,6 +55,20 @@ describe("remote runtime contracts", () => {
         prompt: "echo hello",
         unattended: false,
         persona: { ...persona, allowedTools: ["tools.echo"] },
+        provider: { kind: "scripted", replies: [{ content: "done" }] },
+      }),
+    ).toThrow();
+    expect(() =>
+      remoteRunSpecSchema.parse({
+        version: 1,
+        runId: "00000000-0000-4000-8000-000000000001",
+        prompt: "echo hello",
+        unattended: true,
+        persona: {
+          ...persona,
+          allowedTools: ["tools.echo"],
+          loopStrategy: "code-act",
+        },
         provider: { kind: "scripted", replies: [{ content: "done" }] },
       }),
     ).toThrow();
@@ -67,5 +81,45 @@ describe("remote runtime contracts", () => {
     expect(() => assertUnattendedAllowlist(["filesystem.write"])).toThrow(
       /cannot use/,
     );
+    expect(() =>
+      remoteRunSpecSchema.parse({
+        version: 1,
+        runId: "00000000-0000-4000-8000-000000000001",
+        prompt: "echo hello",
+        unattended: true,
+        persona: {
+          id: "user/detached",
+          name: "Detached",
+          instructions: "Finish.",
+          preferredModels: ["borg.runtime.scripted:scripted"],
+          allowedTools: ["tools.ask"],
+          loopStrategy: "react",
+        },
+        provider: { kind: "scripted", replies: [{ content: "done" }] },
+      }),
+    ).toThrow();
+  });
+
+  it("requires azure storageAccount and kubernetes kubeconfig on provision", () => {
+    expect(() =>
+      remoteProvision.input.parse({ runtime: "azure-vm" }),
+    ).toThrow();
+    expect(() =>
+      remoteProvision.input.parse({ runtime: "kubernetes" }),
+    ).toThrow();
+    expect(
+      remoteProvision.input.parse({
+        runtime: "azure-vm",
+        azure: {
+          subscriptionId: "sub",
+          resourceGroup: "rg",
+          location: "eastus",
+          storageAccount: "userstorageacct",
+        },
+      }),
+    ).toMatchObject({
+      runtime: "azure-vm",
+      azure: { storageAccount: "userstorageacct", vmSize: "Standard_B2s" },
+    });
   });
 });

@@ -87,6 +87,29 @@ export function kubernetesRunResourceName(runId: string): string {
   return `borg-run-${runId}`;
 }
 
+export function kubernetesJobUrl(
+  apiServer: string,
+  namespace: string,
+  name: string,
+): string {
+  return `${kubernetesJobsUrl(apiServer, namespace)}/${encodeURIComponent(name)}`;
+}
+
+export const BORG_RUNTIME_IMAGE = "borg/remote-runtime:0.1.0";
+
+export function kubeconfigBearerToken(kubeconfig: string): string | undefined {
+  const trimmed = kubeconfig.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return undefined;
+  }
+  const match = /(?:^|\n)\s*token:\s*(\S+)/.exec(trimmed);
+  const token = match?.[1]?.replace(/^["']|["']$/g, "");
+  if (token === undefined || token.length === 0) {
+    throw new Error("Kubernetes kubeconfig is missing a user token");
+  }
+  return token;
+}
+
 export function createKubernetesProvider(
   options: KubernetesProviderOptions,
 ): RemoteProvider {
@@ -108,10 +131,10 @@ async function provisionKubernetes(
   input: CommandInput<typeof remoteProvision>,
   now: () => Date,
 ): Promise<RemoteWorker> {
-  const kubernetes = input.kubernetes;
-  if (kubernetes === undefined) {
-    throw new Error("Kubernetes provision requires kubeconfig and namespace");
+  if (input.runtime !== "kubernetes") {
+    throw new Error("Kubernetes provider cannot provision this runtime");
   }
+  const kubernetes = input.kubernetes;
   const namespace = kubernetes.namespace ?? "default";
   const apiServer = resolveKubernetesApiServer(kubernetes.kubeconfig);
   const displayName = input.displayName?.trim() || namespace;
@@ -120,9 +143,11 @@ async function provisionKubernetes(
   if ((await readWorker(options.store, id)) !== undefined) {
     throw new Error(`Worker ${id} already exists`);
   }
+  const token = kubeconfigBearerToken(kubernetes.kubeconfig);
   const response = await k8sRequest(options.fetch, {
     url: kubernetesNamespaceUrl(apiServer, namespace),
     method: "GET",
+    token,
   });
   if (response.status !== 200) {
     throw new Error(
@@ -170,6 +195,7 @@ async function submitKubernetesRun(
   const parsed = remoteRunSpecSchema.parse(spec);
   const binding = await readKubernetesBinding(options.store, workerId);
   const apiServer = await resolveBoundApiServer(options, workerId, binding);
+  const token = await bearerForWorker(options, workerId);
   const namespace = binding.namespace;
   const name = kubernetesRunResourceName(parsed.runId);
   const running = remoteRunStatusDocumentSchema.parse({
@@ -181,6 +207,7 @@ async function submitKubernetesRun(
   const configMapResponse = await k8sRequest(options.fetch, {
     url: kubernetesConfigMapsUrl(apiServer, namespace),
     method: "POST",
+    token,
     body: JSON.stringify({
       apiVersion: "v1",
       kind: "ConfigMap",
@@ -199,6 +226,7 @@ async function submitKubernetesRun(
   const jobResponse = await k8sRequest(options.fetch, {
     url: kubernetesJobsUrl(apiServer, namespace),
     method: "POST",
+    token,
     body: JSON.stringify({
       apiVersion: "batch/v1",
       kind: "Job",
@@ -211,8 +239,26 @@ async function submitKubernetesRun(
             containers: [
               {
                 name: "borg-runtime",
-                image: "node:22",
-                command: ["node", "/usr/local/bin/borg-runtime", "/run"],
+                image: BORG_RUNTIME_IMAGE,
+                command: [
+                  "sh",
+                  "-c",
+                  "cp /config/spec.json /work/spec.json && node /usr/local/bin/borg-runtime /work",
+                ],
+                volumeMounts: [
+                  { name: "spec", mountPath: "/config", readOnly: true },
+                  { name: "work", mountPath: "/work" },
+                ],
+              },
+            ],
+            volumes: [
+              {
+                name: "spec",
+                configMap: { name },
+              },
+              {
+                name: "work",
+                emptyDir: {},
               },
             ],
           },
@@ -238,23 +284,82 @@ async function getKubernetesRun(
   }
   const binding = await readKubernetesBinding(options.store, workerId);
   const apiServer = await resolveBoundApiServer(options, workerId, binding);
-  const response = await k8sRequest(options.fetch, {
-    url: kubernetesConfigMapUrl(
-      apiServer,
-      binding.namespace,
-      kubernetesRunResourceName(runId),
-    ),
+  const token = await bearerForWorker(options, workerId);
+  const name = kubernetesRunResourceName(runId);
+  const configResponse = await k8sRequest(options.fetch, {
+    url: kubernetesConfigMapUrl(apiServer, binding.namespace, name),
     method: "GET",
+    token,
   });
-  if (response.status === 404) {
+  if (configResponse.status !== 404) {
+    if (configResponse.status < 200 || configResponse.status >= 300) {
+      throw new Error(
+        `Kubernetes run status request failed (${configResponse.status})`,
+      );
+    }
+    const fromConfig = parseConfigMapStatus(
+      await configResponse.json(),
+      runId,
+      now().toISOString(),
+    );
+    if (fromConfig.status === "completed" || fromConfig.status === "failed") {
+      return fromConfig;
+    }
+  }
+  const jobResponse = await k8sRequest(options.fetch, {
+    url: kubernetesJobUrl(apiServer, binding.namespace, name),
+    method: "GET",
+    token,
+  });
+  if (jobResponse.status === 404) {
     return placeholderRunStatus(runId, "queued", now().toISOString());
   }
-  if (response.status < 200 || response.status >= 300) {
+  if (jobResponse.status < 200 || jobResponse.status >= 300) {
     throw new Error(
-      `Kubernetes run status request failed (${response.status})`,
+      `Kubernetes Job status request failed (${jobResponse.status})`,
     );
   }
-  return parseConfigMapStatus(await response.json(), runId, now().toISOString());
+  return statusFromJob(await jobResponse.json(), runId, now().toISOString());
+}
+
+function statusFromJob(
+  payload: unknown,
+  runId: string,
+  updatedAt: string,
+): RemoteRunStatusDocument {
+  if (payload === null || typeof payload !== "object") {
+    return placeholderRunStatus(runId, "running", updatedAt);
+  }
+  const status =
+    "status" in payload && payload.status !== null && typeof payload.status === "object"
+      ? payload.status
+      : undefined;
+  const succeeded =
+    status && "succeeded" in status && typeof status.succeeded === "number"
+      ? status.succeeded
+      : 0;
+  const failed =
+    status && "failed" in status && typeof status.failed === "number"
+      ? status.failed
+      : 0;
+  if (succeeded > 0) {
+    return remoteRunStatusDocumentSchema.parse({
+      version: 1,
+      runId,
+      status: "completed",
+      updatedAt,
+    });
+  }
+  if (failed > 0) {
+    return remoteRunStatusDocumentSchema.parse({
+      version: 1,
+      runId,
+      status: "failed",
+      error: "Kubernetes Job failed",
+      updatedAt,
+    });
+  }
+  return placeholderRunStatus(runId, "running", updatedAt);
 }
 
 function parseConfigMapStatus(
@@ -299,17 +404,32 @@ async function resolveBoundApiServer(
   return binding.apiServer;
 }
 
+async function bearerForWorker(
+  options: KubernetesProviderOptions,
+  workerId: string,
+): Promise<string | undefined> {
+  const kubeconfig = await options.secrets.get(kubeconfigSecretKey(workerId));
+  if (kubeconfig === undefined || kubeconfig.length === 0) {
+    return undefined;
+  }
+  return kubeconfigBearerToken(kubeconfig);
+}
+
 async function k8sRequest(
   fetchImpl: RemoteFetch,
   init: {
     readonly url: string;
     readonly method: string;
     readonly body?: string;
+    readonly token?: string | undefined;
   },
 ): Promise<Response> {
   const headers = new Headers();
   if (init.body !== undefined) {
     headers.set("Content-Type", "application/json");
+  }
+  if (init.token !== undefined && init.token.length > 0) {
+    headers.set("Authorization", `Bearer ${init.token}`);
   }
   return init.body === undefined
     ? fetchImpl(init.url, { method: init.method, headers })

@@ -847,6 +847,27 @@ export const remoteWorkerIdSchema = z
   .string()
   .regex(/^(local|azure-vm|kubernetes)\/[A-Za-z0-9_-]+$/);
 
+export const UNATTENDED_TOOL_ALLOWLIST = ["tools.echo", "filesystem.read"] as const;
+
+export const unattendedToolIdSchema = z.enum(UNATTENDED_TOOL_ALLOWLIST);
+
+export function assertUnattendedAllowlist(
+  allowedTools: readonly string[],
+): void {
+  for (const toolId of allowedTools) {
+    if (
+      !(UNATTENDED_TOOL_ALLOWLIST as readonly string[]).includes(toolId)
+    ) {
+      throw new Error(
+        `Detached runs cannot use ${toolId}. Unattended tools are ${UNATTENDED_TOOL_ALLOWLIST.join(", ")}.`,
+      );
+    }
+  }
+}
+
+export const REMOTE_RUN_DEADLINE_MS_DEFAULT = 15 * 60_000;
+export const REMOTE_RUN_DEADLINE_MS_MAX = 24 * 60 * 60_000;
+
 const remoteScriptedReplySchema = z
   .object({
     content: z.string().optional(),
@@ -878,19 +899,16 @@ export const remoteRunSpecSchema = z
         name: z.string().min(1),
         instructions: z.string().min(1),
         preferredModels: z.array(z.string().min(1)).min(1),
-        allowedTools: z.array(z.string().min(1)).min(1),
-        loopStrategy: z.enum(["react", "code-act"]).default("react"),
+        allowedTools: z.array(unattendedToolIdSchema).min(1),
+        loopStrategy: z.literal("react").default("react"),
       })
-      .strict()
-      .superRefine((value, context) => {
-        if (value.allowedTools.includes("*")) {
-          context.addIssue({
-            code: "custom",
-            path: ["allowedTools"],
-            message: "Detached runs require an explicit tool allowlist",
-          });
-        }
-      }),
+      .strict(),
+    deadlineMs: z
+      .number()
+      .int()
+      .positive()
+      .max(REMOTE_RUN_DEADLINE_MS_MAX)
+      .default(REMOTE_RUN_DEADLINE_MS_DEFAULT),
     provider: z.discriminatedUnion("kind", [
       z
         .object({
@@ -901,8 +919,8 @@ export const remoteRunSpecSchema = z
       z
         .object({
           kind: z.literal("openai-compat"),
-          baseUrl: z.string().url(),
-          apiKey: z.string().min(1),
+          baseUrl: z.string().url().startsWith("https://"),
+          apiKey: z.string().min(1).optional(),
           model: z.string().min(1),
         })
         .strict(),
@@ -947,30 +965,47 @@ export const remoteListWorkers = defineCommand({
   output: z.object({ workers: z.array(remoteWorkerSchema) }).strict(),
 });
 
+const remoteDisplayNameSchema = z.string().min(1).max(80).optional();
+
 export const remoteProvision = defineCommand({
   id: "borg.remote.provision",
-  input: z
-    .object({
-      runtime: remoteRuntimeIdSchema,
-      displayName: z.string().min(1).max(80).optional(),
-      azure: z
-        .object({
-          subscriptionId: z.string().min(1),
-          resourceGroup: z.string().min(1),
-          location: z.string().min(1),
-          vmSize: z.string().min(1).default("Standard_B2s"),
-        })
-        .strict()
-        .optional(),
-      kubernetes: z
-        .object({
-          kubeconfig: z.string().min(1),
-          namespace: z.string().min(1).default("default"),
-        })
-        .strict()
-        .optional(),
-    })
-    .strict(),
+  input: z.discriminatedUnion("runtime", [
+    z
+      .object({
+        runtime: z.literal("local"),
+        displayName: remoteDisplayNameSchema,
+      })
+      .strict(),
+    z
+      .object({
+        runtime: z.literal("azure-vm"),
+        displayName: remoteDisplayNameSchema,
+        azure: z
+          .object({
+            subscriptionId: z.string().min(1),
+            resourceGroup: z.string().min(1),
+            location: z.string().min(1),
+            vmSize: z.string().min(1).default("Standard_B2s"),
+            storageAccount: z
+              .string()
+              .regex(/^[a-z0-9]{3,24}$/),
+          })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        runtime: z.literal("kubernetes"),
+        displayName: remoteDisplayNameSchema,
+        kubernetes: z
+          .object({
+            kubeconfig: z.string().min(1),
+            namespace: z.string().min(1).default("default"),
+          })
+          .strict(),
+      })
+      .strict(),
+  ]),
   output: z.object({ worker: remoteWorkerSchema }).strict(),
   timeoutMs: 120_000,
 });
@@ -1004,22 +1039,6 @@ export const remoteGetRun = defineCommand({
     .strict(),
   output: remoteRunStatusDocumentSchema,
 });
-
-export const UNATTENDED_TOOL_ALLOWLIST = ["tools.echo", "filesystem.read"] as const;
-
-export function assertUnattendedAllowlist(
-  allowedTools: readonly string[],
-): void {
-  for (const toolId of allowedTools) {
-    if (
-      !(UNATTENDED_TOOL_ALLOWLIST as readonly string[]).includes(toolId)
-    ) {
-      throw new Error(
-        `Detached runs cannot use ${toolId}. Unattended tools are ${UNATTENDED_TOOL_ALLOWLIST.join(", ")}.`,
-      );
-    }
-  }
-}
 
 const loopEventBaseSchema = z.object({
   runId: z.string().uuid(),

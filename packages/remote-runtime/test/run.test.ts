@@ -49,6 +49,19 @@ describe("remote runtime", () => {
     );
   });
 
+  it("writes failed when compose cannot start the loop", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "borg-runtime-fail-"));
+    const spec = sampleSpec();
+    spec.persona.id = "system/detached";
+    await writeFile(path.join(root, SPEC_FILE), JSON.stringify(spec), "utf8");
+    await expect(runDetachedLoop(root)).rejects.toThrow(/system namespace/);
+    const status = JSON.parse(
+      await readFile(path.join(root, STATUS_FILE), "utf8"),
+    ) as { status: string; error?: string };
+    expect(status.status).toBe("failed");
+    expect(status.error).toMatch(/system namespace/);
+  });
+
   it("completes a scripted unattended loop", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "borg-runtime-"));
     const spec = sampleSpec();

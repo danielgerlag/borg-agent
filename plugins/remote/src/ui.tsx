@@ -1,7 +1,9 @@
 import {
+  remoteDestroy,
   remoteGetRun,
   remoteListWorkers,
   remoteProvision,
+  remoteRunSpecSchema,
   remoteSubmitRun,
   type RemoteRunStatusDocument,
   type RemoteWorker,
@@ -23,21 +25,21 @@ function describeError(error: unknown): string {
 }
 
 function scriptedSpec() {
-  return {
-    version: 1 as const,
+  return remoteRunSpecSchema.parse({
+    version: 1,
     runId: crypto.randomUUID(),
     prompt: "echo hello",
-    unattended: true as const,
+    unattended: true,
     persona: {
       id: "user/detached",
       name: "Detached",
       instructions: "Finish the task.",
       preferredModels: ["borg.runtime.scripted:scripted"],
       allowedTools: ["tools.echo"],
-      loopStrategy: "react" as const,
+      loopStrategy: "react",
     },
     provider: {
-      kind: "scripted" as const,
+      kind: "scripted",
       replies: [
         {
           toolCalls: [
@@ -47,7 +49,7 @@ function scriptedSpec() {
         { content: "done" },
       ],
     },
-  };
+  });
 }
 
 export default defineUiPlugin<Component>({
@@ -66,6 +68,7 @@ export default defineUiPlugin<Component>({
       const [resourceGroup, setResourceGroup] = createSignal("");
       const [location, setLocation] = createSignal("eastus");
       const [vmSize, setVmSize] = createSignal("Standard_B2s");
+      const [storageAccount, setStorageAccount] = createSignal("");
       const [armToken, setArmToken] = createSignal("");
       const [k8sName, setK8sName] = createSignal("");
       const [k8sNamespace, setK8sNamespace] = createSignal("default");
@@ -158,6 +161,7 @@ export default defineUiPlugin<Component>({
               resourceGroup: resourceGroup().trim(),
               location: location().trim() || "eastus",
               vmSize: vmSize().trim() || "Standard_B2s",
+              storageAccount: storageAccount().trim(),
             },
           });
           setAzureOpen(false);
@@ -182,6 +186,20 @@ export default defineUiPlugin<Component>({
           setK8sOpen(false);
           await refreshWorkers();
           setSelectedId(result.worker.id);
+        });
+      };
+
+      const destroyWorker = (): void => {
+        const workerId = selectedId();
+        if (!workerId) {
+          setError("Select a worker first.");
+          return;
+        }
+        void runAction(async () => {
+          stopPolling();
+          await context.bus.invoke(remoteDestroy, { workerId });
+          setRun(undefined);
+          await refreshWorkers();
         });
       };
 
@@ -299,7 +317,7 @@ export default defineUiPlugin<Component>({
                 placeholder="Select a worker"
               />
 
-              <div class="mt-4">
+              <div class="mt-4 flex flex-wrap gap-2">
                 <Button
                   type="button"
                   disabled={busy() || selectedId().length === 0}
@@ -307,6 +325,15 @@ export default defineUiPlugin<Component>({
                   data-testid="remote-submit-run"
                 >
                   {busy() ? "Working…" : "Submit unattended run"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={busy() || selectedId().length === 0}
+                  onClick={destroyWorker}
+                  data-testid="remote-destroy-worker"
+                >
+                  Destroy worker
                 </Button>
               </div>
 
@@ -359,6 +386,12 @@ export default defineUiPlugin<Component>({
                 label="VM size"
                 value={vmSize()}
                 onChange={setVmSize}
+              />
+              <TextField
+                class="mt-3"
+                label="Storage account"
+                value={storageAccount()}
+                onChange={setStorageAccount}
               />
               <TextField
                 class="mt-3"

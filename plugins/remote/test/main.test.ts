@@ -37,17 +37,18 @@ describe("borg.remote plugin", () => {
     const orchestrator = new RemoteOrchestrator(
       new Map([["local", fake]]),
     );
+    const legal = sampleRunSpec();
     await expect(
-      orchestrator.submitRun(
-        "local/dev",
-        sampleRunSpec({ allowedTools: ["tools.ask"] }),
-      ),
+      orchestrator.submitRun("local/dev", {
+        ...legal,
+        persona: { ...legal.persona, allowedTools: ["tools.ask"] },
+      }),
     ).rejects.toThrow(/cannot use/);
     await expect(
-      orchestrator.submitRun(
-        "local/dev",
-        sampleRunSpec({ allowedTools: ["filesystem.write"] }),
-      ),
+      orchestrator.submitRun("local/dev", {
+        ...legal,
+        persona: { ...legal.persona, allowedTools: ["filesystem.write"] },
+      }),
     ).rejects.toThrow(/cannot use/);
     expect(submitted).toBe(false);
   });
@@ -69,11 +70,12 @@ describe("borg.remote plugin", () => {
       workers: readonly { id: string }[];
     };
     expect(listed.workers.map((worker) => worker.id)).toEqual(["local/dev"]);
+    const legal = sampleRunSpec();
     await expect(
-      harness.invokeSubmit(
-        "local/dev",
-        sampleRunSpec({ allowedTools: ["tools.ask"] }),
-      ),
+      harness.invokeSubmit("local/dev", {
+        ...legal,
+        persona: { ...legal.persona, allowedTools: ["tools.ask"] },
+      }),
     ).rejects.toThrow(/cannot use/);
     await active.deactivate();
   });

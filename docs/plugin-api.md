@@ -332,10 +332,10 @@ Handler timeout comes from `command.timeoutMs` when set.
 | `borg.remote.listWorkers` | Workers the plugin has provisioned |
 | `borg.remote.provision` | Create a `local`, `azure-vm`, or `kubernetes` worker |
 | `borg.remote.destroy` | Forget the worker. Azure also DELETEs the VM |
-| `borg.remote.submitRun` | Write the spec. Local spawns detached `borg-runtime`. Azure PUTs spec and status blobs. Kubernetes POSTs a Job and ConfigMap |
-| `borg.remote.getRun` | Read `status.json` (local file, Azure blob, or Kubernetes ConfigMap) |
+| `borg.remote.submitRun` | Write the spec. Local spawns detached `borg-runtime` with `ELECTRON_RUN_AS_NODE=1`. Azure PUTs spec and status blobs on a user storage account. Kubernetes POSTs a Job that mounts the spec ConfigMap |
+| `borg.remote.getRun` | Read `status.json` (local file, Azure blob, Kubernetes ConfigMap, or Job conditions) |
 
-`submitRun` calls `assertUnattendedAllowlist` before the provider. Local spawn uses detached `node:child_process`, not `ctx.process.spawn`, so the child is not killed with the supervisor. Azure and Kubernetes use `ctx.http.fetch`. There is no `ctx.runtimes` field and no `agentRuntime` kind.
+`submitRun` calls `assertUnattendedAllowlist` before the provider. Local spawn uses detached `node:child_process` with `ELECTRON_RUN_AS_NODE` so the Electron binary runs the CLI as Node. Azure blob writes omit `openai-compat` API keys and require an ARM token. Kubernetes apiserver calls send the kubeconfig token. There is no `ctx.runtimes` field and no `agentRuntime` kind.
 
 Plugins do not add IPC channels. Renderer traffic for kernel objects uses the fixed `borg:kernel:call` map. Product commands use `borg:command:invoke` with the command id.
 

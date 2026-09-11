@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  BORG_RUNTIME_IMAGE,
   createKubernetesProvider,
   kubernetesConfigMapUrl,
   kubernetesJobsUrl,
   kubernetesNamespaceUrl,
   kubernetesRunResourceName,
+  kubeconfigBearerToken,
   resolveKubernetesApiServer,
 } from "../src/kubernetes";
 import {
@@ -129,15 +131,66 @@ clusters:
       };
     };
     expect(jobBody.spec.template.spec.containers[0]?.command).toEqual([
-      "node",
-      "/usr/local/bin/borg-runtime",
-      "/run",
+      "sh",
+      "-c",
+      "cp /config/spec.json /work/spec.json && node /usr/local/bin/borg-runtime /work",
     ]);
+    expect(jobPost?.body).toContain(BORG_RUNTIME_IMAGE);
+    expect(jobPost?.body).toContain('"/config"');
+    expect(jobPost?.body).toContain('"/work"');
+    expect(jobPost?.body).toContain('"configMap"');
+    expect(jobPost?.body).toContain('"emptyDir"');
     expect(jobPost?.body).not.toMatch(/NodePort/);
     expect(jobPost?.body).not.toMatch(/"kind":"Service"/);
 
     await expect(provider.getRun(worker.id, spec.runId)).resolves.toEqual(
       statusDocument,
+    );
+  });
+
+  it("sends the kubeconfig token on apiserver calls", async () => {
+    const kubeconfig = `
+apiVersion: v1
+clusters:
+- cluster:
+    server: https://k8s.example:6443
+users:
+- user:
+    token: k8s-secret-token
+`;
+    expect(kubeconfigBearerToken(kubeconfig)).toBe("k8s-secret-token");
+    expect(() =>
+      kubeconfigBearerToken(`
+apiVersion: v1
+clusters:
+- cluster:
+    server: https://k8s.example:6443
+`),
+    ).toThrow(/missing a user token/);
+
+    const { http, requests } = createFakeHttp(() => jsonResponse(200, {}));
+    const secrets = new Map<string, string>();
+    const provider = createKubernetesProvider({
+      store: createMemoryStore(),
+      secrets: {
+        get: async (key) => secrets.get(key),
+        set: async (key, value) => {
+          secrets.set(key, value);
+        },
+        delete: async (key) => {
+          secrets.delete(key);
+        },
+      },
+      fetch: (input, init) =>
+        init === undefined ? http.fetch(input) : http.fetch(input, init),
+    });
+    await provider.provision({
+      runtime: "kubernetes",
+      displayName: "prod",
+      kubernetes: { kubeconfig, namespace: "default" },
+    });
+    expect(requests[0]?.headers.get("Authorization")).toBe(
+      "Bearer k8s-secret-token",
     );
   });
 });

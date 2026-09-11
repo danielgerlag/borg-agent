@@ -24,8 +24,6 @@ import {
 
 export const AZURE_ARM_BASE = "https://management.azure.com";
 export const AZURE_COMPUTE_API_VERSION = "2024-07-01";
-export const AZURE_STATUS_BLOB_BASE =
-  "https://borgstatus.blob.core.windows.net";
 export const ARM_TOKEN_SECRET = "armToken";
 
 const azureBindingSchema = z
@@ -35,6 +33,7 @@ const azureBindingSchema = z
     resourceGroup: z.string().min(1),
     location: z.string().min(1),
     vmName: z.string().min(1),
+    storageAccount: z.string().min(1),
   })
   .strict();
 
@@ -53,11 +52,26 @@ export function azureVmUrl(input: {
   return `${AZURE_ARM_BASE}/subscriptions/${encodeURIComponent(input.subscriptionId)}/resourceGroups/${encodeURIComponent(input.resourceGroup)}/providers/Microsoft.Compute/virtualMachines/${encodeURIComponent(input.name)}?api-version=${AZURE_COMPUTE_API_VERSION}`;
 }
 
-export function azureRunBlobUrl(
-  runId: string,
-  file: "spec.json" | "status.json",
-): string {
-  return `${AZURE_STATUS_BLOB_BASE}/runs/${encodeURIComponent(runId)}/${file}`;
+export function azureRunBlobUrl(input: {
+  readonly storageAccount: string;
+  readonly runId: string;
+  readonly file: "spec.json" | "status.json";
+}): string {
+  return `https://${encodeURIComponent(input.storageAccount)}.blob.core.windows.net/runs/${encodeURIComponent(input.runId)}/${input.file}`;
+}
+
+export function specForAzureBlob(spec: RemoteRunSpec): RemoteRunSpec {
+  if (spec.provider.kind !== "openai-compat") {
+    return spec;
+  }
+  return remoteRunSpecSchema.parse({
+    ...spec,
+    provider: {
+      kind: "openai-compat",
+      baseUrl: spec.provider.baseUrl,
+      model: spec.provider.model,
+    },
+  });
 }
 
 export function createAzureVmProvider(
@@ -137,11 +151,13 @@ async function provisionAzureVm(
   input: CommandInput<typeof remoteProvision>,
   now: () => Date,
 ): Promise<RemoteWorker> {
+  if (input.runtime !== "azure-vm") {
+    throw new Error("Azure VM provider cannot provision this runtime");
+  }
   const azure = input.azure;
-  if (azure === undefined) {
-    throw new Error(
-      "Azure VM provision requires subscriptionId, resourceGroup, location, and vmSize",
-    );
+  const token = await options.getToken();
+  if (token === undefined || token.length === 0) {
+    throw new Error("Azure VM provision requires an ARM token");
   }
   const displayName = input.displayName?.trim() || "borg";
   const name = sanitizeWorkerSlug(displayName, "borg");
@@ -185,6 +201,7 @@ async function provisionAzureVm(
       resourceGroup: azure.resourceGroup,
       location: azure.location,
       vmName: name,
+      storageAccount: azure.storageAccount,
     }),
   );
   return worker;
@@ -230,14 +247,34 @@ async function submitAzureRun(
     throw new Error(`Unknown worker ${workerId}`);
   }
   const parsed = remoteRunSpecSchema.parse(spec);
+  const binding = await readAzureBinding(options.store, workerId);
+  if (binding === undefined) {
+    throw new Error(`Missing Azure binding for ${workerId}`);
+  }
   const running = remoteRunStatusDocumentSchema.parse({
     version: 1,
     runId: parsed.runId,
     status: "running",
     updatedAt: now().toISOString(),
   });
-  await putBlob(options, azureRunBlobUrl(parsed.runId, "spec.json"), parsed);
-  await putBlob(options, azureRunBlobUrl(parsed.runId, "status.json"), running);
+  await putBlob(
+    options,
+    azureRunBlobUrl({
+      storageAccount: binding.storageAccount,
+      runId: parsed.runId,
+      file: "spec.json",
+    }),
+    specForAzureBlob(parsed),
+  );
+  await putBlob(
+    options,
+    azureRunBlobUrl({
+      storageAccount: binding.storageAccount,
+      runId: parsed.runId,
+      file: "status.json",
+    }),
+    running,
+  );
   return parsed.runId;
 }
 
@@ -251,11 +288,18 @@ async function getAzureRun(
   if (worker === undefined) {
     throw new Error(`Unknown worker ${workerId}`);
   }
+  const binding = await readAzureBinding(options.store, workerId);
+  if (binding === undefined) {
+    throw new Error(`Missing Azure binding for ${workerId}`);
+  }
   const response = await azureRequest(
     options,
-    azureRunBlobUrl(runId, "status.json"),
+    azureRunBlobUrl({
+      storageAccount: binding.storageAccount,
+      runId,
+      file: "status.json",
+    }),
     { method: "GET" },
-    false,
   );
   if (response.status === 404) {
     return placeholderRunStatus(runId, "queued", now().toISOString());
@@ -279,15 +323,11 @@ async function putBlob(
   url: string,
   body: unknown,
 ): Promise<void> {
-  const response = await azureRequest(
-    options,
-    url,
-    {
-      method: "PUT",
-      body: JSON.stringify(body),
-    },
-    false,
-  );
+  const response = await azureRequest(options, url, {
+    method: "PUT",
+    body: JSON.stringify(body),
+    blob: true,
+  });
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`Azure blob write failed (${response.status})`);
   }
@@ -299,19 +339,21 @@ async function azureRequest(
   init: {
     readonly method: string;
     readonly body?: string;
+    readonly blob?: boolean;
   },
-  includeToken = true,
 ): Promise<Response> {
   const headers = new Headers();
   if (init.body !== undefined) {
     headers.set("Content-Type", "application/json");
   }
-  if (includeToken) {
-    const token = await options.getToken();
-    if (token !== undefined && token.length > 0) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
+  if (init.blob === true) {
+    headers.set("x-ms-blob-type", "BlockBlob");
   }
+  const token = await options.getToken();
+  if (token === undefined || token.length === 0) {
+    throw new Error("Azure VM requests require an ARM token");
+  }
+  headers.set("Authorization", `Bearer ${token}`);
   return init.body === undefined
     ? options.fetch(url, { method: init.method, headers })
     : options.fetch(url, {
