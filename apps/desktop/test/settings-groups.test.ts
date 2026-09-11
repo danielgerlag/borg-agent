@@ -8,6 +8,7 @@ describe("settings groups", () => {
   it("places bundled pages in HiveMind-style groups", () => {
     expect(settingsGroupId({ id: "borg.themes.settings" })).toBe("general");
     expect(settingsGroupId({ id: "borg.chat.personas" })).toBe("agents");
+    expect(settingsGroupId({ id: "borg.remote.settings" })).toBe("agents");
     expect(settingsGroupId({ id: "borg.azure.settings" })).toBe("models");
     expect(settingsGroupId({ id: "borg.channel.slack.settings" })).toBe(
       "channels",

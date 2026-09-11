@@ -1,5 +1,6 @@
 import {
   assertUnattendedAllowlist,
+  contractJsonValueSchema,
   remoteProvision,
   remoteRuntimeIdSchema,
   remoteRunStatusDocumentSchema,
@@ -30,7 +31,7 @@ export type RemoteFetch = (
 ) => Promise<Response>;
 
 export function toJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
+  return contractJsonValueSchema.parse(JSON.parse(JSON.stringify(value)));
 }
 
 export function workerStoreKey(workerId: string): string {

@@ -325,6 +325,18 @@ One bus, in main. Definitions use `defineCommand` / `defineEvent` in `@borg/cont
 
 Handler timeout comes from `command.timeoutMs` when set.
 
+`borg.remote` is the only handler for:
+
+| Command | Role |
+| --- | --- |
+| `borg.remote.listWorkers` | Workers the plugin has provisioned |
+| `borg.remote.provision` | Create a `local`, `azure-vm`, or `kubernetes` worker |
+| `borg.remote.destroy` | Forget the worker. Azure also DELETEs the VM |
+| `borg.remote.submitRun` | Write the spec and start `borg-runtime` on that worker |
+| `borg.remote.getRun` | Read `status.json` (local file, Azure blob, or Kubernetes ConfigMap) |
+
+`submitRun` calls `assertUnattendedAllowlist` before the provider. Local spawn uses detached `node:child_process`, not `ctx.process.spawn`, so the child is not killed with the supervisor. Azure and Kubernetes use `ctx.http.fetch`. There is no `ctx.runtimes` field and no `agentRuntime` kind.
+
 Plugins do not add IPC channels. Renderer traffic for kernel objects uses the fixed `borg:kernel:call` map. Product commands use `borg:command:invoke` with the command id.
 
 ## Contribution kinds the kernel checks

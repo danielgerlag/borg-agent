@@ -170,9 +170,6 @@ export default defineUiPlugin<Component>({
       const provisionKubernetes = (): void => {
         void runAction(async () => {
           const config = kubeconfig().trim();
-          if (config.length > 0) {
-            await context.secrets.set("kubeconfig", config);
-          }
           const displayName = k8sName().trim();
           const result = await context.bus.invoke(remoteProvision, {
             runtime: "kubernetes",
