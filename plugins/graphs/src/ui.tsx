@@ -55,6 +55,7 @@ import {
 } from "./kind-registry";
 import LaunchDialog from "./launch-dialog";
 import NodeInspector from "./node-inspector";
+import { createGraphOperations } from "./operations";
 import {
   defaultValueFromSchema,
   isJsonObject,
@@ -1277,9 +1278,9 @@ export default defineUiPlugin<Component>({
                 when={draft()}
                 fallback={
                   <EmptyState
-                    eyebrow="Graph designer"
-                    title="Build a reusable workflow"
-                    description="Create a graph or choose a saved definition. Graphs can be launched from chat and continue safely in the background."
+                    eyebrow="Designer"
+                    title="Build and test a workflow"
+                    description="Create a graph or choose a saved definition. Launch production runs from the Graphs tab. Chat can still start a graph too."
                     class="my-auto"
                   >
                     <Button
@@ -1811,7 +1812,7 @@ export default defineUiPlugin<Component>({
           </Show>
           <Show when={!loading() && !error() && instances().length === 0}>
             <p class="mt-4 border-t border-[var(--border)] pt-4 text-xs text-[var(--text-subtle)]">
-              No graphs are running. Launch one from the designer or chat.
+              No graphs are running. Launch one from Graphs or chat.
             </p>
           </Show>
           <For each={instances()}>
@@ -2117,10 +2118,17 @@ export default defineUiPlugin<Component>({
       );
     };
 
-    const workspace = context.ui.registerWorkspaceView({
-      id: "borg.graphs.designer",
+    const operations = context.ui.registerWorkspaceView({
+      id: "borg.graphs.operations",
       label: "Graphs",
       order: 20,
+      placement: "primary",
+      component: createGraphOperations(context),
+    });
+    const workspace = context.ui.registerWorkspaceView({
+      id: "borg.graphs.designer",
+      label: "Designer",
+      order: 25,
       placement: "primary",
       component: GraphDesigner,
     });
@@ -2144,6 +2152,7 @@ export default defineUiPlugin<Component>({
         await settings.dispose();
         await widget.dispose();
         await workspace.dispose();
+        await operations.dispose();
       },
     };
   },

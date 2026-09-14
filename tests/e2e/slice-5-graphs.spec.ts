@@ -94,9 +94,17 @@ function feedbackGateGraph(
 }
 
 async function openGraphsWorkspace(): Promise<void> {
-  const tab = page.getByTestId("workspace-view-tab-borg.graphs.designer");
+  const tab = page.getByTestId("workspace-view-tab-borg.graphs.operations");
   await expect(tab).toBeVisible();
   await expect(tab).toHaveText("Graphs");
+  await tab.click();
+  await expect(page.getByTestId("graph-operations")).toBeVisible();
+}
+
+async function openGraphDesigner(): Promise<void> {
+  const tab = page.getByTestId("workspace-view-tab-borg.graphs.designer");
+  await expect(tab).toBeVisible();
+  await expect(tab).toHaveText("Designer");
   await tab.click();
   await expect(page.getByTestId("graph-designer")).toBeVisible();
 }
@@ -291,8 +299,40 @@ test.afterEach(async () => {
   }
 });
 
-test("creates, renames, saves, and runs the default graph from the Graphs UI", async () => {
+test("launches a saved graph from the operational Graphs tab", async () => {
+  const graph = feedbackGateGraph(
+    "slice-5-ops-launch",
+    "Slice 5 ops launch",
+    "Continue the ops graph?",
+  );
+  await seedGraph({
+    ...graph,
+    nodes: [
+      graph.nodes[0]!,
+      {
+        id: "finish",
+        type: "control",
+        kind: "end",
+        config: {},
+        onError: { action: "fail" },
+      },
+    ],
+    edges: [{ id: "start-to-finish", source: "start", target: "finish" }],
+  });
   await openGraphsWorkspace();
+  await expect(page.getByTestId("graph-designer")).toHaveCount(0);
+  await expect(
+    page.getByTestId(`graph-ops-item-${graph.id}`),
+  ).toContainText("Slice 5 ops launch");
+  await page.getByTestId(`graph-ops-launch-${graph.id}`).click();
+  await expect(page.getByTestId("graph-operations")).toContainText(
+    /Completed|Running|Waiting/,
+    { timeout: 10_000 },
+  );
+});
+
+test("creates, renames, saves, and runs the default graph from the Designer", async () => {
+  await openGraphDesigner();
   await page.getByTestId("graph-create").click();
   await expect(page.getByTestId("graph-name")).toHaveValue("Untitled graph");
 
@@ -310,7 +350,7 @@ test("creates, renames, saves, and runs the default graph from the Graphs UI", a
 });
 
 test("renders the graph canvas and keeps editor controls usable at supported window sizes", async () => {
-  await openGraphsWorkspace();
+  await openGraphDesigner();
   await page.getByTestId("graph-create").click();
   await expect(page.getByTestId("graph-node-option-manual")).toBeVisible();
 
@@ -346,7 +386,7 @@ test("renders the graph canvas and keeps editor controls usable at supported win
 });
 
 test("keeps focus while typing in a selected node field", async () => {
-  await openGraphsWorkspace();
+  await openGraphDesigner();
   await page.getByTestId("graph-create").click();
   await page.getByTestId("graph-node-option-set-variable").click();
   const value = page.getByTestId("graph-assignment-value-0");
@@ -387,7 +427,7 @@ test("keeps a feedback-gate graph pending while Borg is hidden", async () => {
     "Continue the Slice 5 graph?",
   );
   await seedGraph(graph);
-  await openGraphsWorkspace();
+  await openGraphDesigner();
   await page.getByTestId(`graph-list-item-${graph.id}`).click();
   await expect(page.getByTestId("graph-name")).toHaveValue(graph.name);
 
@@ -435,7 +475,7 @@ test("shows a visible graph failure when feedback is unavailable", async () => {
   });
   await rendererReloaded;
 
-  await openGraphsWorkspace();
+  await openGraphDesigner();
   await page.getByTestId(`graph-list-item-${graph.id}`).click();
   await expect(page.getByTestId("graph-name")).toHaveValue(graph.name);
   await page.getByTestId("graph-run").click();

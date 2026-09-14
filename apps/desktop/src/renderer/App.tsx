@@ -744,6 +744,9 @@ const SetupWizard: Component<{
 );
 
 function workspaceIcon(id: string): typeof MessageCircle {
+  if (id.includes(".graphs.designer")) {
+    return Code2;
+  }
   if (id.includes(".graphs.")) {
     return GitBranch;
   }
