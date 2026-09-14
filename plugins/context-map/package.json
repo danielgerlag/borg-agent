@@ -13,6 +13,7 @@
     "main": "/main"
   },
   "dependencies": {
+    "@borg/contracts": "workspace:*",
     "@borg/plugin-sdk": "workspace:*"
   },
   "scripts": {

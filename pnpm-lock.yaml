@@ -441,6 +441,9 @@ importers:
 
   plugins/context-map:
     dependencies:
+      '@borg/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
