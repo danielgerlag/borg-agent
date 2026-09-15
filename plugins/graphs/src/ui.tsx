@@ -16,6 +16,8 @@ import {
   graphsListRunning,
   graphsSaveDefinition,
   graphValueMapSchema,
+  type AssistQuestion,
+  type CommandOutput,
   type GraphDefinition,
   type GraphInstance,
   type GraphNode,
@@ -417,6 +419,9 @@ export default defineUiPlugin<Component>({
       const [assistLoading, setAssistLoading] = createSignal(false);
       const [assistResponse, setAssistResponse] = createSignal("");
       const [assistError, setAssistError] = createSignal<string>();
+      const [assistSessionId, setAssistSessionId] = createSignal<string>();
+      const [pendingQuestion, setPendingQuestion] =
+        createSignal<AssistQuestion>();
       const selectedNode = createMemo(() =>
         draft()?.nodes.find(({ id }) => id === selectedNodeId()),
       );
@@ -1136,31 +1141,117 @@ export default defineUiPlugin<Component>({
         void refreshRunning();
       };
 
+      const appendAssistBlock = (
+        previous: string,
+        spoken: string,
+        summary: string,
+      ): string => {
+        const block = `> ${spoken}\n\n${summary}`;
+        return previous.length > 0 ? `${previous}\n\n${block}` : block;
+      };
+
+      const applyAssistTurn = (
+        result: CommandOutput<typeof graphsAssist>,
+        spoken: string,
+      ): void => {
+        setAssistSessionId(result.sessionId);
+        if (result.kind === "question") {
+          setPendingQuestion(result.question);
+          setAssistResponse((previous) =>
+            appendAssistBlock(previous, spoken, result.summary),
+          );
+          setAssistPrompt("");
+          return;
+        }
+        const wasNew = isNewDefinition();
+        selectDefinition(result.definition, wasNew);
+        setDirty(true);
+        setPendingQuestion(undefined);
+        setAssistResponse((previous) =>
+          appendAssistBlock(previous, spoken, result.summary),
+        );
+        setAssistPrompt("");
+        setOperationStatus("AI Assist updated the canvas.");
+      };
+
       const sendAssist = async (promptOverride?: string): Promise<void> => {
         const prompt = (promptOverride ?? assistPrompt()).trim();
-        if (!prompt || assistLoading()) {
+        if (!prompt || assistLoading() || pendingQuestion() !== undefined) {
           return;
         }
         setAssistLoading(true);
         setAssistError(undefined);
         try {
           const current = draft();
+          const sessionId = assistSessionId();
           const result = await context.bus.invoke(graphsAssist, {
+            kind: "prompt",
             prompt,
+            ...(sessionId !== undefined ? { sessionId } : {}),
             ...(current !== undefined ? { current } : {}),
           });
           if (!active) {
             return;
           }
-          const wasNew = isNewDefinition();
-          selectDefinition(result.definition, wasNew);
-          setDirty(true);
-          setAssistResponse((previous) => {
-            const block = `> ${prompt}\n\n${result.summary}`;
-            return previous.length > 0 ? `${previous}\n\n${block}` : block;
+          applyAssistTurn(result, prompt);
+        } catch (failure) {
+          if (active) {
+            setAssistError(describeError(failure));
+          }
+        } finally {
+          if (active) {
+            setAssistLoading(false);
+          }
+        }
+      };
+
+      const answerAssist = async (answer: {
+        readonly text?: string;
+        readonly choiceIds?: readonly string[];
+      }): Promise<void> => {
+        const sessionId = assistSessionId();
+        const question = pendingQuestion();
+        if (sessionId === undefined || question === undefined || assistLoading()) {
+          return;
+        }
+        const labels: string[] = [];
+        if (answer.choiceIds !== undefined) {
+          for (const id of answer.choiceIds) {
+            const choice = question.choices.find((item) => item.id === id);
+            if (choice !== undefined) {
+              labels.push(choice.label);
+            }
+          }
+        }
+        const trimmed = answer.text?.trim();
+        const spokenParts: string[] = [];
+        if (labels.length > 0) {
+          spokenParts.push(labels.join(", "));
+        }
+        if (trimmed !== undefined && trimmed.length > 0) {
+          spokenParts.push(trimmed);
+        }
+        const spoken = spokenParts.join("\n");
+        setAssistLoading(true);
+        setAssistError(undefined);
+        try {
+          const current = draft();
+          const result = await context.bus.invoke(graphsAssist, {
+            kind: "answer",
+            sessionId,
+            questionId: question.id,
+            ...(trimmed !== undefined && trimmed.length > 0
+              ? { text: trimmed }
+              : {}),
+            ...(answer.choiceIds !== undefined && answer.choiceIds.length > 0
+              ? { choiceIds: [...answer.choiceIds] }
+              : {}),
+            ...(current !== undefined ? { current } : {}),
           });
-          setAssistPrompt("");
-          setOperationStatus("AI Assist updated the canvas.");
+          if (!active) {
+            return;
+          }
+          applyAssistTurn(result, spoken);
         } catch (failure) {
           if (active) {
             setAssistError(describeError(failure));
@@ -1461,10 +1552,14 @@ export default defineUiPlugin<Component>({
                         loading={assistLoading()}
                         response={assistResponse()}
                         error={assistError()}
+                        pendingQuestion={pendingQuestion()}
                         onPromptChange={setAssistPrompt}
                         onSend={(prompt) => void sendAssist(prompt)}
+                        onAnswer={(answer) => void answerAssist(answer)}
                         onClose={() => setAssistOpen(false)}
                         onNewConversation={() => {
+                          setAssistSessionId(undefined);
+                          setPendingQuestion(undefined);
                           setAssistResponse("");
                           setAssistError(undefined);
                           setAssistPrompt("");

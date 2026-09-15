@@ -21,10 +21,21 @@ import {
   graphsListInstances,
   graphsListRunning,
   graphsSaveDefinition,
+  type AssistQuestion,
+  type GraphDefinition,
+  type ModelMessage,
 } from "@borg/contracts";
 import { definePlugin, defineTool, z } from "@borg/plugin-sdk";
 import { randomUUID } from "node:crypto";
-import { generateAssistedGraph } from "./assist";
+import {
+  applyAnswer,
+  buildAssistMessages,
+  createAssistSessions,
+  formatAssistUserContent,
+  generateAssistedTurn,
+  withCurrentGraph,
+  type AssistSession,
+} from "./assist";
 import { builtInKinds } from "./kind-registry";
 import { GraphEngine } from "./executor";
 
@@ -87,6 +98,7 @@ export default definePlugin({
   },
   async activate(context) {
     const engine = new GraphEngine(context);
+    const assistSessions = createAssistSessions();
 
     context.bus.handle(graphsSaveDefinition, async ({ definition }) => ({
       definition: await engine.saveDefinition(definition),
@@ -157,7 +169,7 @@ export default definePlugin({
     context.bus.handle(graphsCancelInstance, async ({ instanceId }) => ({
       cancelled: await engine.cancel(instanceId),
     }));
-    context.bus.handle(graphsAssist, async ({ prompt, current }, signal) => {
+    context.bus.handle(graphsAssist, async (input, signal) => {
       const execution = await context.executions.bind({
         mode: "root",
         subject: { kind: "graph-assist", id: randomUUID() },
@@ -191,33 +203,143 @@ export default definePlugin({
           id: persona.id,
           name: persona.name,
         }));
-        const result = await generateAssistedGraph({
-          prompt,
-          ...(current !== undefined
-            ? { current: graphDefinitionSchema.parse(current) }
-            : {}),
-          kinds,
-          tools,
-          personas,
-          complete: async (messages) => {
-            const completion = await context.models.complete(
-              {
-                executionId: execution.id,
-                operationKey: `graph/assist/${execution.id}`,
-                personaId: context.personas.getDefault().id,
-                messages,
-              },
-              signal,
-            );
-            if (
-              completion.content === undefined ||
-              completion.content.length === 0
-            ) {
-              throw new Error("The model returned no graph");
+        const parsedCurrent =
+          input.current !== undefined
+            ? graphDefinitionSchema.parse(input.current)
+            : undefined;
+        let completeIndex = 0;
+        const complete = async (
+          messages: readonly ModelMessage[],
+        ): Promise<string> => {
+          completeIndex += 1;
+          const completion = await context.models.complete(
+            {
+              executionId: execution.id,
+              operationKey: `graph/assist/${execution.id}/${completeIndex}`,
+              personaId: context.personas.getDefault().id,
+              messages,
+            },
+            signal,
+          );
+          if (
+            completion.content === undefined ||
+            completion.content.length === 0
+          ) {
+            throw new Error("The model returned no graph");
+          }
+          return completion.content;
+        };
+        const runTurn = async (
+          session: AssistSession,
+          current: GraphDefinition | undefined,
+        ): Promise<
+          | {
+              kind: "question";
+              sessionId: string;
+              summary: string;
+              question: AssistQuestion;
             }
-            return completion.content;
-          },
+          | {
+              kind: "graph";
+              sessionId: string;
+              summary: string;
+              definition: GraphDefinition;
+            }
+        > => {
+          const generated = await generateAssistedTurn({
+            messages: session.messages,
+            ...(current !== undefined ? { current } : {}),
+            kinds,
+            tools,
+            personas,
+            complete,
+          });
+          const turn = generated.turn;
+          const messages: ModelMessage[] = [
+            ...session.messages,
+            { role: "assistant", content: generated.raw },
+          ];
+          if (turn.kind === "question") {
+            assistSessions.save({
+              id: session.id,
+              messages,
+              pendingQuestion: turn.question,
+            });
+            return {
+              kind: "question",
+              sessionId: session.id,
+              summary: turn.summary,
+              question: turn.question,
+            };
+          }
+          assistSessions.save({
+            id: session.id,
+            messages,
+          });
+          return {
+            kind: "graph",
+            sessionId: session.id,
+            summary: turn.summary,
+            definition: turn.definition,
+          };
+        };
+        if (input.kind === "prompt") {
+          const existing =
+            input.sessionId !== undefined
+              ? assistSessions.get(input.sessionId)
+              : undefined;
+          if (existing !== undefined && existing.pendingQuestion !== undefined) {
+            throw new Error("Answer the current question first");
+          }
+          const session: AssistSession =
+            existing === undefined
+              ? {
+                  id: input.sessionId ?? randomUUID(),
+                  messages: buildAssistMessages({
+                    prompt: input.prompt,
+                    ...(parsedCurrent !== undefined
+                      ? { current: parsedCurrent }
+                      : {}),
+                    kinds,
+                    tools,
+                    personas,
+                  }),
+                }
+              : {
+                  id: existing.id,
+                  messages: [
+                    ...existing.messages,
+                    {
+                      role: "user",
+                      content:
+                        parsedCurrent === undefined
+                          ? formatAssistUserContent(input.prompt)
+                          : formatAssistUserContent(
+                              input.prompt,
+                              parsedCurrent,
+                            ),
+                    },
+                  ],
+                };
+          const result = await runTurn(session, parsedCurrent);
+          outcome = "completed";
+          return result;
+        }
+        const existing = assistSessions.get(input.sessionId);
+        if (existing === undefined) {
+          throw new Error("Unknown assist session");
+        }
+        let session = applyAnswer(existing, {
+          questionId: input.questionId,
+          ...(input.text !== undefined ? { text: input.text } : {}),
+          ...(input.choiceIds !== undefined
+            ? { choiceIds: input.choiceIds }
+            : {}),
         });
+        if (parsedCurrent !== undefined) {
+          session = withCurrentGraph(session, parsedCurrent);
+        }
+        const result = await runTurn(session, parsedCurrent);
         outcome = "completed";
         return result;
       } finally {

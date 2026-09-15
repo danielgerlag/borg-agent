@@ -106,12 +106,99 @@ describe("borg.graphs plugin", () => {
       `Created the graph.\n\`\`\`json\n${JSON.stringify(sample)}\n\`\`\``,
     );
     const harness = await createTestHarness(graphsPlugin, fixture.context);
-    const result = await fixture.invokeCommand<{
-      definition: GraphDefinition;
-      summary: string;
-    }>(graphsAssist, { prompt: "Echo hello then end" });
+    const result = await fixture.invokeCommand<
+      | {
+          kind: "graph";
+          sessionId: string;
+          definition: GraphDefinition;
+          summary: string;
+        }
+      | {
+          kind: "question";
+          sessionId: string;
+          question: { id: string; text: string };
+          summary: string;
+        }
+    >(graphsAssist, { kind: "prompt", prompt: "Echo hello then end" });
+    expect(result.kind).toBe("graph");
+    if (result.kind !== "graph") {
+      return;
+    }
     expect(result.definition.id).toBe("assisted-echo");
     expect(result.summary).toContain("Created the graph.");
+    await harness.deactivate();
+  });
+
+  it("asks a clarifying question then returns a graph after the answer", async () => {
+    const fixture = createGraphHarness();
+    fixture.setCompleteContent(
+      `Need a bit more detail.\n\`\`\`json\n${JSON.stringify({
+        ask_user: {
+          question: "What shape should the graph have?",
+          choices: ["Linear", "Branching"],
+          allow_freeform: true,
+          multi_select: false,
+        },
+      })}\n\`\`\``,
+    );
+    const harness = await createTestHarness(graphsPlugin, fixture.context);
+    const question = await fixture.invokeCommand<
+      | {
+          kind: "graph";
+          sessionId: string;
+          definition: GraphDefinition;
+          summary: string;
+        }
+      | {
+          kind: "question";
+          sessionId: string;
+          question: {
+            id: string;
+            text: string;
+            choices: { id: string; label: string }[];
+          };
+          summary: string;
+        }
+    >(graphsAssist, { kind: "prompt", prompt: "Build a watcher" });
+    expect(question.kind).toBe("question");
+    if (question.kind !== "question") {
+      return;
+    }
+    expect(question.question.text).toBe("What shape should the graph have?");
+    const choiceId = question.question.choices[0]?.id;
+    expect(choiceId).toEqual(expect.any(String));
+    if (choiceId === undefined) {
+      return;
+    }
+    const sample = linearDefinition({ id: "assisted-echo" });
+    fixture.setCompleteContent(
+      `Created the graph.\n\`\`\`json\n${JSON.stringify(sample)}\n\`\`\``,
+    );
+    const graph = await fixture.invokeCommand<
+      | {
+          kind: "graph";
+          sessionId: string;
+          definition: GraphDefinition;
+          summary: string;
+        }
+      | {
+          kind: "question";
+          sessionId: string;
+          question: { id: string };
+          summary: string;
+        }
+    >(graphsAssist, {
+      kind: "answer",
+      sessionId: question.sessionId,
+      questionId: question.question.id,
+      choiceIds: [choiceId],
+    });
+    expect(graph.kind).toBe("graph");
+    if (graph.kind !== "graph") {
+      return;
+    }
+    expect(graph.sessionId).toBe(question.sessionId);
+    expect(graph.definition.id).toBe("assisted-echo");
     await harness.deactivate();
   });
 });

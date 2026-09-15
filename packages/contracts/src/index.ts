@@ -1923,20 +1923,76 @@ export const graphsCancelInstance = defineCommand({
   output: z.object({ cancelled: z.boolean() }).strict(),
 });
 
+export const assistChoiceSchema = z
+  .object({
+    id: z.string().min(1),
+    label: z.string().min(1),
+  })
+  .strict();
+
+export type AssistChoice = z.infer<typeof assistChoiceSchema>;
+
+export const assistQuestionSchema = z
+  .object({
+    id: z.string().uuid(),
+    text: z.string().trim().min(1).max(2_000),
+    choices: z.array(assistChoiceSchema).max(8),
+    allowFreeform: z.boolean(),
+    multiSelect: z.boolean(),
+  })
+  .strict();
+
+export type AssistQuestion = z.infer<typeof assistQuestionSchema>;
+
 export const graphsAssist = defineCommand({
   id: "borg.graphs.assist",
-  input: z
-    .object({
-      prompt: z.string().trim().min(1).max(8_000),
-      current: graphDefinitionSchema.optional(),
-    })
-    .strict(),
-  output: z
-    .object({
-      definition: graphDefinitionSchema,
-      summary: z.string().min(1).max(4_000),
-    })
-    .strict(),
+  input: z.discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("prompt"),
+        prompt: z.string().trim().min(1).max(8_000),
+        current: graphDefinitionSchema.optional(),
+        sessionId: z.string().uuid().optional(),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("answer"),
+        sessionId: z.string().uuid(),
+        questionId: z.string().uuid(),
+        text: z.string().trim().min(1).max(8_000).optional(),
+        choiceIds: z.array(z.string().min(1)).min(1).max(8).optional(),
+        current: graphDefinitionSchema.optional(),
+      })
+      .strict()
+      .superRefine((value, context) => {
+        if (value.text === undefined && value.choiceIds === undefined) {
+          context.addIssue({
+            code: "custom",
+            path: ["text"],
+            message: "Answer requires text or choiceIds",
+          });
+        }
+      }),
+  ]),
+  output: z.discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("question"),
+        sessionId: z.string().uuid(),
+        summary: z.string().min(1).max(4_000),
+        question: assistQuestionSchema,
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("graph"),
+        sessionId: z.string().uuid(),
+        summary: z.string().min(1).max(4_000),
+        definition: graphDefinitionSchema,
+      })
+      .strict(),
+  ]),
   timeoutMs: 120_000,
 });
 

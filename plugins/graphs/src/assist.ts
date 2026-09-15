@@ -1,11 +1,15 @@
 import {
+  assistQuestionSchema,
   graphDefinitionSchema,
+  type AssistQuestion,
   type GraphDefinition,
   type GraphNode,
   type ModelMessage,
 } from "@borg/contracts";
 import { GRAPH_ENGINE_ID } from "./engine-id";
 import { builtInKinds } from "./kind-registry";
+
+export type { AssistChoice, AssistQuestion } from "@borg/contracts";
 
 export interface AssistKind {
   readonly kind: string;
@@ -21,6 +25,22 @@ export interface AssistTool {
 export interface AssistPersona {
   readonly id: string;
   readonly name: string;
+}
+
+export type AssistTurn =
+  | { kind: "question"; question: AssistQuestion; summary: string }
+  | { kind: "graph"; definition: GraphDefinition; summary: string };
+
+export type AssistSession = {
+  readonly id: string;
+  readonly messages: readonly ModelMessage[];
+  readonly pendingQuestion?: AssistQuestion;
+};
+
+export interface AssistSessions {
+  save(session: AssistSession): void;
+  get(id: string): AssistSession | undefined;
+  drop(id: string): void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -46,6 +66,27 @@ export function slugGraphId(name: string): string {
     return slug;
   }
   return `graph-${Date.now().toString(36)}`;
+}
+
+function uniqueChoiceId(label: string, used: Set<string>): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  const seed = /^[a-z][a-z0-9-]*$/.test(slug)
+    ? slug
+    : `choice-${slug.length > 0 ? slug : "option"}`;
+  const base = /^[a-z][a-z0-9-]*$/.test(seed) ? seed : "choice-option";
+  let candidate = base;
+  let n = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${n}`;
+    n += 1;
+  }
+  used.add(candidate);
+  return candidate;
 }
 
 export function extractJsonValue(text: string): unknown {
@@ -109,9 +150,14 @@ export function buildAssistMessages(options: {
   const currentSection = options.current
     ? `The user is editing this graph. Modify it to satisfy the request. Keep the same id "${options.current.id}" unless they asked to replace it.\n\n${JSON.stringify(options.current, null, 2)}`
     : "This is a new graph. Create a complete definition from the request.";
-  const system = `You are Borg's graph authoring assistant. Reply with a short summary and one JSON object for a GraphDefinition.
+  const system = `You are Borg's graph authoring assistant. Reply with a short summary and one JSON object.
 
 Rules:
+- If the request is underspecified, ask 1–2 structural questions with choices instead of guessing
+- Do not emit a graph until enough is known
+- To ask the user, emit JSON inside a \`\`\`json fence: { "ask_user": { "question": string, "choices": string[], "allow_freeform": boolean, "multi_select": boolean } }
+- allow_freeform defaults to true. multi_select defaults to false
+- When you know enough, emit a GraphDefinition JSON object inside a \`\`\`json fence after the summary
 - engineId must be "${GRAPH_ENGINE_ID}"
 - id is lowercase kebab-case starting with a letter
 - version is like 1.0.0
@@ -143,6 +189,16 @@ ${personaLines}`;
       content: `${currentSection}\n\nUser request:\n${options.prompt}`,
     },
   ];
+}
+
+export function formatAssistUserContent(
+  prompt: string,
+  current?: GraphDefinition,
+): string {
+  if (current === undefined) {
+    return prompt;
+  }
+  return `${prompt}\n\nCurrent graph JSON:\n${JSON.stringify(current, null, 2)}`;
 }
 
 function coerceCandidate(
@@ -195,8 +251,110 @@ function coerceCandidate(
   return coerced;
 }
 
-export async function generateAssistedGraph(options: {
-  readonly prompt: string;
+function parseChoices(value: unknown): { id: string; label: string }[] | undefined {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const used = new Set<string>();
+  const choices: { id: string; label: string }[] = [];
+  for (const item of value) {
+    if (typeof item === "string") {
+      const label = item.trim();
+      if (label.length === 0) {
+        return undefined;
+      }
+      choices.push({ id: uniqueChoiceId(label, used), label });
+      continue;
+    }
+    if (!isRecord(item)) {
+      return undefined;
+    }
+    const label = readString(item, "label")?.trim();
+    if (label === undefined || label.length === 0) {
+      return undefined;
+    }
+    choices.push({ id: uniqueChoiceId(label, used), label });
+  }
+  return choices;
+}
+
+function parseAskUser(value: unknown): AssistQuestion | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const text = readString(value, "question")?.trim();
+  if (text === undefined || text.length === 0) {
+    return undefined;
+  }
+  const choices = parseChoices(value.choices);
+  if (choices === undefined) {
+    return undefined;
+  }
+  const parsed = assistQuestionSchema.safeParse({
+    id: crypto.randomUUID(),
+    text,
+    choices,
+    allowFreeform: value.allow_freeform !== false,
+    multiSelect: value.multi_select === true,
+  });
+  return parsed.success ? parsed.data : undefined;
+}
+
+function parseAssistedTurn(
+  text: string,
+  current: GraphDefinition | undefined,
+): AssistTurn {
+  const value = extractJsonValue(text);
+  if (isRecord(value) && "ask_user" in value) {
+    const question = parseAskUser(value.ask_user);
+    if (question === undefined) {
+      throw new Error("The model ask_user payload was invalid");
+    }
+    return {
+      kind: "question",
+      question,
+      summary: extractSummary(text),
+    };
+  }
+  const parsed = graphDefinitionSchema.parse(
+    coerceCandidate(value, current),
+  );
+  return {
+    kind: "graph",
+    definition: applyAssistLayout(parsed),
+    summary: extractSummary(text),
+  };
+}
+
+function repairUserContent(
+  error: unknown,
+  options: {
+    readonly kinds: readonly AssistKind[];
+    readonly tools: readonly AssistTool[];
+    readonly personas: readonly AssistPersona[];
+  },
+): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  const kinds =
+    options.kinds.length > 0
+      ? options.kinds.map((item) => item.kind).join(", ")
+      : "none";
+  const tools =
+    options.tools.length > 0
+      ? options.tools.map((item) => item.id).join(", ")
+      : "none";
+  const personas =
+    options.personas.length > 0
+      ? options.personas.map((item) => item.id).join(", ")
+      : "none";
+  return `That JSON was neither a valid ask_user question nor a GraphDefinition:\n${detail}\n\nReturn a corrected JSON fence with either {"ask_user":{"question":string,"choices":string[],"allow_freeform":boolean,"multi_select":boolean}} or a complete GraphDefinition. Available step kinds: ${kinds}. Tools: ${tools}. Personas: ${personas}.`;
+}
+
+export async function generateAssistedTurn(options: {
+  readonly messages: readonly ModelMessage[];
   readonly current?: GraphDefinition | undefined;
   readonly kinds: readonly AssistKind[];
   readonly tools: readonly AssistTool[];
@@ -204,33 +362,128 @@ export async function generateAssistedGraph(options: {
   readonly complete: (
     messages: readonly ModelMessage[],
   ) => Promise<string>;
-}): Promise<{ definition: GraphDefinition; summary: string }> {
-  const baseMessages = buildAssistMessages(options);
-  const first = await options.complete(baseMessages);
+}): Promise<{ readonly turn: AssistTurn; readonly raw: string }> {
+  const first = await options.complete(options.messages);
   try {
-    const parsed = graphDefinitionSchema.parse(
-      coerceCandidate(extractJsonValue(first), options.current),
-    );
     return {
-      definition: applyAssistLayout(parsed),
-      summary: extractSummary(first),
+      turn: parseAssistedTurn(first, options.current),
+      raw: first,
     };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
     const repaired = await options.complete([
-      ...baseMessages,
+      ...options.messages,
       { role: "assistant", content: first },
       {
         role: "user",
-        content: `That JSON failed validation:\n${detail}\n\nReturn a corrected complete GraphDefinition JSON fence.`,
+        content: repairUserContent(error, options),
       },
     ]);
-    const parsed = graphDefinitionSchema.parse(
-      coerceCandidate(extractJsonValue(repaired), options.current),
-    );
     return {
-      definition: applyAssistLayout(parsed),
-      summary: extractSummary(repaired),
+      turn: parseAssistedTurn(repaired, options.current),
+      raw: repaired,
     };
   }
+}
+
+export function applyAnswer(
+  session: AssistSession,
+  answer: {
+    readonly questionId: string;
+    readonly text?: string;
+    readonly choiceIds?: readonly string[];
+  },
+): AssistSession {
+  const pending = session.pendingQuestion;
+  if (pending === undefined || pending.id !== answer.questionId) {
+    throw new Error("Unknown assist question");
+  }
+  const selectedIds = answer.choiceIds === undefined ? [] : [...answer.choiceIds];
+  if (!pending.multiSelect && selectedIds.length > 1) {
+    throw new Error("This question allows only one choice");
+  }
+  if (!pending.allowFreeform && selectedIds.length === 0) {
+    throw new Error("This question requires a choice");
+  }
+  const labelsById = new Map<string, string>();
+  for (const choice of pending.choices) {
+    labelsById.set(choice.id, choice.label);
+  }
+  const labels: string[] = [];
+  for (const id of selectedIds) {
+    const label = labelsById.get(id);
+    if (label === undefined) {
+      throw new Error("Unknown assist choice");
+    }
+    labels.push(label);
+  }
+  const trimmed = answer.text?.trim();
+  const hasText = trimmed !== undefined && trimmed.length > 0;
+  const parts: string[] = [];
+  if (labels.length > 0) {
+    parts.push(labels.join(", "));
+  }
+  if (hasText && trimmed !== undefined) {
+    parts.push(trimmed);
+  }
+  if (parts.length === 0) {
+    throw new Error("Answer requires text or a choice");
+  }
+  return {
+    id: session.id,
+    messages: [...session.messages, { role: "user", content: parts.join("\n") }],
+  };
+}
+
+export function withCurrentGraph(
+  session: AssistSession,
+  current: GraphDefinition,
+): AssistSession {
+  const last = session.messages[session.messages.length - 1];
+  if (last === undefined || last.role !== "user") {
+    return session;
+  }
+  return {
+    id: session.id,
+    ...(session.pendingQuestion !== undefined
+      ? { pendingQuestion: session.pendingQuestion }
+      : {}),
+    messages: [
+      ...session.messages.slice(0, -1),
+      {
+        role: "user",
+        content: formatAssistUserContent(last.content, current),
+      },
+    ],
+  };
+}
+
+export function createAssistSessions(limit = 8): AssistSessions {
+  const sessions = new Map<string, AssistSession>();
+  const touch = (id: string, session: AssistSession): void => {
+    sessions.delete(id);
+    sessions.set(id, session);
+    while (sessions.size > limit) {
+      const oldest = sessions.keys().next();
+      if (oldest.done) {
+        return;
+      }
+      sessions.delete(oldest.value);
+    }
+  };
+  return {
+    save(session) {
+      touch(session.id, session);
+    },
+    get(id) {
+      const session = sessions.get(id);
+      if (session === undefined) {
+        return undefined;
+      }
+      touch(id, session);
+      return session;
+    },
+    drop(id) {
+      sessions.delete(id);
+    },
+  };
 }
