@@ -60,6 +60,19 @@ function isLive(status: GraphInstance["status"]): boolean {
   return status === "running" || status === "waiting";
 }
 
+function formatRunTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function createGraphOperations(
   context: PluginUiContext<Component>,
   options: {
@@ -239,8 +252,8 @@ export function createGraphOperations(
             )}
           </Show>
 
-          <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <Panel>
+          <div class="grid min-w-0 gap-6 xl:grid-cols-2">
+            <Panel class="min-w-0">
               <div class="flex items-center justify-between gap-3">
                 <h3 class="text-sm font-semibold">Catalog</h3>
                 <Show when={loading()}>
@@ -264,10 +277,10 @@ export function createGraphOperations(
                 >
                   {(definition) => (
                     <li
-                      class="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-3"
+                      class="grid gap-3 rounded-xl border border-[var(--border)] bg-[var(--background)] p-3"
                       data-testid={`graph-ops-item-${definition.id}`}
                     >
-                      <div class="min-w-0 flex-1">
+                      <div class="min-w-0">
                         <p class="truncate text-sm font-semibold">
                           {definition.name}
                         </p>
@@ -276,34 +289,36 @@ export function createGraphOperations(
                             `${definition.nodes.length} steps · ${definition.mode}`}
                         </p>
                       </div>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => options.onEdit(definition.id)}
-                        data-testid={`graph-ops-edit-${definition.id}`}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={launchingId() === definition.id}
-                        onClick={() => void launch(definition)}
-                        data-testid={`graph-ops-launch-${definition.id}`}
-                      >
-                        <Play aria-hidden="true" size={14} />
-                        {launchingId() === definition.id
-                          ? "Launching…"
-                          : "Launch"}
-                      </Button>
+                      <div class="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => options.onEdit(definition.id)}
+                          data-testid={`graph-ops-edit-${definition.id}`}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={launchingId() === definition.id}
+                          onClick={() => void launch(definition)}
+                          data-testid={`graph-ops-launch-${definition.id}`}
+                        >
+                          <Play aria-hidden="true" size={14} />
+                          {launchingId() === definition.id
+                            ? "Launching…"
+                            : "Launch"}
+                        </Button>
+                      </div>
                     </li>
                   )}
                 </For>
               </ul>
             </Panel>
 
-            <Panel>
+            <Panel class="min-w-0">
               <div class="flex items-center gap-2">
                 <Workflow
                   aria-hidden="true"
@@ -357,12 +372,17 @@ export function createGraphOperations(
                 <ul class="mt-3 grid gap-2">
                   <For each={recent()}>
                     {(instance) => (
-                      <li class="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] px-3 py-2.5 text-xs">
-                        <span class="truncate font-medium">
-                          {instance.graphName}
-                        </span>
-                        <span class="shrink-0 text-[var(--text-muted)]">
-                          {statusLabel(instance.status)}
+                      <li class="grid gap-1 rounded-xl border border-[var(--border)] px-3 py-2.5 text-xs">
+                        <div class="flex items-center justify-between gap-3">
+                          <span class="min-w-0 truncate font-medium">
+                            {instance.graphName}
+                          </span>
+                          <span class="shrink-0 text-[var(--text-muted)]">
+                            {statusLabel(instance.status)}
+                          </span>
+                        </div>
+                        <span class="text-[var(--text-subtle)]">
+                          {formatRunTime(instance.updatedAt)}
                         </span>
                       </li>
                     )}

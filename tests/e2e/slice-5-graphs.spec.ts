@@ -319,10 +319,18 @@ test("launches a saved graph from the operational Graphs tab", async () => {
   });
   await openGraphsWorkspace();
   await expect(page.getByTestId("graph-designer")).toHaveCount(0);
-  await expect(
-    page.getByTestId(`graph-ops-item-${graph.id}`),
-  ).toContainText("Slice 5 ops launch");
-  await page.getByTestId(`graph-ops-launch-${graph.id}`).click();
+  const catalogItem = page.getByTestId(`graph-ops-item-${graph.id}`);
+  const launch = page.getByTestId(`graph-ops-launch-${graph.id}`);
+  await expect(catalogItem).toContainText("Slice 5 ops launch");
+  await expect(launch).toBeVisible();
+  const itemBox = await catalogItem.boundingBox();
+  const launchBox = await launch.boundingBox();
+  expect(itemBox).toBeTruthy();
+  expect(launchBox).toBeTruthy();
+  expect((launchBox?.x ?? 0) + (launchBox?.width ?? 0)).toBeLessThanOrEqual(
+    (itemBox?.x ?? 0) + (itemBox?.width ?? 0) + 1,
+  );
+  await launch.click();
   await expect(page.getByTestId("graph-operations")).toContainText(
     /Completed|Running|Waiting/,
     { timeout: 10_000 },
