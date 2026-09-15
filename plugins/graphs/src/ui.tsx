@@ -370,7 +370,9 @@ function statusLabel(status: GraphInstance["status"]): string {
 export default defineUiPlugin<Component>({
   id: "borg.graphs",
   activate(context) {
-    const GraphDesigner: Component = () => {
+    const GraphDesigner: Component<{
+      readonly entry: "new" | string;
+    }> = (props) => {
       const [definitions, setDefinitions] =
         createSignal<readonly GraphDefinition[]>([]);
       const [draft, setDraft] = createSignal<GraphDefinition>();
@@ -578,6 +580,15 @@ export default defineUiPlugin<Component>({
           setDefinitions(next);
           const current = draft();
           if (!current) {
+            if (props.entry === "new") {
+              selectDefinition(createDefaultGraph(), true);
+              return;
+            }
+            const match = next.find(({ id }) => id === props.entry);
+            if (match) {
+              selectDefinition(match);
+              return;
+            }
             const first = next[0];
             if (first) {
               selectDefinition(first);
@@ -1278,9 +1289,9 @@ export default defineUiPlugin<Component>({
                 when={draft()}
                 fallback={
                   <EmptyState
-                    eyebrow="Designer"
+                    eyebrow="Build"
                     title="Build and test a workflow"
-                    description="Create a graph or choose a saved definition. Launch production runs from the Graphs tab. Chat can still start a graph too."
+                    description="Create a graph or choose a saved definition. Launch live runs from the Graphs list. Chat can still start a graph too."
                     class="my-auto"
                   >
                     <Button
@@ -2118,19 +2129,52 @@ export default defineUiPlugin<Component>({
       );
     };
 
-    const operations = context.ui.registerWorkspaceView({
+    const [graphSurface, setGraphSurface] = createSignal<"ops" | "builder">(
+      "ops",
+    );
+    const [builderEntry, setBuilderEntry] = createSignal<"new" | string>(
+      "new",
+    );
+    const Operations = createGraphOperations(context, {
+      onBuild: () => {
+        setBuilderEntry("new");
+        setGraphSurface("builder");
+      },
+      onEdit: (graphId) => {
+        setBuilderEntry(graphId);
+        setGraphSurface("builder");
+      },
+    });
+    const GraphsWorkspace: Component = () => (
+      <Show
+        when={graphSurface() === "builder"}
+        fallback={<Operations />}
+      >
+        <div class="flex h-full min-h-0 flex-col">
+          <div class="flex items-center gap-3 border-b border-[var(--border)] px-3 py-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setGraphSurface("ops")}
+              data-testid="graph-builder-back"
+            >
+              Back
+            </Button>
+            <p class="text-sm font-medium">Build</p>
+          </div>
+          <div class="min-h-0 flex-1">
+            <GraphDesigner entry={builderEntry()} />
+          </div>
+        </div>
+      </Show>
+    );
+    const workspace = context.ui.registerWorkspaceView({
       id: "borg.graphs.operations",
       label: "Graphs",
       order: 20,
       placement: "primary",
-      component: createGraphOperations(context),
-    });
-    const workspace = context.ui.registerWorkspaceView({
-      id: "borg.graphs.designer",
-      label: "Designer",
-      order: 25,
-      placement: "primary",
-      component: GraphDesigner,
+      component: GraphsWorkspace,
     });
     const widget = context.ui.registerFlightDeckWidget({
       id: "borg.graphs.running",
@@ -2152,7 +2196,6 @@ export default defineUiPlugin<Component>({
         await settings.dispose();
         await widget.dispose();
         await workspace.dispose();
-        await operations.dispose();
       },
     };
   },

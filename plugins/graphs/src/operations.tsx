@@ -62,6 +62,10 @@ function isLive(status: GraphInstance["status"]): boolean {
 
 export function createGraphOperations(
   context: PluginUiContext<Component>,
+  options: {
+    readonly onBuild: () => void;
+    readonly onEdit: (graphId: string) => void;
+  },
 ): Component {
   return () => {
     const [definitions, setDefinitions] = createSignal<
@@ -205,11 +209,22 @@ export function createGraphOperations(
             <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
               Graphs
             </p>
-            <h2 class="mt-2 text-2xl font-semibold">Running workflows</h2>
-            <p class="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
-              Launch saved graphs and watch live instances. Build and test
-              definitions in Designer.
-            </p>
+            <div class="mt-2 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 class="text-2xl font-semibold">Running workflows</h2>
+                <p class="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+                  Launch saved graphs and watch live instances. Build a
+                  definition when you need a new workflow or a change.
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={() => options.onBuild()}
+                data-testid="graph-ops-build"
+              >
+                Build graph
+              </Button>
+            </div>
           </header>
 
           <Show when={error()}>
@@ -242,7 +257,7 @@ export function createGraphOperations(
                   fallback={
                     <EmptyState
                       title="No saved graphs"
-                      description="Open Designer to build a workflow, then launch it here."
+                      description="Build a workflow, then launch it from this list."
                       class="px-0 py-8"
                     />
                   }
@@ -261,6 +276,15 @@ export function createGraphOperations(
                             `${definition.nodes.length} steps · ${definition.mode}`}
                         </p>
                       </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => options.onEdit(definition.id)}
+                        data-testid={`graph-ops-edit-${definition.id}`}
+                      >
+                        Edit
+                      </Button>
                       <Button
                         type="button"
                         size="sm"

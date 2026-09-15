@@ -128,10 +128,9 @@ test("keeps focus while typing across chat, settings, and graphs", async () => {
 
   await test.step("graph fields", async () => {
     await page.getByTestId("nav-chat").click();
-    await page.getByTestId("workspace-view-tab-borg.graphs.designer").click();
-    await expect(page.getByTestId("workspace-view-tab-borg.graphs.designer")).toHaveText(
-      "Designer",
-    );
+    await page.getByTestId("workspace-view-tab-borg.graphs.operations").click();
+    await expect(page.getByTestId("graph-operations")).toBeVisible();
+    await page.getByTestId("graph-ops-build").click();
     await expect(page.getByTestId("graph-designer")).toBeVisible();
     await page.getByTestId("graph-create").click();
     await expectTypingKeepsFocus(page.getByTestId("graph-name"), "Q");

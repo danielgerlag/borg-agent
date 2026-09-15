@@ -102,10 +102,8 @@ async function openGraphsWorkspace(): Promise<void> {
 }
 
 async function openGraphDesigner(): Promise<void> {
-  const tab = page.getByTestId("workspace-view-tab-borg.graphs.designer");
-  await expect(tab).toBeVisible();
-  await expect(tab).toHaveText("Designer");
-  await tab.click();
+  await openGraphsWorkspace();
+  await page.getByTestId("graph-ops-build").click();
   await expect(page.getByTestId("graph-designer")).toBeVisible();
 }
 
@@ -427,8 +425,9 @@ test("keeps a feedback-gate graph pending while Borg is hidden", async () => {
     "Continue the Slice 5 graph?",
   );
   await seedGraph(graph);
-  await openGraphDesigner();
-  await page.getByTestId(`graph-list-item-${graph.id}`).click();
+  await openGraphsWorkspace();
+  await page.getByTestId(`graph-ops-edit-${graph.id}`).click();
+  await expect(page.getByTestId("graph-designer")).toBeVisible();
   await expect(page.getByTestId("graph-name")).toHaveValue(graph.name);
 
   await page.getByTestId("graph-run").click();
@@ -475,8 +474,9 @@ test("shows a visible graph failure when feedback is unavailable", async () => {
   });
   await rendererReloaded;
 
-  await openGraphDesigner();
-  await page.getByTestId(`graph-list-item-${graph.id}`).click();
+  await openGraphsWorkspace();
+  await page.getByTestId(`graph-ops-edit-${graph.id}`).click();
+  await expect(page.getByTestId("graph-designer")).toBeVisible();
   await expect(page.getByTestId("graph-name")).toHaveValue(graph.name);
   await page.getByTestId("graph-run").click();
 

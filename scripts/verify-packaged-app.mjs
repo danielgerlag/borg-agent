@@ -98,7 +98,8 @@ try {
   const page = await application.firstWindow();
   await page.waitForLoadState("domcontentloaded");
   await completeSetup(page);
-  await page.getByTestId("workspace-view-tab-borg.graphs.designer").click();
+  await page.getByTestId("workspace-view-tab-borg.graphs.operations").click();
+  await page.getByTestId("graph-ops-build").click();
   await page.getByTestId("graph-create").click();
   await page.getByTestId("graph-node-option-manual").waitFor();
   await page.screenshot({
