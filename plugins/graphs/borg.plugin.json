@@ -23,13 +23,14 @@
   ],
   "contributes": {
     "commands": [
+      "borg.graphs.assist",
       "borg.graphs.cancelInstance",
       "borg.graphs.deleteDefinition",
       "borg.graphs.getDefinition",
       "borg.graphs.getInstance",
       "borg.graphs.launch",
       "borg.graphs.listCatalog",
-    "borg.graphs.listContributions",
+      "borg.graphs.listContributions",
       "borg.graphs.listDefinitions",
       "borg.graphs.listInstances",
       "borg.graphs.listRunning",

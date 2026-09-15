@@ -337,6 +337,17 @@ test("launches a saved graph from the operational Graphs tab", async () => {
   );
 });
 
+test("opens AI Assist on a new graph from the builder", async () => {
+  await openGraphDesigner();
+  await expect(page.getByTestId("graph-assist-panel")).toBeVisible();
+  await page.getByTestId("graph-assist-prompt").fill("Echo hello then stop");
+  await expect(page.getByTestId("graph-assist-send")).toBeEnabled();
+  await page.getByTestId("graph-assist-close").click();
+  await expect(page.getByTestId("graph-assist-panel")).toHaveCount(0);
+  await page.getByTestId("graph-assist-toggle").click();
+  await expect(page.getByTestId("graph-assist-panel")).toBeVisible();
+});
+
 test("creates, renames, saves, and runs the default graph from the Designer", async () => {
   await openGraphDesigner();
   await page.getByTestId("graph-create").click();

@@ -9,6 +9,7 @@ import {
   graphInstanceStarted,
   graphInstanceUpdated,
   graphStepCompleted,
+  graphsAssist,
   graphsCancelInstance,
   graphsDeleteDefinition,
   graphsGetDefinition,
@@ -22,6 +23,9 @@ import {
   graphsSaveDefinition,
 } from "@borg/contracts";
 import { definePlugin, defineTool, z } from "@borg/plugin-sdk";
+import { randomUUID } from "node:crypto";
+import { generateAssistedGraph } from "./assist";
+import { builtInKinds } from "./kind-registry";
 import { GraphEngine } from "./executor";
 
 export default definePlugin({
@@ -47,6 +51,7 @@ export default definePlugin({
   ],
   contributes: {
     commands: [
+      graphsAssist.id,
       graphsCancelInstance.id,
       graphsDeleteDefinition.id,
       graphsGetDefinition.id,
@@ -152,6 +157,79 @@ export default definePlugin({
     context.bus.handle(graphsCancelInstance, async ({ instanceId }) => ({
       cancelled: await engine.cancel(instanceId),
     }));
+    context.bus.handle(graphsAssist, async ({ prompt, current }, signal) => {
+      const execution = await context.executions.bind({
+        mode: "root",
+        subject: { kind: "graph-assist", id: randomUUID() },
+        classification: "internal",
+        provenance: { kind: "plugin", id: "borg.graphs" },
+      });
+      let outcome: "completed" | "failed" = "failed";
+      try {
+        const kinds = [
+          ...builtInKinds.map(({ kind, label, type }) => ({
+            kind,
+            label,
+            type,
+          })),
+          ...context.graphs.listTriggers().map(({ kind, label }) => ({
+            kind,
+            label,
+            type: "trigger" as const,
+          })),
+          ...context.graphs.listSteps().map(({ kind, label, type }) => ({
+            kind,
+            label,
+            type,
+          })),
+        ];
+        const tools = context.tools.listCatalog().map((tool) => ({
+          id: tool.id,
+          description: tool.description,
+        }));
+        const personas = context.personas.list().map((persona) => ({
+          id: persona.id,
+          name: persona.name,
+        }));
+        const result = await generateAssistedGraph({
+          prompt,
+          ...(current !== undefined
+            ? { current: graphDefinitionSchema.parse(current) }
+            : {}),
+          kinds,
+          tools,
+          personas,
+          complete: async (messages) => {
+            const completion = await context.models.complete(
+              {
+                executionId: execution.id,
+                operationKey: `graph/assist/${execution.id}`,
+                personaId: context.personas.getDefault().id,
+                messages,
+              },
+              signal,
+            );
+            if (
+              completion.content === undefined ||
+              completion.content.length === 0
+            ) {
+              throw new Error("The model returned no graph");
+            }
+            return completion.content;
+          },
+        });
+        outcome = "completed";
+        return result;
+      } finally {
+        await execution.close({
+          outcome,
+          reason:
+            outcome === "completed"
+              ? "Graph assist completed"
+              : "Graph assist failed",
+        });
+      }
+    });
 
     context.bus.on(channelInboundMessage, (payload) =>
       engine.handleInboundMessage(payload),

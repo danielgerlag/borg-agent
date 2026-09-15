@@ -122,6 +122,7 @@ export function createGraphHarness(
     readonly triggers?: readonly GraphTriggerContribution[];
   },
 ) {
+  let completeContent = "model response";
   const securityRuntime = createSecurityRuntime();
   const handlers = new Map<string, CommandHandler>();
   const eventHandlers = new Map<string, Set<EventHandler>>();
@@ -458,7 +459,7 @@ export function createGraphHarness(
       complete: async () => ({
         providerId: "borg.mock-llm",
         modelId: "mock:scripted",
-        content: "model response",
+        content: completeContent,
         usage: { inputTokens: 1, outputTokens: 1 },
         replayed: false,
       }),
@@ -582,6 +583,9 @@ export function createGraphHarness(
     flush,
     runScheduled,
     finishLoop,
+    setCompleteContent: (content: string) => {
+      completeContent = content;
+    },
     handleCommand: (id: string, handler: CommandHandler): Disposable =>
       bus.handle({ id } as never, handler as never),
     invokeCommand: <T>(

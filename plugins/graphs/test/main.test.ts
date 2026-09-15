@@ -1,5 +1,6 @@
 import {
   channelInboundMessage,
+  graphsAssist,
   graphsListCatalog,
   graphsListInstances,
   graphsSaveDefinition,
@@ -95,6 +96,22 @@ describe("borg.graphs plugin", () => {
       output: { message: "launch this graph" },
     });
 
+    await harness.deactivate();
+  });
+
+  it("assists a graph definition from a model JSON reply", async () => {
+    const fixture = createGraphHarness();
+    const sample = linearDefinition({ id: "assisted-echo" });
+    fixture.setCompleteContent(
+      `Created the graph.\n\`\`\`json\n${JSON.stringify(sample)}\n\`\`\``,
+    );
+    const harness = await createTestHarness(graphsPlugin, fixture.context);
+    const result = await fixture.invokeCommand<{
+      definition: GraphDefinition;
+      summary: string;
+    }>(graphsAssist, { prompt: "Echo hello then end" });
+    expect(result.definition.id).toBe("assisted-echo");
+    expect(result.summary).toContain("Created the graph.");
     await harness.deactivate();
   });
 });

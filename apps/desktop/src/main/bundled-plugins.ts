@@ -571,6 +571,7 @@ export const bundledMainPlugins: readonly PluginSource[] = [
       ],
       "contributes": {
         "commands": [
+          "borg.graphs.assist",
           "borg.graphs.cancelInstance",
           "borg.graphs.deleteDefinition",
           "borg.graphs.getDefinition",

@@ -1923,6 +1923,23 @@ export const graphsCancelInstance = defineCommand({
   output: z.object({ cancelled: z.boolean() }).strict(),
 });
 
+export const graphsAssist = defineCommand({
+  id: "borg.graphs.assist",
+  input: z
+    .object({
+      prompt: z.string().trim().min(1).max(8_000),
+      current: graphDefinitionSchema.optional(),
+    })
+    .strict(),
+  output: z
+    .object({
+      definition: graphDefinitionSchema,
+      summary: z.string().min(1).max(4_000),
+    })
+    .strict(),
+  timeoutMs: 120_000,
+});
+
 export const graphDefinitionSaved = defineEvent({
   id: "borg.graphs.definition.saved",
   payload: z.object({ definition: graphDefinitionSchema }).strict(),

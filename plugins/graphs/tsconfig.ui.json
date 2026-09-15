@@ -22,6 +22,7 @@
     "src/field-renderer.tsx",
     "src/node-inspector.tsx",
     "src/launch-dialog.tsx",
-    "src/operations.tsx"
+    "src/operations.tsx",
+    "src/assist-panel.tsx"
   ]
 }

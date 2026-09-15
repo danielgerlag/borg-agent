@@ -7,6 +7,7 @@ import {
   graphInstanceStarted,
   graphInstanceUpdated,
   graphStepCompleted,
+  graphsAssist,
   graphsDeleteDefinition,
   graphsLaunch,
   graphsListCatalog,
@@ -53,6 +54,7 @@ import {
   defaultConfig,
   formatKind,
 } from "./kind-registry";
+import AssistPanel from "./assist-panel";
 import LaunchDialog from "./launch-dialog";
 import NodeInspector from "./node-inspector";
 import { createGraphOperations } from "./operations";
@@ -70,6 +72,7 @@ import {
   Play,
   Plus,
   Save,
+  Sparkles,
   Trash2,
   Workflow,
 } from "lucide-solid";
@@ -409,6 +412,11 @@ export default defineUiPlugin<Component>({
       const [running, setRunning] = createSignal(false);
       const [isNewDefinition, setIsNewDefinition] = createSignal(false);
       const [dirty, setDirty] = createSignal(false);
+      const [assistOpen, setAssistOpen] = createSignal(props.entry === "new");
+      const [assistPrompt, setAssistPrompt] = createSignal("");
+      const [assistLoading, setAssistLoading] = createSignal(false);
+      const [assistResponse, setAssistResponse] = createSignal("");
+      const [assistError, setAssistError] = createSignal<string>();
       const selectedNode = createMemo(() =>
         draft()?.nodes.find(({ id }) => id === selectedNodeId()),
       );
@@ -1128,6 +1136,42 @@ export default defineUiPlugin<Component>({
         void refreshRunning();
       };
 
+      const sendAssist = async (promptOverride?: string): Promise<void> => {
+        const prompt = (promptOverride ?? assistPrompt()).trim();
+        if (!prompt || assistLoading()) {
+          return;
+        }
+        setAssistLoading(true);
+        setAssistError(undefined);
+        try {
+          const current = draft();
+          const result = await context.bus.invoke(graphsAssist, {
+            prompt,
+            ...(current !== undefined ? { current } : {}),
+          });
+          if (!active) {
+            return;
+          }
+          const wasNew = isNewDefinition();
+          selectDefinition(result.definition, wasNew);
+          setDirty(true);
+          setAssistResponse((previous) => {
+            const block = `> ${prompt}\n\n${result.summary}`;
+            return previous.length > 0 ? `${previous}\n\n${block}` : block;
+          });
+          setAssistPrompt("");
+          setOperationStatus("AI Assist updated the canvas.");
+        } catch (failure) {
+          if (active) {
+            setAssistError(describeError(failure));
+          }
+        } finally {
+          if (active) {
+            setAssistLoading(false);
+          }
+        }
+      };
+
       const run = async (): Promise<void> => {
         if (running()) {
           return;
@@ -1366,6 +1410,17 @@ export default defineUiPlugin<Component>({
                           type="button"
                           variant="secondary"
                           size="sm"
+                          disabled={saving() || running() || assistLoading()}
+                          onClick={() => setAssistOpen((open) => !open)}
+                          data-testid="graph-assist-toggle"
+                        >
+                          <Sparkles aria-hidden="true" size={15} />
+                          AI Assist
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
                           disabled={saving() || running()}
                           onClick={() => void save()}
                           data-testid="graph-save"
@@ -1400,6 +1455,22 @@ export default defineUiPlugin<Component>({
                         · Drag steps to arrange · Scroll to zoom
                       </div>
                     </div>
+                    <Show when={assistOpen()}>
+                      <AssistPanel
+                        prompt={assistPrompt()}
+                        loading={assistLoading()}
+                        response={assistResponse()}
+                        error={assistError()}
+                        onPromptChange={setAssistPrompt}
+                        onSend={(prompt) => void sendAssist(prompt)}
+                        onClose={() => setAssistOpen(false)}
+                        onNewConversation={() => {
+                          setAssistResponse("");
+                          setAssistError(undefined);
+                          setAssistPrompt("");
+                        }}
+                      />
+                    </Show>
 
                     <footer class="border-t border-[var(--border)] bg-[var(--panel-muted)]/25 px-5 py-2.5">
                       <Show when={error()}>
