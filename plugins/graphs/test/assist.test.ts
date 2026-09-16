@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AssistAskGate,
   applyAnswer,
   buildAssistMessages,
   extractJsonValue,
@@ -223,6 +224,29 @@ describe("graph AI assist", () => {
     }
     expect(result.definition.id).toBe("echo-hello");
     expect(result.definition).not.toHaveProperty("notes");
+  });
+
+  it("parks ask_user until answer, then completes", async () => {
+    const gate = new AssistAskGate();
+    const question = {
+      id: crypto.randomUUID(),
+      text: "What shape?",
+      choices: [{ id: "linear", label: "Linear" }],
+      allowFreeform: true,
+      multiSelect: false,
+    };
+    const asked = gate.ask(question);
+    const waiting = await gate.wait();
+    expect(waiting.kind).toBe("question");
+    if (waiting.kind !== "question") {
+      return;
+    }
+    expect(waiting.question.id).toBe(question.id);
+    gate.answer(question.id, "Linear");
+    await expect(asked).resolves.toBe("Linear");
+    gate.complete('{"id":"done"}');
+    const done = await gate.wait();
+    expect(done).toEqual({ kind: "done", output: '{"id":"done"}' });
   });
 
   it("rejects applyAnswer for an unknown questionId", () => {

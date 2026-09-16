@@ -1974,6 +1974,12 @@ export const graphsAssist = defineCommand({
           });
         }
       }),
+    z
+      .object({
+        kind: z.literal("cancel"),
+        sessionId: z.string().uuid(),
+      })
+      .strict(),
   ]),
   output: z.discriminatedUnion("kind", [
     z
@@ -1990,6 +1996,12 @@ export const graphsAssist = defineCommand({
         sessionId: z.string().uuid(),
         summary: z.string().min(1).max(4_000),
         definition: graphDefinitionSchema,
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("cancelled"),
+        sessionId: z.string().uuid(),
       })
       .strict(),
   ]),

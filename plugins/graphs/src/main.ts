@@ -21,20 +21,25 @@ import {
   graphsListInstances,
   graphsListRunning,
   graphsSaveDefinition,
+  modelOperationPrefixSchema,
   type AssistQuestion,
   type GraphDefinition,
-  type ModelMessage,
+  type LoopEvent,
 } from "@borg/contracts";
-import { definePlugin, defineTool, z } from "@borg/plugin-sdk";
+import {
+  definePlugin,
+  defineTool,
+  z,
+  type ExecutionBinding,
+} from "@borg/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import {
-  applyAnswer,
-  buildAssistMessages,
-  createAssistSessions,
-  formatAssistUserContent,
-  generateAssistedTurn,
-  withCurrentGraph,
-  type AssistSession,
+  AssistAskGate,
+  GRAPH_ASK_USER_TOOL_ID,
+  buildAssistLoopPrompt,
+  formatAssistAnswer,
+  parseAskUser,
+  parseAssistedTurn,
 } from "./assist";
 import { builtInKinds } from "./kind-registry";
 import { GraphEngine } from "./executor";
@@ -98,7 +103,38 @@ export default definePlugin({
   },
   async activate(context) {
     const engine = new GraphEngine(context);
-    const assistSessions = createAssistSessions();
+    type LiveAssist = {
+      readonly id: string;
+      readonly execution: ExecutionBinding;
+      readonly runId: string;
+      readonly gate: AssistAskGate;
+      readonly loopUnsubscribe: { dispose(): void };
+      current?: GraphDefinition;
+      fallbackQuestion?: AssistQuestion;
+    };
+    const liveAssists = new Map<string, LiveAssist>();
+    const liveByRunId = new Map<string, LiveAssist>();
+    let attaching:
+      | {
+          readonly id: string;
+          readonly execution: ExecutionBinding;
+          readonly gate: AssistAskGate;
+          readonly current?: GraphDefinition;
+        }
+      | undefined;
+
+    const closeLive = async (
+      session: LiveAssist,
+      outcome: "completed" | "failed" | "cancelled",
+      reason: string,
+    ): Promise<void> => {
+      liveAssists.delete(session.id);
+      liveByRunId.delete(session.runId);
+      session.loopUnsubscribe.dispose();
+      context.loops.cancel(session.runId);
+      session.gate.fail(reason);
+      await session.execution.close({ outcome, reason });
+    };
 
     context.bus.handle(graphsSaveDefinition, async ({ definition }) => ({
       definition: await engine.saveDefinition(definition),
@@ -169,189 +205,296 @@ export default definePlugin({
     context.bus.handle(graphsCancelInstance, async ({ instanceId }) => ({
       cancelled: await engine.cancel(instanceId),
     }));
-    context.bus.handle(graphsAssist, async (input, signal) => {
+    const catalogContext = () => ({
+      kinds: [
+        ...builtInKinds.map(({ kind, label, type }) => ({
+          kind,
+          label,
+          type,
+        })),
+        ...context.graphs.listTriggers().map(({ kind, label }) => ({
+          kind,
+          label,
+          type: "trigger" as const,
+        })),
+        ...context.graphs.listSteps().map(({ kind, label, type }) => ({
+          kind,
+          label,
+          type,
+        })),
+      ],
+      tools: context.tools.listCatalog().map((tool) => ({
+        id: tool.id,
+        description: tool.description,
+      })),
+      personas: context.personas.list().map((persona) => ({
+        id: persona.id,
+        name: persona.name,
+      })),
+    });
+
+    const turnFromState = async (
+      session: LiveAssist,
+    ): Promise<
+      | {
+          kind: "question";
+          sessionId: string;
+          summary: string;
+          question: AssistQuestion;
+        }
+      | {
+          kind: "graph";
+          sessionId: string;
+          summary: string;
+          definition: GraphDefinition;
+        }
+    > => {
+      const state = await session.gate.wait();
+      if (state.kind === "question") {
+        return {
+          kind: "question",
+          sessionId: session.id,
+          summary: state.question.text,
+          question: state.question,
+        };
+      }
+      if (state.kind === "failed") {
+        await closeLive(session, "failed", state.error);
+        throw new Error(state.error);
+      }
+      const turn = parseAssistedTurn(state.output, session.current);
+      if (turn.kind === "question") {
+        session.fallbackQuestion = turn.question;
+        return {
+          kind: "question",
+          sessionId: session.id,
+          summary: turn.summary,
+          question: turn.question,
+        };
+      }
+      await closeLive(session, "completed", "Graph assist completed");
+      return {
+        kind: "graph",
+        sessionId: session.id,
+        summary: turn.summary,
+        definition: turn.definition,
+      };
+    };
+
+    const startAssistLoop = async (
+      sessionId: string,
+      prompt: string,
+      current: GraphDefinition | undefined,
+    ): Promise<LiveAssist> => {
       const execution = await context.executions.bind({
         mode: "root",
-        subject: { kind: "graph-assist", id: randomUUID() },
+        subject: { kind: "graph-assist", id: sessionId },
         classification: "internal",
         provenance: { kind: "plugin", id: "borg.graphs" },
       });
-      let outcome: "completed" | "failed" = "failed";
+      const gate = new AssistAskGate();
+      attaching = {
+        id: sessionId,
+        execution,
+        gate,
+        ...(current !== undefined ? { current } : {}),
+      };
+      let snapshot;
       try {
-        const kinds = [
-          ...builtInKinds.map(({ kind, label, type }) => ({
-            kind,
-            label,
-            type,
-          })),
-          ...context.graphs.listTriggers().map(({ kind, label }) => ({
-            kind,
-            label,
-            type: "trigger" as const,
-          })),
-          ...context.graphs.listSteps().map(({ kind, label, type }) => ({
-            kind,
-            label,
-            type,
-          })),
-        ];
-        const tools = context.tools.listCatalog().map((tool) => ({
-          id: tool.id,
-          description: tool.description,
-        }));
-        const personas = context.personas.list().map((persona) => ({
-          id: persona.id,
-          name: persona.name,
-        }));
-        const parsedCurrent =
-          input.current !== undefined
-            ? graphDefinitionSchema.parse(input.current)
-            : undefined;
-        let completeIndex = 0;
-        const complete = async (
-          messages: readonly ModelMessage[],
-        ): Promise<string> => {
-          completeIndex += 1;
-          const completion = await context.models.complete(
-            {
-              executionId: execution.id,
-              operationKey: `graph/assist/${execution.id}/${completeIndex}`,
-              personaId: context.personas.getDefault().id,
-              messages,
-            },
-            signal,
-          );
-          if (
-            completion.content === undefined ||
-            completion.content.length === 0
-          ) {
-            throw new Error("The model returned no graph");
-          }
-          return completion.content;
-        };
-        const runTurn = async (
-          session: AssistSession,
-          current: GraphDefinition | undefined,
-        ): Promise<
-          | {
-              kind: "question";
-              sessionId: string;
-              summary: string;
-              question: AssistQuestion;
-            }
-          | {
-              kind: "graph";
-              sessionId: string;
-              summary: string;
-              definition: GraphDefinition;
-            }
-        > => {
-          const generated = await generateAssistedTurn({
-            messages: session.messages,
+        snapshot = await context.loops.start({
+          prompt: buildAssistLoopPrompt({
+            prompt,
             ...(current !== undefined ? { current } : {}),
-            kinds,
-            tools,
-            personas,
-            complete,
-          });
-          const turn = generated.turn;
-          const messages: ModelMessage[] = [
-            ...session.messages,
-            { role: "assistant", content: generated.raw },
-          ];
-          if (turn.kind === "question") {
-            assistSessions.save({
-              id: session.id,
-              messages,
-              pendingQuestion: turn.question,
-            });
-            return {
-              kind: "question",
-              sessionId: session.id,
-              summary: turn.summary,
-              question: turn.question,
-            };
+            ...catalogContext(),
+          }),
+          personaId: context.personas.getDefault().id,
+          allowedTools: [GRAPH_ASK_USER_TOOL_ID],
+          security: {
+            kind: "bound",
+            executionId: execution.id,
+            operationPrefix: modelOperationPrefixSchema.parse(
+              `graph/assist/${execution.id}`,
+            ),
+          },
+        });
+      } finally {
+        attaching = undefined;
+      }
+      const attachFinal = (event: LoopEvent): void => {
+        if (event.type === "final") {
+          gate.complete(event.output);
+          return;
+        }
+        if (event.type === "failed") {
+          gate.fail(event.error);
+          return;
+        }
+        if (event.type === "state" && event.status === "completed") {
+          const run = context.loops.get(snapshot.id);
+          if (run?.output !== undefined) {
+            gate.complete(run.output);
           }
-          assistSessions.save({
-            id: session.id,
-            messages,
-          });
-          return {
-            kind: "graph",
-            sessionId: session.id,
-            summary: turn.summary,
-            definition: turn.definition,
-          };
-        };
-        if (input.kind === "prompt") {
-          const existing =
-            input.sessionId !== undefined
-              ? assistSessions.get(input.sessionId)
-              : undefined;
-          if (existing !== undefined && existing.pendingQuestion !== undefined) {
+        }
+        if (
+          event.type === "state" &&
+          (event.status === "failed" || event.status === "cancelled")
+        ) {
+          const run = context.loops.get(snapshot.id);
+          gate.fail(run?.error ?? `Assist ${event.status}`);
+        }
+      };
+      const existing = context.loops.get(snapshot.id);
+      if (existing?.status === "completed" && existing.output !== undefined) {
+        gate.complete(existing.output);
+      }
+      if (
+        existing?.status === "failed" ||
+        existing?.status === "cancelled"
+      ) {
+        gate.fail(existing.error ?? `Assist ${existing.status}`);
+      }
+      const loopUnsubscribe = context.loops.subscribe(
+        snapshot.id,
+        attachFinal,
+      );
+      const session: LiveAssist = {
+        id: sessionId,
+        execution,
+        runId: snapshot.id,
+        gate,
+        loopUnsubscribe,
+        ...(current !== undefined ? { current } : {}),
+      };
+      liveAssists.set(sessionId, session);
+      liveByRunId.set(snapshot.id, session);
+      return session;
+    };
+
+    context.bus.handle(graphsAssist, async (input) => {
+      if (input.kind === "cancel") {
+        const session = liveAssists.get(input.sessionId);
+        if (session !== undefined) {
+          await closeLive(
+            session,
+            "cancelled",
+            "Graph assist cancelled",
+          );
+        }
+        return { kind: "cancelled" as const, sessionId: input.sessionId };
+      }
+      const parsedCurrent =
+        input.current !== undefined
+          ? graphDefinitionSchema.parse(input.current)
+          : undefined;
+      if (input.kind === "prompt") {
+        const existing =
+          input.sessionId !== undefined
+            ? liveAssists.get(input.sessionId)
+            : undefined;
+        if (existing !== undefined) {
+          const pending = existing.gate.snapshot();
+          if (
+            pending.kind === "question" ||
+            existing.fallbackQuestion !== undefined
+          ) {
             throw new Error("Answer the current question first");
           }
-          const session: AssistSession =
-            existing === undefined
-              ? {
-                  id: input.sessionId ?? randomUUID(),
-                  messages: buildAssistMessages({
-                    prompt: input.prompt,
-                    ...(parsedCurrent !== undefined
-                      ? { current: parsedCurrent }
-                      : {}),
-                    kinds,
-                    tools,
-                    personas,
-                  }),
-                }
-              : {
-                  id: existing.id,
-                  messages: [
-                    ...existing.messages,
-                    {
-                      role: "user",
-                      content:
-                        parsedCurrent === undefined
-                          ? formatAssistUserContent(input.prompt)
-                          : formatAssistUserContent(
-                              input.prompt,
-                              parsedCurrent,
-                            ),
-                    },
-                  ],
-                };
-          const result = await runTurn(session, parsedCurrent);
-          outcome = "completed";
-          return result;
+          await closeLive(
+            existing,
+            "cancelled",
+            "Graph assist replaced",
+          );
         }
-        const existing = assistSessions.get(input.sessionId);
-        if (existing === undefined) {
-          throw new Error("Unknown assist session");
-        }
-        let session = applyAnswer(existing, {
-          questionId: input.questionId,
-          ...(input.text !== undefined ? { text: input.text } : {}),
-          ...(input.choiceIds !== undefined
-            ? { choiceIds: input.choiceIds }
-            : {}),
-        });
-        if (parsedCurrent !== undefined) {
-          session = withCurrentGraph(session, parsedCurrent);
-        }
-        const result = await runTurn(session, parsedCurrent);
-        outcome = "completed";
-        return result;
-      } finally {
-        await execution.close({
-          outcome,
-          reason:
-            outcome === "completed"
-              ? "Graph assist completed"
-              : "Graph assist failed",
-        });
+        const session = await startAssistLoop(
+          input.sessionId ?? randomUUID(),
+          input.prompt,
+          parsedCurrent,
+        );
+        return turnFromState(session);
       }
+      const session = liveAssists.get(input.sessionId);
+      if (session === undefined) {
+        throw new Error("Unknown assist session");
+      }
+      if (parsedCurrent !== undefined) {
+        session.current = parsedCurrent;
+      }
+      const parked = session.gate.snapshot();
+      const question =
+        parked.kind === "question"
+          ? parked.question
+          : session.fallbackQuestion;
+      if (question === undefined) {
+        throw new Error("Unknown assist question");
+      }
+      const spoken = formatAssistAnswer(question, {
+        questionId: input.questionId,
+        ...(input.text !== undefined ? { text: input.text } : {}),
+        ...(input.choiceIds !== undefined
+          ? { choiceIds: input.choiceIds }
+          : {}),
+      });
+      if (parked.kind === "question") {
+        session.gate.answer(input.questionId, spoken);
+        return turnFromState(session);
+      }
+      await closeLive(session, "completed", "Graph assist continued");
+      const continued = await startAssistLoop(
+        input.sessionId,
+        `The user answered:\n${spoken}\n\nContinue authoring the graph.`,
+        parsedCurrent ?? session.current,
+      );
+      return turnFromState(continued);
     });
+
+    context.tools.register(
+      defineTool({
+        id: GRAPH_ASK_USER_TOOL_ID,
+        description:
+          "Ask the user a clarifying question with optional choices while authoring a graph",
+        input: z
+          .object({
+            question: z.string().trim().min(1).max(2_000),
+            choices: z.array(z.string().trim().min(1)).max(8).optional(),
+            allow_freeform: z.boolean().optional(),
+            multi_select: z.boolean().optional(),
+          })
+          .strict(),
+        output: z.object({ answer: z.string().min(1) }).strict(),
+        approval: "auto",
+        sideEffect: false,
+        execute: async (input, execution) => {
+          const runId = execution.runId;
+          const session =
+            (runId !== undefined ? liveByRunId.get(runId) : undefined) ??
+            (attaching !== undefined
+              ? {
+                  id: attaching.id,
+                  execution: attaching.execution,
+                  runId: runId ?? attaching.id,
+                  gate: attaching.gate,
+                  loopUnsubscribe: { dispose() {} },
+                  ...(attaching.current !== undefined
+                    ? { current: attaching.current }
+                    : {}),
+                }
+              : undefined);
+          if (session === undefined) {
+            throw new Error("Graph assist is not waiting for a question");
+          }
+          if (runId !== undefined) {
+            liveByRunId.set(runId, session);
+            liveAssists.set(session.id, session);
+          }
+          const question = parseAskUser(input);
+          if (question === undefined) {
+            throw new Error("graphs.ask input was invalid");
+          }
+          const answer = await session.gate.ask(question);
+          return { answer };
+        },
+      }),
+    );
 
     context.bus.on(channelInboundMessage, (payload) =>
       engine.handleInboundMessage(payload),
@@ -423,7 +566,14 @@ export default definePlugin({
 
     await engine.initialize();
     return {
-      dispose: () => engine.dispose(),
+      dispose: async () => {
+        await Promise.all(
+          [...liveAssists.values()].map((session) =>
+            closeLive(session, "cancelled", "Graph assist disposed"),
+          ),
+        );
+        engine.dispose();
+      },
     };
   },
 });

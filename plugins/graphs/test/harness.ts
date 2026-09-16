@@ -149,6 +149,14 @@ export function createGraphHarness(
     string,
     Set<(event: LoopEvent) => void | Promise<void>>
   >();
+  let loopAskUser:
+    | {
+        readonly question: string;
+        readonly choices?: readonly string[];
+        readonly allow_freeform?: boolean;
+        readonly multi_select?: boolean;
+      }
+    | undefined;
   const startLoop = vi.fn(
     async (input: LoopStartInput): Promise<LoopRunSnapshot> => {
       const now = new Date().toISOString();
@@ -169,6 +177,27 @@ export function createGraphHarness(
         updatedAt: now,
       };
       runs.set(snapshot.id, snapshot);
+      const ask = loopAskUser;
+      loopAskUser = undefined;
+      const assistLoop =
+        ask !== undefined ||
+        input.allowedTools?.includes("graphs.ask") === true;
+      if (assistLoop) {
+        void Promise.resolve().then(async () => {
+          if (ask !== undefined) {
+            const tool = registeredTools.get("graphs.ask");
+            if (tool === undefined) {
+              throw new Error("graphs.ask is unregistered");
+            }
+            await tool.execute(ask, {
+              toolCallId: "graph-assist-ask",
+              runId: snapshot.id,
+              signal: new AbortController().signal,
+            });
+          }
+          await finishLoop(snapshot.id, completeContent);
+        });
+      }
       return snapshot;
     },
   );
@@ -555,15 +584,26 @@ export function createGraphHarness(
       output,
       updatedAt: new Date().toISOString(),
     });
-    const event: LoopEvent = {
-      type: "state",
-      runId,
-      status: "completed",
-      timestamp: new Date().toISOString(),
-    };
+    const timestamp = new Date().toISOString();
+    const subscribers = [...(runSubscribers.get(runId) ?? [])];
     await Promise.all(
-      [...(runSubscribers.get(runId) ?? [])].map(async (handler) =>
-        handler(event),
+      subscribers.map(async (handler) =>
+        handler({
+          type: "final",
+          runId,
+          output,
+          timestamp,
+        }),
+      ),
+    );
+    await Promise.all(
+      subscribers.map(async (handler) =>
+        handler({
+          type: "state",
+          runId,
+          status: "completed",
+          timestamp,
+        }),
       ),
     );
   };
@@ -585,6 +625,16 @@ export function createGraphHarness(
     finishLoop,
     setCompleteContent: (content: string) => {
       completeContent = content;
+    },
+    setLoopAskUser: (
+      input: {
+        readonly question: string;
+        readonly choices?: readonly string[];
+        readonly allow_freeform?: boolean;
+        readonly multi_select?: boolean;
+      },
+    ) => {
+      loopAskUser = input;
     },
     handleCommand: (id: string, handler: CommandHandler): Disposable =>
       bus.handle({ id } as never, handler as never),

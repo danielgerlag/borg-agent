@@ -79,8 +79,14 @@ describe("borg.graphs plugin", () => {
       tools: { id: string; description: string; inputSchema: unknown }[];
     }>(graphsListCatalog, {});
     expect(catalog.tools.map(({ id }) => id).sort()).toEqual(
-      ["graphs.inspect", "graphs.list", "graphs.run"].sort(),
+      [
+        "graphs.ask",
+        "graphs.inspect",
+        "graphs.list",
+        "graphs.run",
+      ].sort(),
     );
+    expect("graphs.ask").toMatch(/^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/);
 
     expect(listed.instances).toHaveLength(1);
     expect(listed.instances[0]).toMatchObject({
@@ -199,6 +205,40 @@ describe("borg.graphs plugin", () => {
     }
     expect(graph.sessionId).toBe(question.sessionId);
     expect(graph.definition.id).toBe("assisted-echo");
+    await harness.deactivate();
+  });
+
+  it("asks through the graphs.ask tool then returns a graph", async () => {
+    const fixture = createGraphHarness();
+    const sample = linearDefinition({ id: "tool-asked-graph" });
+    fixture.setLoopAskUser({
+      question: "Linear or branching?",
+      choices: ["Linear", "Branching"],
+    });
+    fixture.setCompleteContent(
+      `Created the graph.\n\`\`\`json\n${JSON.stringify(sample)}\n\`\`\``,
+    );
+    const harness = await createTestHarness(graphsPlugin, fixture.context);
+    const question = await fixture.invokeCommand<{
+      kind: "question" | "graph";
+      sessionId: string;
+      question?: { id: string; text: string; choices: { id: string }[] };
+    }>(graphsAssist, { kind: "prompt", prompt: "Build a watcher" });
+    expect(question.kind).toBe("question");
+    expect(question.question?.text).toBe("Linear or branching?");
+    const choiceId = question.question?.choices[0]?.id;
+    expect(choiceId).toBe("linear");
+    const graph = await fixture.invokeCommand<{
+      kind: "question" | "graph";
+      definition?: GraphDefinition;
+    }>(graphsAssist, {
+      kind: "answer",
+      sessionId: question.sessionId,
+      questionId: question.question?.id ?? "",
+      choiceIds: [choiceId ?? ""],
+    });
+    expect(graph.kind).toBe("graph");
+    expect(graph.definition?.id).toBe("tool-asked-graph");
     await harness.deactivate();
   });
 });

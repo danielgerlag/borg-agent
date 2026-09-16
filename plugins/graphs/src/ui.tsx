@@ -1155,6 +1155,9 @@ export default defineUiPlugin<Component>({
         spoken: string,
       ): void => {
         setAssistSessionId(result.sessionId);
+        if (result.kind === "cancelled") {
+          return;
+        }
         if (result.kind === "question") {
           setPendingQuestion(result.question);
           setAssistResponse((previous) =>
@@ -1558,6 +1561,13 @@ export default defineUiPlugin<Component>({
                         onAnswer={(answer) => void answerAssist(answer)}
                         onClose={() => setAssistOpen(false)}
                         onNewConversation={() => {
+                          const sessionId = assistSessionId();
+                          if (sessionId !== undefined) {
+                            void context.bus.invoke(graphsAssist, {
+                              kind: "cancel",
+                              sessionId,
+                            });
+                          }
                           setAssistSessionId(undefined);
                           setPendingQuestion(undefined);
                           setAssistResponse("");

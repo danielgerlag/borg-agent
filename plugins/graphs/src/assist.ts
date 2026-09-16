@@ -11,6 +11,8 @@ import { builtInKinds } from "./kind-registry";
 
 export type { AssistChoice, AssistQuestion } from "@borg/contracts";
 
+export const GRAPH_ASK_USER_TOOL_ID = "graphs.ask";
+
 export interface AssistKind {
   readonly kind: string;
   readonly label: string;
@@ -153,11 +155,11 @@ export function buildAssistMessages(options: {
   const system = `You are Borg's graph authoring assistant. Reply with a short summary and one JSON object.
 
 Rules:
-- If the request is underspecified, ask 1–2 structural questions with choices instead of guessing
+- If the request is underspecified, call the ${GRAPH_ASK_USER_TOOL_ID} tool with 1–2 structural questions and choices instead of guessing
 - Do not emit a graph until enough is known
-- To ask the user, emit JSON inside a \`\`\`json fence: { "ask_user": { "question": string, "choices": string[], "allow_freeform": boolean, "multi_select": boolean } }
+- graphs.ask arguments: { "question": string, "choices": string[], "allow_freeform": boolean, "multi_select": boolean }
 - allow_freeform defaults to true. multi_select defaults to false
-- When you know enough, emit a GraphDefinition JSON object inside a \`\`\`json fence after the summary
+- When you know enough, emit a GraphDefinition JSON object inside a \`\`\`json fence after the summary. Do not call a tool for the graph itself
 - engineId must be "${GRAPH_ENGINE_ID}"
 - id is lowercase kebab-case starting with a letter
 - version is like 1.0.0
@@ -281,7 +283,7 @@ function parseChoices(value: unknown): { id: string; label: string }[] | undefin
   return choices;
 }
 
-function parseAskUser(value: unknown): AssistQuestion | undefined {
+export function parseAskUser(value: unknown): AssistQuestion | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
@@ -303,7 +305,7 @@ function parseAskUser(value: unknown): AssistQuestion | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
-function parseAssistedTurn(
+export function parseAssistedTurn(
   text: string,
   current: GraphDefinition | undefined,
 ): AssistTurn {
@@ -385,27 +387,26 @@ export async function generateAssistedTurn(options: {
   }
 }
 
-export function applyAnswer(
-  session: AssistSession,
+export function formatAssistAnswer(
+  question: AssistQuestion,
   answer: {
     readonly questionId: string;
     readonly text?: string;
     readonly choiceIds?: readonly string[];
   },
-): AssistSession {
-  const pending = session.pendingQuestion;
-  if (pending === undefined || pending.id !== answer.questionId) {
+): string {
+  if (question.id !== answer.questionId) {
     throw new Error("Unknown assist question");
   }
   const selectedIds = answer.choiceIds === undefined ? [] : [...answer.choiceIds];
-  if (!pending.multiSelect && selectedIds.length > 1) {
+  if (!question.multiSelect && selectedIds.length > 1) {
     throw new Error("This question allows only one choice");
   }
-  if (!pending.allowFreeform && selectedIds.length === 0) {
+  if (!question.allowFreeform && selectedIds.length === 0) {
     throw new Error("This question requires a choice");
   }
   const labelsById = new Map<string, string>();
-  for (const choice of pending.choices) {
+  for (const choice of question.choices) {
     labelsById.set(choice.id, choice.label);
   }
   const labels: string[] = [];
@@ -428,10 +429,140 @@ export function applyAnswer(
   if (parts.length === 0) {
     throw new Error("Answer requires text or a choice");
   }
+  return parts.join("\n");
+}
+
+export function applyAnswer(
+  session: AssistSession,
+  answer: {
+    readonly questionId: string;
+    readonly text?: string;
+    readonly choiceIds?: readonly string[];
+  },
+): AssistSession {
+  const pending = session.pendingQuestion;
+  if (pending === undefined) {
+    throw new Error("Unknown assist question");
+  }
   return {
     id: session.id,
-    messages: [...session.messages, { role: "user", content: parts.join("\n") }],
+    messages: [
+      ...session.messages,
+      { role: "user", content: formatAssistAnswer(pending, answer) },
+    ],
   };
+}
+
+export type AssistAskState =
+  | { readonly kind: "running" }
+  | { readonly kind: "question"; readonly question: AssistQuestion }
+  | { readonly kind: "done"; readonly output: string }
+  | { readonly kind: "failed"; readonly error: string };
+
+export class AssistAskGate {
+  #pending:
+    | {
+        readonly question: AssistQuestion;
+        readonly resolve: (answer: string) => void;
+        readonly reject: (error: Error) => void;
+      }
+    | undefined;
+  #waiters = new Set<(state: AssistAskState) => void>();
+  #terminal:
+    | { readonly kind: "done"; readonly output: string }
+    | { readonly kind: "failed"; readonly error: string }
+    | undefined;
+
+  snapshot(): AssistAskState {
+    if (this.#pending) {
+      return { kind: "question", question: this.#pending.question };
+    }
+    if (this.#terminal) {
+      return this.#terminal;
+    }
+    return { kind: "running" };
+  }
+
+  ask(question: AssistQuestion): Promise<string> {
+    if (this.#pending !== undefined) {
+      return Promise.reject(new Error("Already asking"));
+    }
+    if (this.#terminal !== undefined) {
+      return Promise.reject(new Error("Assist run is finished"));
+    }
+    return new Promise((resolve, reject) => {
+      this.#pending = { question, resolve, reject };
+      this.#notify();
+    });
+  }
+
+  answer(questionId: string, text: string): void {
+    const pending = this.#pending;
+    if (pending === undefined || pending.question.id !== questionId) {
+      throw new Error("Unknown assist question");
+    }
+    this.#pending = undefined;
+    pending.resolve(text);
+    this.#notify();
+  }
+
+  complete(output: string): void {
+    if (this.#terminal !== undefined) {
+      return;
+    }
+    this.#terminal = { kind: "done", output };
+    const pending = this.#pending;
+    this.#pending = undefined;
+    pending?.reject(new Error("Assist run completed"));
+    this.#notify();
+  }
+
+  fail(error: string): void {
+    if (this.#terminal !== undefined) {
+      return;
+    }
+    this.#terminal = { kind: "failed", error };
+    const pending = this.#pending;
+    this.#pending = undefined;
+    pending?.reject(new Error(error));
+    this.#notify();
+  }
+
+  wait(): Promise<Exclude<AssistAskState, { kind: "running" }>> {
+    const now = this.snapshot();
+    if (now.kind !== "running") {
+      return Promise.resolve(now);
+    }
+    return new Promise((resolve) => {
+      const handler = (state: AssistAskState): void => {
+        if (state.kind === "running") {
+          return;
+        }
+        this.#waiters.delete(handler);
+        resolve(state);
+      };
+      this.#waiters.add(handler);
+    });
+  }
+
+  #notify(): void {
+    const state = this.snapshot();
+    for (const waiter of [...this.#waiters]) {
+      waiter(state);
+    }
+  }
+}
+
+export function buildAssistLoopPrompt(options: {
+  readonly prompt: string;
+  readonly current?: GraphDefinition | undefined;
+  readonly kinds: readonly AssistKind[];
+  readonly tools: readonly AssistTool[];
+  readonly personas: readonly AssistPersona[];
+}): string {
+  return buildAssistMessages(options)
+    .map((message) => message.content)
+    .join("\n\n");
 }
 
 export function withCurrentGraph(
