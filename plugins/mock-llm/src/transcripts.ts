@@ -1,3 +1,56 @@
+export function mockPromptMatchesFixture(
+  userPrompt: string,
+  fixturePrompt: string,
+): boolean {
+  if (userPrompt === fixturePrompt) {
+    return true;
+  }
+  const marker = `User request:\n${fixturePrompt}`;
+  const index = userPrompt.lastIndexOf(marker);
+  if (index < 0) {
+    return false;
+  }
+  const after = userPrompt.slice(index + marker.length);
+  return after.length === 0 || after.startsWith("\n");
+}
+
+const GRAPH_ASSIST_ECHO = {
+  id: "e2e-assist-echo",
+  name: "E2E assist echo",
+  version: "1.0.0",
+  engineId: "borg.graphs.v1",
+  mode: "background",
+  inputSchema: {},
+  variablesSchema: {},
+  nodes: [
+    {
+      id: "start",
+      type: "trigger",
+      kind: "manual",
+      config: {},
+      onError: { action: "fail" },
+    },
+    {
+      id: "work",
+      type: "task",
+      kind: "set_variable",
+      config: { name: "result", value: "hello" },
+      onError: { action: "fail" },
+    },
+    {
+      id: "end",
+      type: "control",
+      kind: "end",
+      config: { output: "$vars.result" },
+      onError: { action: "fail" },
+    },
+  ],
+  edges: [
+    { id: "start-work", source: "start", target: "work" },
+    { id: "work-end", source: "work", target: "end" },
+  ],
+};
+
 export interface MockTranscriptFixture {
   readonly id: string;
   readonly prompt: string;
@@ -91,6 +144,23 @@ export const mockTranscriptFixtures: readonly MockTranscriptFixture[] =
       },
       finalPrefix: "Graph started: ",
       resultPath: ["instanceId"],
+    },
+    {
+      id: "graph-assist-ask",
+      prompt: "scenario:graph-assist-ask",
+      toolCall: {
+        id: "mock-graph-ask-call",
+        name: "graphs.ask",
+        input: {
+          question: "Linear or branching?",
+          choices: ["Linear", "Branching"],
+          allow_freeform: true,
+          multi_select: false,
+        },
+      },
+      finalPrefix: `Created the graph.\n\`\`\`json\n${JSON.stringify(GRAPH_ASSIST_ECHO)}\n\`\`\`\n`,
+      resultPath: ["answer"],
+      requiresAdvertisedTool: true,
     },
     {
       id: "mcp-echo",

@@ -1,5 +1,6 @@
 import { definePlugin, z } from "@borg/plugin-sdk";
 import {
+  mockPromptMatchesFixture,
   mockTranscriptFixtures,
   type MockTranscriptFixture,
 } from "./transcripts";
@@ -78,8 +79,8 @@ export default definePlugin({
           [...request.messages]
             .reverse()
             .find(({ role }) => role === "user")?.content ?? "";
-        const fixture = mockTranscriptFixtures.find(
-          ({ prompt }) => prompt === userPrompt,
+        const fixture = mockTranscriptFixtures.find(({ prompt }) =>
+          mockPromptMatchesFixture(userPrompt, prompt),
         );
         const usage = {
           inputTokens: Math.max(1, Math.ceil(userPrompt.length / 4)),

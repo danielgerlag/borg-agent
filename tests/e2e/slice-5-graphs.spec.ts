@@ -349,6 +349,28 @@ test("opens AI Assist on a new graph from the builder", async () => {
   await expect(page.getByTestId("graph-assist-panel")).toBeVisible();
 });
 
+test("asks a clarifying question in AI Assist then applies the graph", async () => {
+  await openGraphDesigner();
+  await expect(page.getByTestId("graph-name")).toHaveValue("Untitled graph");
+  await page.getByTestId("graph-assist-prompt").fill("scenario:graph-assist-ask");
+  await page.getByTestId("graph-assist-send").click();
+  await expect(page.getByTestId("graph-assist-question")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("graph-assist-question")).toContainText(
+    "Linear or branching?",
+  );
+  await expect(page.getByTestId("interaction-overlay")).toHaveCount(0);
+  await expect(page.getByTestId("graph-name")).toHaveValue("Untitled graph");
+  await page.getByTestId("graph-assist-choice-linear").click();
+  await expect(page.getByTestId("graph-name")).toHaveValue("E2E assist echo", {
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("graph-assist-question")).toHaveCount(0);
+  await expect(page.getByText("AI Assist updated the canvas.")).toBeVisible();
+  await expect(page.getByTestId("interaction-overlay")).toHaveCount(0);
+});
+
 test("creates, renames, saves, and runs the default graph from the Designer", async () => {
   await openGraphDesigner();
   await page.getByTestId("graph-create").click();
