@@ -1,15 +1,18 @@
 # Borg architecture
 
+## The product is plugins
+
+Chat, graphs, bots, models, channels, search, MCP, tools, and memory are plugins. They live in `plugins/`. They load through `@borg/plugin-sdk` and talk on the one command/event bus. Bundled plugins and a future third-party plugin use the same loader. A feature that lands in `packages/kernel` is a bug.
+
+The kernel is the host. It owns process lifetime, trust, personas, the loop runtime, the tool pipeline, and the UI shell slots. It does not own product behavior.
+
+If you want something a user can see, configure, or turn off, write a plugin. `docs/plugin-api.md` is the host catalog. `init-spec.md` is the product brief and the source of locked decisions.
+
+Personas and safety enforcement stay in the kernel because every plugin consumes them. That is the exception, not a license to grow chat or OpenAI inside `packages/kernel`.
+
 ## Status and authority
 
-This is the implementation architecture through Slice 13. `init-spec.md` remains the product brief and source of locked decisions; this document makes those decisions implementable.
-
-The architecture is deliberately a microkernel:
-
-- Electron main owns process lifetime, trust boundaries, contracts, and generic runtime services.
-- The renderer is a shell and a projection of main-process state.
-- Product behavior is supplied by in-process plugins using `@borg/plugin-sdk`.
-- Cross-plugin collaboration uses kernel contributions and the single typed command/event bus.
+This is the implementation architecture through Slice 13. `init-spec.md` remains the product brief. This document makes those decisions implementable.
 
 If implementing a feature requires adding chat, graph, bot, connector, MCP, model-provider, memory-provider, search, or scanner logic to `packages/kernel`, the boundary is wrong.
 
@@ -21,7 +24,7 @@ The following are architectural constraints, not open design questions:
 2. Closing the window hides it. The kernel, loops, graphs, bots, connectors, and schedulers continue. Only explicit Quit stops them.
 3. Borg always has a tray icon with show/hide, pending-interaction state, running counts, and Quit.
 4. Personas are kernel-owned and are consumed uniformly by chat, bots, graphs, MCP, and loops.
-5. Plugins execute in-process. Bundled and future third-party plugins use the same manifest, SDK, validation, and loader.
+5. The product is plugins. They execute in-process. Bundled and future third-party plugins use the same manifest, SDK, validation, and loader.
 6. Graphs are HiveMind-inspired workflows renamed in code and UI. `borg.graphs` owns a custom graph engine and must not depend on LangGraph.
 7. The one kernel agentic-loop runtime may use LangGraph internally for ReAct/CodeAct if evaluation in Slice 3 shows a net benefit.
 8. The renderer stack is SolidJS, Vite, Tailwind, Kobalte, lucide-solid, CodeMirror, and Cytoscape.
@@ -66,6 +69,52 @@ Electron application
 
 There is one Borg application lifetime. Main starts before the window is useful and remains authoritative even if no window is visible. Renderer reload or failure must not terminate main-process work.
 
+## Bundled plugins
+
+Every directory under `plugins/` is a first-class plugin. Settings → Plugins can turn one off. The config store and the active secret store stay on because the host needs them to boot.
+
+| Plugin | Job |
+| --- | --- |
+| `borg.chat` | Sessions, transcript, main chat workspace |
+| `borg.graphs` | Graph engine, designer, launch, `graphs.ask` |
+| `borg.bots` | Background agents |
+| `borg.feedback` | Ask-user tool and feedback gates |
+| `borg.hello` | Sample widget and settings page |
+| `borg.usage` | Cost widget |
+| `borg.themes` | Light and dark tokens |
+| `borg.remote` | Local, Azure VM, and Kubernetes workers |
+| `borg.mock-llm` | Scripted CI model |
+| `borg.anthropic` | Claude |
+| `borg.openai` | GPT |
+| `borg.azure` | Azure OpenAI |
+| `borg.copilot` | GitHub Copilot |
+| `borg.ollama` | Local Ollama |
+| `borg.openrouter` | OpenRouter |
+| `borg.channel.mock` | Deterministic channel tests |
+| `borg.channel.discord` | Discord Gateway and REST |
+| `borg.channel.imap` | IMAP |
+| `borg.channel.m365` | Microsoft 365 mail and Graph tools |
+| `borg.channel.google` | Gmail and Google tools |
+| `borg.channel.slack` | Slack Socket Mode |
+| `borg.tools.core` | Filesystem and shell tools |
+| `borg.tools.echo` | Echo tool |
+| `borg.coinbase` | Coinbase Advanced Trade |
+| `borg.search.tavily` | Tavily search |
+| `borg.search.brave` | Brave search |
+| `borg.mcp` | MCP clients and catalogs |
+| `borg.mcp-apps` | Sandboxed MCP App frames |
+| `borg.a2a` | Loopback Agent2Agent server UI |
+| `borg.context-map` | Workspace prompt slots |
+| `borg.memory.knowledge` | Semantic memory provider |
+| `borg.security.prompt-injection` | Prompt scanner |
+| `borg.config.sqlite` | Config store |
+| `borg.secrets.os` | OS keychain |
+| `borg.secrets.dev` | Dev secret store |
+
+A plugin cannot import another plugin package. Chat launches a graph by invoking `borg.graphs.launch` from `@borg/contracts`. It never imports `@borg/plugin-graphs`.
+
+Per-plugin ownership notes are under [Product plugin boundaries](#product-plugin-boundaries).
+
 ## Target repository layout
 
 Slice 1 should establish this shape:
@@ -97,7 +146,9 @@ docs/
 
 Later bundled plugins get one directory each under `plugins/`. A plugin package may have `main` and `ui` entry points but has one identity, version, manifest, and configuration namespace.
 
-## Kernel module map
+## What the host keeps
+
+These kernel modules are the host. They are not the product. If a row's "not responsible for" column is the feature you want, that feature belongs in a plugin.
 
 | Module | Responsibility | Explicitly not responsible for |
 |---|---|---|
@@ -887,6 +938,8 @@ A child plugin contributes step schema, editor metadata, validation, and a lifec
 The `plugins/graphs` package must have an automated dependency assertion that rejects `langgraph` and any plugin-package import.
 
 ## Product plugin boundaries
+
+The inventory is under [Bundled plugins](#bundled-plugins). This section is ownership, not a second list.
 
 ### `borg.chat`
 

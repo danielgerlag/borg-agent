@@ -1,10 +1,10 @@
 # Plugin host APIs
 
-Catalog of what a plugin may call through `@borg/plugin-sdk`.
+The product is plugins. This file is the catalog of host APIs a plugin may call through `@borg/plugin-sdk`.
 
 Types live in `packages/plugin-sdk/src/index.ts`. Main permission and kind checks live in `packages/kernel/src/plugin-manager.ts`. Renderer checks live in `apps/desktop/src/renderer/plugin-ui-manager.ts`. Command and event payloads live in `packages/contracts`.
 
-This document describes the host as implemented. It is not a tutorial.
+This document describes the host as implemented. It is not a tutorial. It is not the place to put chat, graphs, or OpenAI logic. Those are plugins.
 
 Related: `docs/architecture.md`. That file is the why. This file is the catalog.
 

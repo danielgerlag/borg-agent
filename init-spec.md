@@ -1,6 +1,6 @@
 # Borg — Init Spec
 
-This is the brief for a coding agent building Borg. Product behavior is inspired by HiveMind OS. Architecture is not: Borg is a TypeScript microkernel inside an Electron app, with almost all product features as in-process plugins.
+This is the brief for a coding agent building Borg. The product is plugins. Product behavior is inspired by HiveMind OS. Do not copy HiveMind's daemon or core-crate ownership. Borg is a TypeScript microkernel inside an Electron app. Chat, graphs, bots, models, channels, and tools are in-process plugins. The kernel is the host.
 
 Reference repo: https://github.com/hivemind-os/hivemind
 

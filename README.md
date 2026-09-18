@@ -1,8 +1,12 @@
 # Borg
 
-Borg is a privacy-first local desktop agent platform built as a TypeScript microkernel inside Electron.
+Borg is a local desktop agent. The product is plugins.
 
-The repository currently contains Slice 13: the tray-resident Electron microkernel, chat-first product experience, persona-backed ReAct and CodeAct runtimes, persisted graph workflows, background bots, optional Anthropic and OpenAI providers, persona-owned MCP servers, kernel-owned data classification and prompt scanning, normalized message channels, Tavily and Brave search tools, loopback A2A JSON-RPC, an IMAP channel plugin that can speak implicit TLS through kernel `TlsService` while keeping inject for tests, Microsoft 365 and Gmail channel plugins that grant mail through kernel `OAuthService`, a Slack Socket Mode channel, Coinbase Advanced Trade tools, light/dark shell tokens, semantic memory recall, workspace context-map prompt slots, and kernel sandboxes for shell and code tools. `borg.channel.mock` provides deterministic inbound and outbound tests. `borg.channel.discord` receives messages through the realtime Discord Gateway and sends through Discord REST. The scripted `borg.mock-llm` provider remains the default persona and deterministic CI path.
+Chat, graphs, bots, models, channels, search, MCP, and tools are packages under `plugins/`. They load through one SDK. The Electron main process is a microkernel that hosts them. If you want to add a feature, write a plugin.
+
+See `docs/architecture.md` for why, `docs/plugin-api.md` for the host catalog, and `init-spec.md` for locked decisions.
+
+The scripted `borg.mock-llm` provider is the default persona and the deterministic CI path. Settings → Plugins turns a bundled plugin off. The config store and the active secret store stay on.
 
 ## Prerequisites
 
@@ -69,4 +73,4 @@ corepack pnpm verify:package:mac
 
 The package command creates `.package/Borg-darwin-<arch>.zip`. The verifier launches the packaged application with a temporary profile, completes setup, and opens a rendered graph. The artifact is unsigned and not notarized. macOS may require an explicit Gatekeeper override. The manual **Unsigned macOS alpha** GitHub workflow builds and uploads the same artifact for 14 days.
 
-Architecture and research are documented in `docs/architecture.md` and `docs/research/hivemind.md`.
+Docs start at `docs/README.md`. Architecture is `docs/architecture.md`. HiveMind research is `docs/research/hivemind.md`.
