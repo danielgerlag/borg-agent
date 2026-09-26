@@ -1,4 +1,4 @@
-import type { GraphNode } from "@borg/contracts";
+import type { GraphNode } from "./contract";
 
 export type FieldWidget =
   | "text"

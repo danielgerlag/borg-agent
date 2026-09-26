@@ -20,7 +20,7 @@ import {
   type CoinbaseProduct,
   type CoinbaseSendCryptoInput,
   type CoinbaseTransaction,
-} from "@borg/contracts";
+} from "./contract";
 import type { PluginHttp } from "@borg/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import { signCdpJwt, randomNonce } from "./jwt";

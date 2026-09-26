@@ -1,6 +1,11 @@
 import {
-  feedbackAsk,
   executionIdSchema,
+  feedbackAsk,
+  modelOperationKeySchema,
+  type ExecutionId,
+  type ModelCompletionResult,
+} from "@borg/contracts";
+import {
   graphDefinitionSaved,
   graphDefinitionSchema,
   graphInstanceCompleted,
@@ -8,11 +13,8 @@ import {
   graphInstanceStarted,
   graphInstanceUpdated,
   graphStepCompleted,
-  modelOperationKeySchema,
-  type ExecutionId,
   type GraphDefinition,
-  type ModelCompletionResult,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   IndeterminateModelCallError,
   z,

@@ -1,4 +1,4 @@
-import { emptyChatUsage, type ChatEntry } from "@borg/contracts";
+import { emptyChatUsage, type ChatEntry } from "../src/contract";
 import { describe, expect, it } from "vitest";
 import { adoptChatDocument } from "../src/adopt-document";
 

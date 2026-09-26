@@ -5,10 +5,10 @@ import {
   coinbaseGetStatus,
   coinbaseStatusSchema,
   coinbaseVerify,
-} from "../src/index";
+} from "../src/contract";
 
 describe("coinbase commands", () => {
-  it("exports Coinbase commands after Slack with a 30s verify timeout", () => {
+  it("keeps Coinbase command ids and a 30s verify timeout", () => {
     expect(coinbaseGetStatus.id).toBe("borg.coinbase.getStatus");
     expect(coinbaseVerify.id).toBe("borg.coinbase.verify");
     expect(coinbaseDisconnect.id).toBe("borg.coinbase.disconnect");

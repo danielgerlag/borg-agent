@@ -18,17 +18,20 @@ async function sourceFiles(directory: string): Promise<string[]> {
   return files;
 }
 
-function isForbidden(specifier: string): boolean {
+function isHostRuntime(specifier: string): boolean {
   return (
     specifier === "@borg/kernel" ||
     specifier === "electron" ||
-    specifier.startsWith("node:") ||
-    (specifier.startsWith("@borg/plugin-") && specifier !== "@borg/plugin-sdk")
+    specifier.startsWith("node:")
   );
 }
 
+function isPluginContract(specifier: string): boolean {
+  return /^@borg\/plugin-[^/]+\/contract$/.test(specifier);
+}
+
 describe("MCP Apps package boundaries", () => {
-  it("uses contracts without importing another plugin or host runtime", async () => {
+  it("uses contracts and reaches other plugins only through /contract", async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(pluginRoot, "package.json"), "utf8"),
     ) as Record<string, unknown>;
@@ -55,7 +58,28 @@ describe("MCP Apps package boundaries", () => {
       }
     }
 
-    expect(dependencies.filter(isForbidden)).toEqual([]);
-    expect(imports.filter(isForbidden)).toEqual([]);
+    const contractPackages = new Set(
+      imports
+        .filter(isPluginContract)
+        .map((specifier) => specifier.slice(0, -"/contract".length)),
+    );
+    expect(
+      dependencies.filter(
+        (dependency) =>
+          isHostRuntime(dependency) ||
+          (dependency.startsWith("@borg/plugin-") &&
+            dependency !== "@borg/plugin-sdk" &&
+            !contractPackages.has(dependency)),
+      ),
+    ).toEqual([]);
+    expect(
+      imports.filter(
+        (specifier) =>
+          isHostRuntime(specifier) ||
+          (specifier.startsWith("@borg/plugin-") &&
+            specifier !== "@borg/plugin-sdk" &&
+            !isPluginContract(specifier)),
+      ),
+    ).toEqual([]);
   });
 });

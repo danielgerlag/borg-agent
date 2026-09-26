@@ -1,6 +1,5 @@
 import {
   MCP_APP_RENDERER_ID,
-  chatSessionDeleted,
   embeddedContentRegistered,
   mcpAppDiscovered,
   mcpAppSnapshotSchema,
@@ -10,6 +9,7 @@ import {
   type CommandErrorCode,
   type McpAppSnapshot,
 } from "@borg/contracts";
+import { chatSessionDeleted } from "@borg/plugin-chat/contract";
 import {
   definePlugin,
   type Disposable,

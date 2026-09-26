@@ -32,7 +32,7 @@ function isPluginPackage(specifier: string): boolean {
 }
 
 describe("graphs package boundaries", () => {
-  it("has no LangGraph or plugin-package coupling and keeps both rejection rules", async () => {
+  it("has no LangGraph coupling and imports other plugins only through /contract", async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(graphRoot, "package.json"), "utf8"),
     ) as Record<string, unknown>;
@@ -66,16 +66,24 @@ describe("graphs package boundaries", () => {
       "graphs package must not depend on LangGraph",
     ).toEqual([]);
     expect(
-      dependencies.filter(isPluginPackage),
-      "plugins may depend on the SDK but not other plugin packages",
+      dependencies.filter(
+        (dependency) =>
+          isPluginPackage(dependency) &&
+          !imports.some(({ specifier }) => specifier === `${dependency}/contract`),
+      ),
+      "a plugin dependency is allowed only when sources import its /contract",
     ).toEqual([]);
     expect(
       imports.filter(({ specifier }) => isLangGraph(specifier)),
       "graphs source must not import LangGraph",
     ).toEqual([]);
     expect(
-      imports.filter(({ specifier }) => isPluginPackage(specifier)),
-      "graphs source must not import another plugin package",
+      imports.filter(
+        ({ specifier }) =>
+          isPluginPackage(specifier) &&
+          !/^@borg\/plugin-[^/]+\/contract$/.test(specifier),
+      ),
+      "graphs source may import another plugin only as /contract",
     ).toEqual([]);
 
     const boundaryCheck = await readFile(

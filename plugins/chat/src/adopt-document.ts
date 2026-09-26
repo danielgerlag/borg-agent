@@ -1,4 +1,4 @@
-import { chatDocumentSchema, type ChatEntry } from "@borg/contracts";
+import { chatDocumentSchema, type ChatEntry } from "./contract";
 
 type ChatDocument = ReturnType<typeof chatDocumentSchema.parse>;
 

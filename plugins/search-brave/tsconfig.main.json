@@ -5,5 +5,5 @@
     "outDir": "dist",
     "types": ["node"]
   },
-  "include": ["src/main.ts", "src/client.ts"]
+  "include": ["src/main.ts", "src/client.ts", "src/contract.ts"]
 }
