@@ -1,4 +1,4 @@
-import type { ChatEntry } from "@borg/contracts";
+import type { ChatEntry } from "./contract";
 
 export type ChatWaitKind = "tool_approval" | "classification" | "human_input";
 

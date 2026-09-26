@@ -500,6 +500,9 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   plugins/coinbase:
     dependencies:
@@ -575,6 +578,9 @@ importers:
       '@borg/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@borg/plugin-chat':
+        specifier: workspace:*
+        version: link:../chat
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
@@ -635,6 +641,9 @@ importers:
       '@borg/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@borg/plugin-chat':
+        specifier: workspace:*
+        version: link:../chat
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk

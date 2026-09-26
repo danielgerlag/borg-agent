@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@borg/contracts": "workspace:*",
+    "@borg/plugin-chat": "workspace:*",
     "@borg/plugin-sdk": "workspace:*",
     "@borg/ui-kit": "workspace:*",
     "cytoscape": "^3.34.2",

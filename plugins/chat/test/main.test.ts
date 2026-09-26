@@ -1,11 +1,4 @@
 import {
-  chatCreateSession,
-  chatDeleteSession,
-  chatDocumentSchema,
-  chatGetSession,
-  chatListSessions,
-  chatSendMessage,
-  chatSpawnSubAgent,
   embeddedContentRegistered,
   executionIdSchema,
   modelOperationPrefixSchema,
@@ -21,6 +14,15 @@ import {
   type LoopRunSnapshot,
   type LoopStartInput,
 } from "@borg/contracts";
+import {
+  chatCreateSession,
+  chatDeleteSession,
+  chatDocumentSchema,
+  chatGetSession,
+  chatListSessions,
+  chatSendMessage,
+  chatSpawnSubAgent,
+} from "../src/contract";
 import {
   createTestHarness,
   z,
