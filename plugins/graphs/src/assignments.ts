@@ -1,4 +1,4 @@
-import { graphValueMapSchema, type GraphNode } from "@borg/contracts";
+import { graphValueMapSchema, type GraphNode } from "./contract";
 import { isJsonObject } from "./schema";
 
 export interface AssignmentRow {

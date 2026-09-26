@@ -1,5 +1,5 @@
+import { channelInboundMessage } from "@borg/contracts";
 import {
-  channelInboundMessage,
   graphDefinitionDeleted,
   graphDefinitionSaved,
   graphDefinitionSchema,
@@ -20,7 +20,7 @@ import {
   graphsListInstances,
   graphsListRunning,
   graphsSaveDefinition,
-} from "@borg/contracts";
+} from "./contract";
 import { definePlugin, defineTool, z } from "@borg/plugin-sdk";
 import { HiveMindGraphEngine } from "./executor";
 

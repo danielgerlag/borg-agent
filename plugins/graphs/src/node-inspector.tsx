@@ -1,4 +1,4 @@
-import type { GraphNode } from "@borg/contracts";
+import type { GraphNode } from "./contract";
 import { TextField } from "@borg/ui-kit";
 import { Show, type Component } from "solid-js";
 import FieldRenderer, { type InspectorCatalog } from "./field-renderer";

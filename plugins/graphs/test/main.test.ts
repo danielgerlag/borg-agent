@@ -1,11 +1,11 @@
+import { channelInboundMessage } from "@borg/contracts";
 import {
-  channelInboundMessage,
   graphsListCatalog,
   graphsListInstances,
   graphsSaveDefinition,
   type GraphDefinition,
   type GraphInstance,
-} from "@borg/contracts";
+} from "../src/contract";
 import { createTestHarness } from "@borg/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";

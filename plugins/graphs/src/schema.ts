@@ -1,7 +1,7 @@
 import {
   graphValueMapSchema,
   type GraphDefinition,
-} from "@borg/contracts";
+} from "./contract";
 
 export type FieldType = "string" | "number" | "boolean" | "object" | "array";
 
