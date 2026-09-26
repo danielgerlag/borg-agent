@@ -158,6 +158,34 @@ function satisfiesSimpleRange(version: Version, range: string): boolean | undefi
     : results.every((result) => result === true);
 }
 
+function rangeAlternatives(range: string): readonly string[] | undefined {
+  const alternatives = range.split("||");
+  if (alternatives.some((part) => part.trim() === "")) {
+    return undefined;
+  }
+  return alternatives;
+}
+
+/** True when `range` uses the same syntax as a plugin `engines.borg` range. */
+export function isValidBorgEngineRange(range: string): boolean {
+  if (range.trim() === "") {
+    return false;
+  }
+  const alternatives = rangeAlternatives(range);
+  if (!alternatives) {
+    return false;
+  }
+  const probe: Version = { major: 0, minor: 0, patch: 0 };
+  return alternatives.every(
+    (part) => satisfiesSimpleRange(probe, part) !== undefined,
+  );
+}
+
+/** True for a semver version. A leading `v` is rejected. Numeric prerelease identifiers cannot have leading zeroes. */
+export function isSemanticVersion(value: string): boolean {
+  return !value.startsWith("v") && parseVersion(value) !== undefined;
+}
+
 export function satisfiesBorgEngine(range: string, currentVersion: string): boolean {
   const version = parseVersion(currentVersion);
   if (!version) {
@@ -168,8 +196,8 @@ export function satisfiesBorgEngine(range: string, currentVersion: string): bool
     return false;
   }
 
-  const alternatives = range.split("||");
-  if (alternatives.some((part) => part.trim() === "")) {
+  const alternatives = rangeAlternatives(range);
+  if (!alternatives) {
     return false;
   }
 
