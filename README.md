@@ -25,7 +25,7 @@ npx --yes pnpm@12.0.0 install
 npx --yes pnpm@12.0.0 dev
 ```
 
-The workspace sets `trustLockfile: true`. Azure Artifacts rotates `ms-feed-*` tarball hosts, and pnpm 12 would otherwise reject the committed lockfile. Tarball integrity is still checked on download.
+pnpm verifies the committed lockfile against its supply-chain policies on every install. The lockfile names no registry host, so the same frozen install works against npmjs or a feed that mirrors it. See [CONTRIBUTING.md](CONTRIBUTING.md#installing-behind-a-corporate-or-private-npm-feed) for private feed setup.
 
 Closing the window hides Borg. Use the tray menu to show it again or quit the kernel.
 
