@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,7 +6,14 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const pluginsDirectory = path.join(projectRoot, "plugins");
 const failures = [];
 const kernelSourceDirectory = path.join(projectRoot, "packages/kernel/src");
+const contractsSourceDirectory = path.join(projectRoot, "packages/contracts/src");
 const appSourceDirectory = path.join(projectRoot, "apps/desktop/src");
+const dependencyFields = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+];
 
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -20,6 +27,64 @@ async function sourceFiles(directory) {
     }
   }
   return files;
+}
+
+function importSpecifiers(source) {
+  return [...source.matchAll(
+    /\b(?:from\s+|import\s*\(\s*|import\s+|require\s*\(\s*)["']([^"']+)["']/g,
+  )]
+    .map((match) => match[1])
+    .filter((specifier) => Boolean(specifier));
+}
+
+function dependencyName(specifier) {
+  if (!specifier.startsWith("@")) {
+    return specifier.split("/")[0];
+  }
+  const slash = specifier.indexOf("/");
+  if (slash === -1) {
+    return specifier;
+  }
+  const second = specifier.indexOf("/", slash + 1);
+  return second === -1 ? specifier : specifier.slice(0, second);
+}
+
+function isPluginContractSpecifier(specifier) {
+  const name = dependencyName(specifier);
+  return (
+    name.startsWith("@borg/plugin-") &&
+    name !== "@borg/plugin-sdk" &&
+    specifier === `${name}/contract`
+  );
+}
+
+function isAllowedContractFileImport(specifier) {
+  if (specifier === "zod" || specifier === "@borg/contracts") {
+    return true;
+  }
+  return (
+    /^@borg\/contracts\/[a-z0-9-]+$/.test(specifier) ||
+    isPluginContractSpecifier(specifier)
+  );
+}
+
+function isInside(directory, candidate) {
+  const relative = path.relative(directory, candidate);
+  return (
+    relative === "" ||
+    (relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative))
+  );
+}
+
+async function fileExists(filename) {
+  try {
+    await access(filename);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const pluginSourceFiles = (
@@ -102,6 +167,46 @@ if (/record\(record:\s*UsageRecord\)/.test(pluginSdkSource)) {
   failures.push("PluginCost must not expose a usage writer");
 }
 
+for (const filename of await sourceFiles(contractsSourceDirectory)) {
+  const source = await readFile(filename, "utf8");
+  const relative = path.relative(projectRoot, filename);
+  for (const specifier of importSpecifiers(source)) {
+    if (specifier === "zod") {
+      continue;
+    }
+    if (specifier.startsWith(".")) {
+      const resolved = path.resolve(path.dirname(filename), specifier);
+      if (!isInside(contractsSourceDirectory, resolved)) {
+        failures.push(
+          `${relative} imports ${specifier}, which leaves packages/contracts/src`,
+        );
+      }
+      continue;
+    }
+    failures.push(
+      `${relative} imports ${specifier}; packages/contracts/src may import only zod and relative files inside that directory`,
+    );
+  }
+}
+
+for (const filename of await sourceFiles(kernelSourceDirectory)) {
+  const source = await readFile(filename, "utf8");
+  const relative = path.relative(projectRoot, filename);
+  for (const specifier of importSpecifiers(source)) {
+    const name = dependencyName(specifier);
+    if (name === "@borg/contracts" && specifier !== "@borg/contracts") {
+      failures.push(
+        `${relative} imports ${specifier}; kernel may import @borg/contracts only as @borg/contracts`,
+      );
+    }
+    if (name.startsWith("@borg/plugin-") && name !== "@borg/plugin-sdk") {
+      failures.push(
+        `${relative} imports ${specifier}; kernel may import no @borg/plugin-* package other than @borg/plugin-sdk`,
+      );
+    }
+  }
+}
+
 for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {
   if (!entry.isDirectory()) {
     continue;
@@ -110,12 +215,59 @@ for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {
   const packageJson = JSON.parse(
     await readFile(path.join(pluginDirectory, "package.json"), "utf8"),
   );
-  for (const field of [
-    "dependencies",
-    "devDependencies",
-    "peerDependencies",
-    "optionalDependencies",
-  ]) {
+  const contractImports = new Set();
+  for (const filename of await sourceFiles(path.join(pluginDirectory, "src"))) {
+    const source = await readFile(filename, "utf8");
+    const relative = path.relative(projectRoot, filename);
+    const relativeToPlugin = path.relative(pluginDirectory, filename);
+    for (const specifier of importSpecifiers(source)) {
+      if (
+        entry.name === "graphs" &&
+        (specifier === "langgraph" || specifier.startsWith("@langchain/langgraph"))
+      ) {
+        failures.push(
+          `${relative} imports forbidden graph engine ${specifier}`,
+        );
+      }
+      if (specifier.startsWith("@borg/plugin-") && specifier !== "@borg/plugin-sdk") {
+        const name = dependencyName(specifier);
+        if (isPluginContractSpecifier(specifier)) {
+          contractImports.add(name);
+          if (!Object.hasOwn(packageJson.dependencies ?? {}, name)) {
+            failures.push(
+              `${relative} imports ${specifier} but ${packageJson.name} does not list ${name} in dependencies`,
+            );
+          }
+        } else {
+          failures.push(
+            `${relative} imports ${specifier}; plugin sources may import ${name} only as ${name}/contract`,
+          );
+        }
+      }
+      if (specifier.startsWith(".")) {
+        const resolved = path.resolve(path.dirname(filename), specifier);
+        if (
+          resolved.startsWith(`${pluginsDirectory}${path.sep}`) &&
+          !resolved.startsWith(`${pluginDirectory}${path.sep}`)
+        ) {
+          failures.push(
+            `${relative} crosses into another plugin via ${specifier}`,
+          );
+        }
+      }
+    }
+    if (relativeToPlugin === path.join("src", "contract.ts")) {
+      for (const specifier of importSpecifiers(source)) {
+        if (!isAllowedContractFileImport(specifier)) {
+          failures.push(
+            `${relative} imports ${specifier}; src/contract.ts may import only zod, @borg/contracts, @borg/contracts/<subpath>, or @borg/plugin-<name>/contract`,
+          );
+        }
+      }
+    }
+  }
+
+  for (const field of dependencyFields) {
     for (const dependency of Object.keys(packageJson[field] ?? {})) {
       if (
         entry.name === "graphs" &&
@@ -126,48 +278,34 @@ for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {
         );
       }
       if (dependency.startsWith("@borg/plugin-") && dependency !== "@borg/plugin-sdk") {
-        failures.push(
-          `${packageJson.name} declares forbidden plugin dependency ${dependency}`,
-        );
+        if (!contractImports.has(dependency)) {
+          failures.push(
+            `${packageJson.name} lists ${dependency} in ${field}, but no source file imports ${dependency}/contract`,
+          );
+        }
       }
     }
   }
 
-  for (const filename of await sourceFiles(path.join(pluginDirectory, "src"))) {
-    const source = await readFile(filename, "utf8");
-    const imports =
-      source.matchAll(
-        /\b(?:from\s+|import\s*\(\s*|import\s+|require\s*\(\s*)["']([^"']+)["']/g,
+  const contractExport = packageJson.exports?.["./contract"];
+  if (contractExport !== undefined) {
+    if (contractExport !== "./dist/contract.js") {
+      failures.push(
+        `${packageJson.name} exports ./contract as ${JSON.stringify(contractExport)}; expected "./dist/contract.js"`,
       );
-    for (const match of imports) {
-      const specifier = match[1];
-      if (!specifier) {
-        continue;
-      }
-      if (
-        entry.name === "graphs" &&
-        (specifier === "langgraph" || specifier.startsWith("@langchain/langgraph"))
-      ) {
-        failures.push(
-          `${path.relative(projectRoot, filename)} imports forbidden graph engine ${specifier}`,
-        );
-      }
-      if (specifier.startsWith("@borg/plugin-") && specifier !== "@borg/plugin-sdk") {
-        failures.push(
-          `${path.relative(projectRoot, filename)} imports forbidden plugin package ${specifier}`,
-        );
-      }
-      if (specifier.startsWith(".")) {
-        const resolved = path.resolve(path.dirname(filename), specifier);
-        if (
-          resolved.startsWith(`${pluginsDirectory}${path.sep}`) &&
-          !resolved.startsWith(`${pluginDirectory}${path.sep}`)
-        ) {
-          failures.push(
-            `${path.relative(projectRoot, filename)} crosses into another plugin via ${specifier}`,
-          );
-        }
-      }
+    }
+    if (!(await fileExists(path.join(pluginDirectory, "src", "contract.ts")))) {
+      failures.push(
+        `${packageJson.name} exports ./contract but src/contract.ts does not exist`,
+      );
+    }
+    const tsconfig = JSON.parse(
+      await readFile(path.join(pluginDirectory, "tsconfig.main.json"), "utf8"),
+    );
+    if (!tsconfig.include?.includes("src/contract.ts")) {
+      failures.push(
+        `${packageJson.name} exports ./contract but tsconfig.main.json include does not contain "src/contract.ts"`,
+      );
     }
   }
 }
