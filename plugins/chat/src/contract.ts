@@ -1,6 +1,7 @@
 import {
   defineCommand,
   defineEvent,
+  embeddedContentSnapshotSchema,
   personaIdSchema,
   workspaceFileSchema,
   workspaceImportResultSchema,
@@ -237,4 +238,14 @@ export const chatSessionDeleted = defineEvent({
 export const chatWorkspaceUpdated = defineEvent({
   id: "borg.chat.workspace.updated",
   payload: z.object({ sessionId: z.string().uuid() }).strict(),
+});
+
+export const embeddedContentRegistered = defineEvent({
+  id: "borg.embeddedContent.registered",
+  payload: z
+    .object({
+      sessionId: z.string().uuid(),
+      content: embeddedContentSnapshotSchema,
+    })
+    .strict(),
 });

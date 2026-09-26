@@ -1,7 +1,4 @@
-import {
-  embeddedContentRegistered,
-  type CommandErrorCode,
-} from "@borg/contracts";
+import type { CommandErrorCode } from "@borg/contracts";
 import {
   mcpAppDiscovered,
   mcpAppSnapshotSchema,
@@ -13,7 +10,10 @@ import {
   mcpAppsCancelTool,
   mcpAppsInvokeTool,
 } from "./contract";
-import { chatSessionDeleted } from "@borg/plugin-chat/contract";
+import {
+  chatSessionDeleted,
+  embeddedContentRegistered,
+} from "@borg/plugin-chat/contract";
 import {
   definePlugin,
   type Disposable,

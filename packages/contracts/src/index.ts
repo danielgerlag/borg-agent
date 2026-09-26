@@ -1139,16 +1139,6 @@ export type EmbeddedContentSnapshot = z.infer<
   typeof embeddedContentSnapshotSchema
 >;
 
-export const embeddedContentRegistered = defineEvent({
-  id: "borg.embeddedContent.registered",
-  payload: z
-    .object({
-      sessionId: z.string().uuid(),
-      content: embeddedContentSnapshotSchema,
-    })
-    .strict(),
-});
-
 export const toolApprovalSchema = z.enum(["auto", "ask", "deny"]);
 
 export type ToolApproval = z.infer<typeof toolApprovalSchema>;

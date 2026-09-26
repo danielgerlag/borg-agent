@@ -1,4 +1,4 @@
-import { embeddedContentRegistered } from "@borg/contracts";
+import { embeddedContentRegistered } from "@borg/plugin-chat/contract";
 import {
   mcpAppDiscovered,
   mcpAppSnapshotSchema,

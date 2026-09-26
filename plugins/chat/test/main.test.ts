@@ -1,5 +1,4 @@
 import {
-  embeddedContentRegistered,
   executionIdSchema,
   modelOperationPrefixSchema,
   personaSchema,
@@ -22,6 +21,7 @@ import {
   chatListSessions,
   chatSendMessage,
   chatSpawnSubAgent,
+  embeddedContentRegistered,
 } from "../src/contract";
 import {
   createTestHarness,

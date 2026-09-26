@@ -1,5 +1,4 @@
 import {
-  embeddedContentRegistered,
   embeddedContentSnapshotSchema,
   executionIdSchema,
   modelOperationPrefixSchema,
@@ -31,6 +30,7 @@ import {
   chatTurnCompleted,
   chatTurnStarted,
   chatWorkspaceUpdated,
+  embeddedContentRegistered,
   emptyChatUsage,
   type ChatEntry,
   type ChatSession,
