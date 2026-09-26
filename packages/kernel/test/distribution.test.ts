@@ -280,7 +280,6 @@ describe("createKernel distribution", () => {
       kernel: "^0.2.0",
       plugins: [
         { id: "example.config", enabled: true },
-        { id: "example.config", enabled: true },
         { id: "example.missing", enabled: true },
       ],
       defaults: {},
@@ -290,7 +289,57 @@ describe("createKernel distribution", () => {
     expect(
       rejectionKernel(distribution, [configSource(), configSource()]),
     ).toThrow(
-      /Distribution example\.several@0\.1\.0 cannot run on this kernel:[\s\S]*kernel range \^0\.2\.0 is not satisfied by kernel API version 0\.1\.0[\s\S]*duplicate plugin id example\.config[\s\S]*duplicate plugin source example\.config[\s\S]*missing plugin source example\.missing/,
+      /Distribution example\.several@0\.1\.0 cannot run on this kernel:[\s\S]*kernel range \^0\.2\.0 is not satisfied by kernel API version 0\.1\.0[\s\S]*duplicate plugin source example\.config[\s\S]*missing plugin source example\.missing/,
+    );
+  });
+
+  it("rejects hand-built distributions that defineDistribution would reject", () => {
+    const valid: Distribution = {
+      id: "example.hand",
+      name: "Hand",
+      version: "0.1.0",
+      kernel: "^0.1.0",
+      plugins: [{ id: "example.config", enabled: true }],
+      defaults: {},
+      policy: {},
+    };
+    const cases: readonly [string, unknown, RegExp][] = [
+      ["id syntax", { ...valid, id: "Not An Id" }, /id "Not An Id" is not a valid plugin id/],
+      [
+        "model format",
+        { ...valid, defaults: { models: ["no-separator"] } },
+        /model preference "no-separator" must be provider:model/,
+      ],
+      [
+        "non-boolean enabled",
+        { ...valid, plugins: [{ id: "example.config", enabled: "no" }] },
+        /plugins\[0\]\.enabled must be a boolean/,
+      ],
+      [
+        "bad plugin id",
+        { ...valid, plugins: [{ id: "Example Config", enabled: true }] },
+        /plugin id "Example Config" is invalid/,
+      ],
+      [
+        "detached result without kinds",
+        {
+          ...valid,
+          policy: { detachedResults: [{ pluginId: "example.config", subjectKinds: [] }] },
+        },
+        /must list non-empty subject kinds/,
+      ],
+      ["unknown field", { ...valid, extra: true }, /distribution has unknown field extra/],
+      ["bad semver", { ...valid, version: "1" }, /version "1" is not valid semver/],
+      ["not an object", "borg.desktop", /definition must be an object/],
+    ];
+    for (const [, candidate, message] of cases) {
+      expect(
+        rejectionKernel(candidate as Distribution, [configSource()]),
+        String(message),
+      ).toThrow(message);
+    }
+    expect(rejectionKernel({ ...valid, id: "Not An Id" } as Distribution, [configSource()])).toThrow(
+      /^Distribution Not An Id@0\.1\.0 cannot run on this kernel:/,
     );
   });
 

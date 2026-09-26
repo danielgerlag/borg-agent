@@ -6,7 +6,11 @@ import { ClassificationService } from "./classification-service";
 import { CommandEventBus } from "./command-event-bus";
 import { CommunicationService } from "./communication-service";
 import { CostLedger } from "./cost-ledger";
-import type { Distribution } from "./distribution";
+import {
+  distributionLabel,
+  readDistribution,
+  type Distribution,
+} from "./distribution";
 import { satisfiesBorgEngine } from "./engine-range";
 import { ExecutionSecurityService } from "./execution-security";
 import { GraphContributionRegistry } from "./graph-contribution-registry";
@@ -147,27 +151,16 @@ function distributionRunProblems(
     );
   }
 
-  const seen = new Set<string>();
-  const duplicateIds = new Set<string>();
-  for (const plugin of distribution.plugins) {
-    if (seen.has(plugin.id)) {
-      duplicateIds.add(plugin.id);
-    }
-    seen.add(plugin.id);
-  }
-  for (const id of duplicateIds) {
-    problems.push(`duplicate plugin id ${id}`);
-  }
-
+  const declared = new Set(distribution.plugins.map((plugin) => plugin.id));
   const counts = new Map<string, number>();
   for (const source of sources) {
     const id = sourceManifestId(source);
-    if (id === undefined || !seen.has(id)) {
+    if (id === undefined || !declared.has(id)) {
       continue;
     }
     counts.set(id, (counts.get(id) ?? 0) + 1);
   }
-  for (const id of seen) {
+  for (const id of declared) {
     const count = counts.get(id) ?? 0;
     if (count === 0) {
       problems.push(`missing plugin source ${id}`);
@@ -178,36 +171,62 @@ function distributionRunProblems(
   return problems;
 }
 
-function pluginsForDistribution(
+/**
+ * Re-validates the distribution with the same checks as `defineDistribution`,
+ * because `Distribution` is structural and can be built by hand.
+ */
+function resolveDistribution(
   options: CreateKernelOptions,
-): readonly PluginSource[] {
-  const distribution = options.distribution;
-  if (distribution === undefined) {
-    return options.plugins;
+): Distribution | undefined {
+  const candidate: unknown = options.distribution;
+  if (candidate === undefined) {
+    return undefined;
   }
-  const problems = distributionRunProblems(distribution, options.plugins);
+  const problems: string[] = [];
+  const distribution = readDistribution(candidate, problems);
+  if (distribution) {
+    problems.push(...distributionRunProblems(distribution, options.plugins));
+  }
   if (problems.length > 0) {
+    const version =
+      typeof candidate === "object" &&
+      candidate !== null &&
+      "version" in candidate &&
+      typeof candidate.version === "string"
+        ? candidate.version
+        : "(unknown)";
     throw new Error(
-      `Distribution ${distribution.id}@${distribution.version} cannot run on this kernel:\n${problems
+      `Distribution ${distributionLabel(candidate)}@${version} cannot run on this kernel:\n${problems
         .map((problem) => `- ${problem}`)
         .join("\n")}`,
     );
   }
+  return distribution;
+}
+
+function pluginsForDistribution(
+  distribution: Distribution | undefined,
+  plugins: readonly PluginSource[],
+): readonly PluginSource[] {
+  if (distribution === undefined) {
+    return plugins;
+  }
   const declared = new Set(distribution.plugins.map((plugin) => plugin.id));
-  return options.plugins.filter((source) => {
+  return plugins.filter((source) => {
     const id = sourceManifestId(source);
     return id !== undefined && declared.has(id);
   });
 }
 
 export function createKernel(options: CreateKernelOptions): Kernel {
-  const availablePlugins = pluginsForDistribution(options);
+  const distribution = resolveDistribution(options);
+  const availablePlugins = pluginsForDistribution(distribution, options.plugins);
   // #39 removes these built-in fallbacks.
   const fallbackPreferences =
-    options.distribution?.defaults.models ?? ["borg.mock-llm:mock:scripted"];
-  const detachedResults = options.distribution?.policy.detachedResults;
+    distribution?.defaults.models ?? ["borg.mock-llm:mock:scripted"];
+  const detachedResults = distribution?.policy.detachedResults;
   const defaultDisabled =
-    options.distribution?.plugins
+    distribution?.plugins
       .filter((plugin) => !plugin.enabled)
       .map((plugin) => plugin.id) ?? [];
 

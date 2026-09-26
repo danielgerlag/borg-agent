@@ -63,17 +63,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function distributionLabel(definition: unknown): string {
-  if (
-    isRecord(definition) &&
-    typeof definition.id === "string" &&
-    definition.id.length > 0
-  ) {
-    return definition.id;
-  }
-  return "(unknown)";
-}
-
 function deepFreeze<T>(value: T): T {
   if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
     for (const entry of Object.values(value)) {
@@ -290,14 +279,19 @@ function readPolicy(
   return { detachedResults };
 }
 
-export function defineDistribution(definition: DistributionDefinition): Distribution {
-  const problems: string[] = [];
-  const label = distributionLabel(definition);
+/**
+ * Validates and normalizes a distribution. `defineDistribution` and `createKernel`
+ * both use this, so a hand-built `Distribution` object gets the same checks.
+ */
+export function readDistribution(
+  definition: unknown,
+  problems: string[],
+): Distribution | undefined {
   if (!isRecord(definition)) {
-    throw new Error(
-      `Invalid distribution ${label}:\n- definition must be an object`,
-    );
+    problems.push("definition must be an object");
+    return undefined;
   }
+  const start = problems.length;
   rejectUnknownFields(
     definition,
     ["id", "name", "version", "kernel", "plugins", "defaults", "policy"],
@@ -310,15 +304,18 @@ export function defineDistribution(definition: DistributionDefinition): Distribu
     problems.push(`id ${JSON.stringify(definition.id)} is not a valid plugin id`);
   }
   const name = definition.name;
-  if (typeof name !== "string" || name.trim() === "") {
+  const nameValid = typeof name === "string" && name.trim() !== "";
+  if (!nameValid) {
     problems.push("name must be a non-empty string");
   }
   const version = definition.version;
-  if (typeof version !== "string" || !isSemanticVersion(version)) {
+  const versionValid = typeof version === "string" && isSemanticVersion(version);
+  if (!versionValid) {
     problems.push(`version ${JSON.stringify(version)} is not valid semver`);
   }
   const kernel = definition.kernel;
-  if (typeof kernel !== "string" || !isValidBorgEngineRange(kernel)) {
+  const kernelValid = typeof kernel === "string" && isValidBorgEngineRange(kernel);
+  if (!kernelValid) {
     problems.push(`kernel range ${JSON.stringify(kernel)} is invalid`);
   }
   const plugins = readPlugins(definition.plugins, problems);
@@ -326,23 +323,16 @@ export function defineDistribution(definition: DistributionDefinition): Distribu
   const policy = readPolicy(definition.policy, problems);
 
   if (
-    problems.length > 0 ||
+    problems.length > start ||
     !id.success ||
-    typeof name !== "string" ||
-    name.trim() === "" ||
-    typeof version !== "string" ||
-    !isSemanticVersion(version) ||
-    typeof kernel !== "string" ||
-    !isValidBorgEngineRange(kernel) ||
+    !nameValid ||
+    !versionValid ||
+    !kernelValid ||
     !plugins ||
     !defaults ||
     !policy
   ) {
-    throw new Error(
-      `Invalid distribution ${label}:\n${problems
-        .map((problem) => `- ${problem}`)
-        .join("\n")}`,
-    );
+    return undefined;
   }
 
   return deepFreeze({
@@ -354,4 +344,29 @@ export function defineDistribution(definition: DistributionDefinition): Distribu
     defaults,
     policy,
   });
+}
+
+/** A readable label for error messages, even when `definition` is invalid. */
+export function distributionLabel(definition: unknown): string {
+  if (
+    isRecord(definition) &&
+    typeof definition.id === "string" &&
+    definition.id.length > 0
+  ) {
+    return definition.id;
+  }
+  return "(unknown)";
+}
+
+export function defineDistribution(definition: DistributionDefinition): Distribution {
+  const problems: string[] = [];
+  const distribution = readDistribution(definition, problems);
+  if (!distribution) {
+    throw new Error(
+      `Invalid distribution ${distributionLabel(definition)}:\n${problems
+        .map((problem) => `- ${problem}`)
+        .join("\n")}`,
+    );
+  }
+  return distribution;
 }
