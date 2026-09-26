@@ -4,7 +4,7 @@ import {
   encodeMcpAppCspQuery,
   encodeMcpAppPermissionsQuery,
   parseMcpAppNetworkGrant,
-} from "@borg/contracts";
+} from "./mcp-app-csp";
 import {
   MCP_APP_MAX_MESSAGE_BYTES,
   type McpAppCsp,

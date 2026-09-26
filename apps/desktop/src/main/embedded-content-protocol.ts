@@ -3,7 +3,7 @@ import {
   buildProxyCsp,
   grantFromProxyUrl,
   permissionsFromProxyUrl,
-} from "@borg/contracts";
+} from "@borg/plugin-mcp-apps/mcp-app-csp";
 import { MCP_APP_BRIDGE_CHANNEL } from "@borg/plugin-mcp-apps/contract";
 import { MCP_APP_MAX_MESSAGE_BYTES } from "@borg/plugin-mcp/contract";
 import {

@@ -1125,22 +1125,6 @@ export function oauthGrantKey(pluginId: string, accountId?: string): string {
   return `${pluginId}.${parsedConnectorAccountId(accountId)}`;
 }
 
-export {
-  MCP_APP_CSP_QUERY_MAX_CHARS,
-  buildAllowAttribute,
-  buildAppCsp,
-  buildPermissionsPolicy,
-  buildProxyCsp,
-  encodeMcpAppCspQuery,
-  encodeMcpAppPermissionsQuery,
-  grantFromProxyUrl,
-  mcpAppRequestAllowed,
-  originMatchesGrant,
-  parseMcpAppNetworkGrant,
-  permissionsFromProxyUrl,
-  type McpAppNetworkGrant,
-} from "./mcp-app-csp";
-
 export const embeddedContentSnapshotSchema = z
   .object({
     instanceId: z.string().uuid(),

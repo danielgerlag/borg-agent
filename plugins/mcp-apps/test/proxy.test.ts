@@ -1,4 +1,7 @@
-import { grantFromProxyUrl, permissionsFromProxyUrl } from "@borg/contracts";
+import {
+  grantFromProxyUrl,
+  permissionsFromProxyUrl,
+} from "../src/mcp-app-csp";
 import {
   mcpAppDiscovered,
   mcpAppSnapshotSchema,

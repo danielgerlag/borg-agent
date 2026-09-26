@@ -8,6 +8,7 @@
   "exports": {
     "./main": "./dist/main.js",
     "./contract": "./dist/contract.js",
+    "./mcp-app-csp": "./dist/mcp-app-csp.js",
     "./ui": "./src/ui.tsx"
   },
   "borg": {
