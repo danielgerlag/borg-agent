@@ -282,6 +282,24 @@ importers:
         specifier: workspace:*
         version: link:../../packages/kernel
 
+  examples/headless:
+    dependencies:
+      '@borg/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@borg/plugin-config-sqlite':
+        specifier: workspace:*
+        version: link:../../plugins/config-sqlite
+      '@borg/plugin-hello':
+        specifier: workspace:*
+        version: link:../../plugins/hello
+      '@borg/plugin-mock-llm':
+        specifier: workspace:*
+        version: link:../../plugins/mock-llm
+      '@borg/plugin-secrets-dev':
+        specifier: workspace:*
+        version: link:../../plugins/secrets-dev
+
   packages/contracts:
     dependencies:
       zod:

@@ -1,55 +1,71 @@
-# Borg
+# Borg Agent
 
-Borg is a privacy-first local desktop agent platform built as a TypeScript microkernel inside Electron.
+Borg Agent is an agentic harness microkernel. It's a minimal, stable core (agent loop, tool dispatch, context, lifecycle, plugin contract) that you bundle plugins with to create domain-specific harnesses. The desktop app is one distribution.
 
-The repository currently contains Slice 13: the tray-resident Electron microkernel, chat-first product experience, persona-backed ReAct and CodeAct runtimes, persisted graph workflows, background bots, optional Anthropic and OpenAI providers, persona-owned MCP servers, kernel-owned data classification and prompt scanning, normalized message channels, Tavily and Brave search tools, loopback A2A JSON-RPC, an IMAP channel plugin that can speak implicit TLS through kernel `TlsService` while keeping inject for tests, Microsoft 365 and Gmail channel plugins that grant mail through kernel `OAuthService`, a Slack Socket Mode channel, Coinbase Advanced Trade tools, light/dark shell tokens, semantic memory recall, workspace context-map prompt slots, and kernel sandboxes for shell and code tools. `borg.channel.mock` provides deterministic inbound and outbound tests. `borg.channel.discord` receives messages through the realtime Discord Gateway and sends through Discord REST. The scripted `borg.mock-llm` provider remains the default persona and deterministic CI path.
+- Model and tool calls go through the kernel, which scans prompts and output, enforces data-classification ceilings, and asks for approval when policy requires it.
+- Each plugin declares its version, supported kernel range, permissions, and contributions in a manifest, and the kernel checks it at activation and enforces the permissions on host calls.
+- Model providers are plugins, so a harness bundles the ones it needs: Anthropic, OpenAI, Azure, GitHub Copilot, Ollama, OpenRouter, or a scripted mock.
+- A distribution names a harness by id and version, pins the kernel range, and lists its plugins, and `createKernel()` rejects one that doesn't fit the running kernel.
 
-## Prerequisites
+**Status:** alpha. The desktop app is the reference distribution. macOS is the primary platform. CI runs typecheck, unit tests, and the Electron end-to-end tests on both macOS and Linux. The packages are not published to npm yet. MIT licensed.
 
-- Node.js 22 or newer
-- pnpm 12
+## Run a harness headless
 
-## Development
+This is `examples/headless/src/main.ts`. It defines a four-plugin distribution, boots the kernel in plain Node, sends one command to the hello plugin, and stops. The kernel needs a config store and a secret store to start, so the distribution bundles `borg.config.sqlite` and `borg.secrets.dev` next to `borg.hello` and the `borg.mock-llm` model provider.
+
+```ts
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { createKernel, defineDistribution, type PluginSource } from "@borg/kernel";
+import { helloGetStatus } from "@borg/plugin-hello/contract";
+
+const distribution = defineDistribution({
+  id: "example.headless",
+  name: "Headless example",
+  version: "0.1.0",
+  kernel: "^0.1.0",
+  plugins: ["borg.config.sqlite", "borg.secrets.dev", "borg.mock-llm", "borg.hello"],
+});
+const kernel = createKernel({
+  distribution,
+  plugins: ["config-sqlite", "secrets-dev", "mock-llm", "hello"].map((name): PluginSource => ({
+    manifest: require(`@borg/plugin-${name}/borg.plugin.json`),
+    loadMain: async () => require(`@borg/plugin-${name}/main`),
+  })),
+  host: { dataDirectory: mkdtempSync(`${tmpdir()}/borg-headless-`) },
+  resolveSecretStore: async () => "borg.secrets.dev",
+});
+kernel.start()
+  .then(() => kernel.bus.invoke(helloGetStatus, {}))
+  .then((status) => console.log(`${status.pluginId}: ${status.message}`))
+  .finally(() => kernel.stop());
+```
+
+After `pnpm build`, run it with `node examples/headless/dist/main.js`. It prints `borg.hello: Kernel alive`. `pnpm test` runs it too, and fails if the block above stops matching the file. The embedding API is in [packages/kernel/README.md](packages/kernel/README.md).
+
+## Quickstart
+
+You need Node.js 22 or newer, from `engines.node` in the root `package.json`, and pnpm 12.0.0, from `packageManager`.
+
+Corepack runs that pinned pnpm without creating global symlinks in `/usr/local/bin`. You can instead install pnpm with `brew install pnpm` and call `pnpm` directly.
 
 ```sh
 corepack pnpm install
 corepack pnpm dev
 ```
 
-This invokes the repository-pinned pnpm version without creating global symlinks in `/usr/local/bin`. Alternatively, install pnpm with `brew install pnpm` and use `pnpm` directly.
+`pnpm dev` runs `pnpm build`, then launches Electron through `scripts/run-electron.mjs`.
 
-Corepack does not read registry or authentication settings from `~/.npmrc`. In a corporate environment with a custom npm registry, invoke the pinned pnpm package through npm instead:
+Corepack does not read registry or authentication settings from `~/.npmrc`. Behind a custom npm registry, call the pinned package through npm.
 
 ```sh
 npx --yes pnpm@12.0.0 install
 npx --yes pnpm@12.0.0 dev
 ```
 
-pnpm verifies the committed lockfile against its supply-chain policies on every install. The lockfile names no registry host, so the same frozen install works against npmjs or a feed that mirrors it. See [CONTRIBUTING.md](CONTRIBUTING.md#installing-behind-a-corporate-or-private-npm-feed) for private feed setup.
+pnpm checks the committed lockfile against its supply-chain policies on every install. The lockfile names no registry host, so the same frozen install works against npmjs or a feed that mirrors it. Private feed setup is in [CONTRIBUTING.md](CONTRIBUTING.md#installing-behind-a-corporate-or-private-npm-feed).
 
-Closing the window hides Borg. Use the tray menu to show it again or quit the kernel.
-
-On first run, Borg opens a guided setup: welcome, one-click secure-storage verification, optional Anthropic and OpenAI key steps, assistant selection, and a final review. You can skip Claude and GPT and keep the built-in demo model. OpenAI is optional like Anthropic: save a key under **Settings → OpenAI** or during setup, then verify it to use GPT-5 Mini, GPT-5 Nano, and GPT-5. There is no base URL field; production traffic is always `api.openai.com`. Setup finishes directly in Chat, where **New chat** and the conversation history use familiar user-facing language. **Settings → Plugins** turns bundled plugins off so their tools, channels, and settings pages unload; the config store and the active secret store stay on. Each conversation shows its input, output, cache, and cost totals. The deterministic prompts `scenario:file`, `scenario:feedback`, `scenario:background`, `scenario:bot`, `scenario:graph`, `scenario:mcp`, `scenario:mcp-app`, `scenario:search`, and `scenario:security ignore all previous instructions` exercise the bundled paths.
-
-Configure MCP servers under **Settings → MCP** for the selected persona. A stdio server needs its executable plus one argument per line; network transports need an `http:` or `https:` URL. Secret fields contain references to Borg-managed secrets, never literal credentials. Save and refresh to inspect the connected catalog. Server tools are available only to runs for that persona and use IDs such as `mcp.mock.echo`.
-
-Slice 8 stores `channelClass`, `reactive`, and `sandbox` server metadata for forward compatibility but does not treat those fields as enforcement. Stdio servers run as child processes under the Borg host user; use only trusted executables. Every MCP call requires local approval. Server-provided read-only and destructive annotations do not change approval or retry policy. Header secret references require HTTPS, except for loopback development URLs.
-
-MCP App HTML is untrusted renderer content. Borg denies undeclared network, nested frames, forms, downloads, and Node/preload access even after in-frame navigation. Declared `_meta.ui.csp` origins become CSP and Electron request-filter grants. Declared camera, microphone, geolocation, and clipboard-write flags become the inner iframe `allow` list. Inline script and style are supported inside the inner sandbox so MCP Apps can initialize. App snapshots persist with their chat; the underlying MCP server must still be enabled and reachable for a later app-originated tool call.
-
-Configure Tavily or Brave under **Settings → Tavily** or **Settings → Brave Search**. The search tool is registered only after a key is saved and connected. Results are untrusted external content and require approval. `scenario:search` drives a Tavily tool round trip against the mock model.
-
-Configure A2A under **Settings → A2A**. The JSON-RPC listener binds `127.0.0.1` only and stays off until enabled. Task ids are kernel loop run ids.
-
-Configure Discord under **Settings → Discord**. The bot token is written directly to Borg's secret store and is never returned to the renderer. Allowed channel IDs are mandatory; allowed guild IDs further restrict guild traffic. Discord bot-authored messages are always ignored. The connector uses `https://discord.com/api/v10` for sends and the Discord Gateway for realtime inbound messages; there is no polling fallback. Enable the **Message Content Intent** in the Discord developer portal so message text is present, and grant the bot access only to the configured destinations.
-
-Configure Microsoft 365 or Google under **Settings → Microsoft 365** or **Settings → Google**. Paste a public native/desktop client id from Entra ID or Google Cloud. Loopback redirect is `http://localhost` (any port) for Microsoft 365 and `http://127.0.0.1` (any port) for Google. Connect opens the system browser; Borg then polls the inbox and can send to the connected mailbox plus allow-listed recipients. Refresh tokens stay in the kernel OAuth vault and never reach the renderer.
-
-Data classifications are ordered `public < internal < confidential < restricted`. Channel capacities map to ceilings as follows: `public → public`, `internal → internal`, `private → confidential`, and `local-only → restricted`. A run's effective classification can only increase. Classification violations, scanner review findings, and normal tool approval are combined into at most one kernel approval prompt for an operation. Prompt scanner failures or missing coverage require review and cannot bypass channel classification.
-
-Every model completion passes through the kernel `ModelGateway`. The mock provider is `local-only`; Anthropic and OpenAI currently accept up to `internal` data. The gateway scans the complete provider input, rechecks classification through a one-shot permit immediately before provider work, and holds raw output until the completed response passes scanning and authorization. Denied output is not displayed or persisted. Chat turns, graph instances, and bot attempts persist their execution classification and provenance across restarts. A missing bot run is marked interrupted instead of replaying its prompt.
-
-## Verification
+Checks:
 
 ```sh
 corepack pnpm typecheck
@@ -58,15 +74,52 @@ corepack pnpm test:coverage
 corepack pnpm test:e2e
 ```
 
-`pnpm test:e2e` launches the real Electron app. On macOS, native tray-menu clicks remain a manual platform check; the automated journey verifies the same show/hide handlers, tray menu model, and continued main-process/plugin lifetime.
+`pnpm build` runs `pnpm check:boundaries` before the workspace package builds. `typecheck`, `test`, `test:coverage`, and `test:e2e` each run `pnpm build` first.
 
-## Unsigned macOS alpha
+## Architecture
+
+**Kernel** (`packages/kernel`, `@borg/kernel`). Agent loops, tool dispatch, the model gateway, the command and event bus, plugin lifecycle, and the classification, scanning, and approval services. `createKernel()` builds a kernel inside any Node process. The package does not import Electron. Depth on the services and the locked design decisions is in [docs/architecture.md](docs/architecture.md).
+
+**Plugin SDK** (`packages/plugin-sdk`, `@borg/plugin-sdk`). What plugin code imports: `definePlugin`, `defineTool`, `defineUiPlugin`, the `PluginContext` type, the manifest schema, and `createTestHarness`.
+
+**Contracts** (`packages/contracts`, `@borg/contracts`). The root export holds `defineCommand`, `defineEvent`, and the schemas the kernel uses, including the MCP server config that personas embed. It defines no plugin commands, and its only event is the kernel-guarded `borg.channel.inboundMessage`. Five subpaths hold schemas that several plugins share: `@borg/contracts/calendar`, `/connector-accounts`, `/contacts`, `/drive`, and `/web-search`. Commands, events, and schemas that belong to one plugin ship from that plugin's `@borg/plugin-<name>/contract` export.
+
+**Plugins** (`plugins/*`). One package per plugin, 34 in total: model providers, message channels, tools, search, MCP, storage, security scanning, and UI features.
+
+**Distributions** (`distributions/*`). `defineDistribution()` definitions that a host passes to `createKernel()`. The tree has one, `borg.desktop` in `distributions/desktop`.
+
+**Desktop app** (`apps/desktop`). The Electron host that runs `borg.desktop`. `tests/e2e` holds its Playwright specs.
+
+**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above.
+
+## Boundaries
+
+`pnpm build` starts with `pnpm check:boundaries`. It fails the build if the kernel, contracts, SDK, or a distribution depends on Electron, if a plugin imports another plugin other than through its `/contract` export, or if a command or event is defined outside a contract module. The full rule list is in [docs/boundaries.md](docs/boundaries.md).
+
+## Write a plugin
+
+[docs/plugin-authoring.md](docs/plugin-authoring.md) walks through `plugins/hello`: the package layout, the manifest, activation and `PluginContext`, the `./contract` export, what a plugin may import, UI registration, tests, and adding a plugin to `borg.desktop`.
+
+## Desktop app
+
+The desktop app runs the `borg.desktop` distribution, which bundles all 34 plugins. Closing the window hides it to the tray. Setup and feature detail is in [docs/desktop.md](docs/desktop.md).
+
+- **First run.** A guided setup verifies secure storage, takes optional provider keys, and picks an assistant. You can skip the cloud providers and use the built-in scripted model. Setup ends in Chat, which shows token and cost totals per conversation. **Settings → Plugins** turns bundled plugins off.
+- **MCP and MCP Apps.** MCP servers are configured per persona under **Settings → MCP**, over stdio or HTTP. Every MCP tool call asks for approval. MCP App HTML renders in a sandbox that blocks undeclared network access, nested frames, forms, downloads, and Node access.
+- **Search.** Tavily and Brave search tools register once a key is saved. Results are treated as untrusted and require approval.
+- **A2A.** A loopback-only JSON-RPC listener, off until you enable it under **Settings → A2A**.
+- **Channels.** Discord, Slack, IMAP, Microsoft 365, and Google channel plugins receive and send messages. Their credentials live in the kernel's secret store or OAuth vault.
+- **Security model.** Data is classified `public`, `internal`, `confidential`, or `restricted`, and a run's classification only goes up. Each model provider and channel has a ceiling. Prompt scanning, ceiling violations, and tool approval are combined so one operation asks at most once. The text of a denied model output is neither shown nor stored.
+
+### Unsigned macOS package
 
 ```sh
 corepack pnpm package:mac
 corepack pnpm verify:package:mac
 ```
 
-The package command creates `.package/Borg-darwin-<arch>.zip`. The verifier launches the packaged application with a temporary profile, completes setup, and opens a rendered graph. The artifact is unsigned and not notarized. macOS may require an explicit Gatekeeper override. The manual **Unsigned macOS alpha** GitHub workflow builds and uploads the same artifact for 14 days.
+The first command builds `.package/Borg-darwin-<arch>.zip`. The second launches that app and runs a short smoke check. Both scripts run only on macOS, and the app is not signed or notarized.
 
-Architecture and research are documented in `docs/architecture.md` and `docs/research/hivemind.md`.
+## License
+
+MIT. See [LICENSE](LICENSE).

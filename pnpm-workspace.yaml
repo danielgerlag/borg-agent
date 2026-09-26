@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - distributions/*
+  - examples/*
   - packages/*
   - plugins/*
 
