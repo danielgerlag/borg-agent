@@ -136,7 +136,9 @@ Generic graph support in the kernel is limited to `GraphContributionRegistry`, `
 
 - `defineCommand` and `defineEvent`;
 - the kernel's Zod schemas and inferred TypeScript types (bus, interactions, execution security, models, costs, loops, personas, workspaces, inbound messages) in its root export;
-- shared capability schemas that several plugins implement but the kernel never uses, each on its own subpath (for example `@borg/contracts/web-search`), outside the root export;
+- the connector account id and every persisted key format derived from it (`connectorAccountIdSchema`, `DEFAULT_CONNECTOR_ACCOUNT_ID`, `oauthGrantKey`, `connectorAdapterId`, `connectorSecretKey`, `connectorStoreKey`) in its root export, so one parser owns all key formats;
+- shared capability schemas that several plugins implement but the kernel never uses, each on its own subpath (`@borg/contracts/web-search` for Brave and Tavily; `@borg/contracts/calendar`, `@borg/contracts/contacts` and `@borg/contracts/drive` for Google and Microsoft 365), outside the root export;
+- connector account management shared by the multi-account plugins (`slugifyConnectorAccountName`, `allocateConnectorAccountId`, `MAX_CONNECTOR_ACCOUNTS`, `CONNECTOR_ACCOUNT_NAME_MAX`, `connectorAccountNameSchema`, `connectorCommandInputSchema`) on `@borg/contracts/connector-accounts`. A subpath may import from the root; the root never imports a subpath;
 - no handlers, services, UI components, or feature implementation.
 
 A plugin that owns commands, events, or schemas publishes them from `src/contract.ts` as `@borg/plugin-<name>/contract` (built to `dist/contract.js`). That file may import only `zod`, `@borg/contracts`, and other plugins' `/contract` subpaths, so consumers such as other plugins or the desktop get the schemas without the plugin runtime. `apps/desktop/test/wire-contract.test.ts` snapshots every command and event id, timeout, and schema digest across all of these modules.

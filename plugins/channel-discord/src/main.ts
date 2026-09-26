@@ -3,11 +3,13 @@ import {
   connectorAdapterId,
   connectorSecretKey,
   connectorStoreKey,
+} from "@borg/contracts";
+import {
   discordChannelDisconnect,
   discordChannelGetStatus,
   discordChannelVerify,
   type DiscordChannelStatus,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   type ChannelAdapterReceipt,

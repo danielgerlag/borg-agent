@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_CONNECTOR_ACCOUNT_ID,
   MAX_CONNECTOR_ACCOUNTS,
-  CONNECTOR_ACCOUNT_ID_MAX,
   CONNECTOR_ACCOUNT_NAME_MAX,
   allocateConnectorAccountId,
+  slugifyConnectorAccountName,
+} from "../src/connector-accounts";
+import {
+  DEFAULT_CONNECTOR_ACCOUNT_ID,
+  CONNECTOR_ACCOUNT_ID_MAX,
   connectorAdapterId,
   connectorSecretKey,
   connectorStoreKey,
   oauthGrantKey,
-  slugifyConnectorAccountName,
 } from "../src/index";
 
 describe("connector account helpers", () => {

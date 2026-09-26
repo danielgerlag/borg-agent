@@ -2,8 +2,8 @@ import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
   connectorAdapterId,
   connectorStoreKey,
-  type GoogleChannelStatus,
 } from "@borg/contracts";
+import type { GoogleChannelStatus } from "./contract";
 import type {
   ChannelAdapterReceipt,
   ChannelInboundDraft,

@@ -1,12 +1,12 @@
+import { oauthGrantKey } from "@borg/contracts";
+import { driveReadInputSchema } from "@borg/contracts/drive";
 import {
-  driveReadInputSchema,
   m365ChannelConnect,
   m365ChannelDisconnect,
   m365ChannelGetStatus,
   m365ChannelInject,
-  oauthGrantKey,
   type M365ChannelStatus,
-} from "@borg/contracts";
+} from "../src/contract";
 import { createTestHarness, type ToolContribution } from "@borg/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";

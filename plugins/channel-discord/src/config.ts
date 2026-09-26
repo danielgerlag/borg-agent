@@ -1,9 +1,11 @@
 import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
-  MAX_CONNECTOR_ACCOUNTS,
   connectorAccountIdSchema,
-  connectorAccountNameSchema,
 } from "@borg/contracts";
+import {
+  MAX_CONNECTOR_ACCOUNTS,
+  connectorAccountNameSchema,
+} from "@borg/contracts/connector-accounts";
 import { z } from "@borg/plugin-sdk";
 import {
   MAX_ALLOWED_CHANNEL_IDS,

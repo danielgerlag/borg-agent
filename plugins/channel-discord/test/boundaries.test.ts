@@ -64,6 +64,7 @@ describe("channel-discord package boundaries", () => {
       "@borg/ui-kit",
       "lucide-solid",
       "solid-js",
+      "zod",
     ]);
   });
 

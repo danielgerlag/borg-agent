@@ -1,9 +1,9 @@
+import { connectorSecretKey } from "@borg/contracts";
 import {
   CONNECTOR_ACCOUNT_NAME_MAX,
   MAX_CONNECTOR_ACCOUNTS,
   allocateConnectorAccountId,
-  connectorSecretKey,
-} from "@borg/contracts";
+} from "@borg/contracts/connector-accounts";
 import {
   coinbaseDisconnect,
   coinbaseGetStatus,

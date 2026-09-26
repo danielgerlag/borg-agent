@@ -3,7 +3,7 @@ import {
   m365ChannelDisconnect,
   m365ChannelGetStatus,
   m365ChannelInject,
-} from "@borg/contracts";
+} from "./contract";
 import { definePlugin } from "@borg/plugin-sdk";
 import { m365ChannelConfigSchema } from "./config";
 import { M365ChannelController } from "./runtime";

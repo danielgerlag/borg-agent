@@ -3,7 +3,7 @@ import {
   googleChannelDisconnect,
   googleChannelGetStatus,
   googleChannelInject,
-} from "@borg/contracts";
+} from "./contract";
 import { definePlugin } from "@borg/plugin-sdk";
 import { googleChannelConfigSchema } from "./config";
 import { GoogleChannelController } from "./runtime";

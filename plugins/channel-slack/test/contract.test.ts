@@ -5,7 +5,7 @@ import {
   slackChannelStatusSchema,
   slackChannelVerify,
   slackSocketStateSchema,
-} from "../src/index";
+} from "../src/contract";
 
 describe("slack channel commands", () => {
   it("exports Slack commands after Discord with a 30s verify timeout", () => {
