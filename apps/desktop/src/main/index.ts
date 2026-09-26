@@ -1,3 +1,4 @@
+import { desktopDistribution } from "@borg/distribution-desktop";
 import {
   KERNEL_VERSION,
   createKernel,
@@ -435,6 +436,7 @@ if (!app.requestSingleInstanceLock()) {
 
     kernel = createKernel({
       plugins: bundledMainPlugins,
+      distribution: desktopDistribution,
       host: {
         dataDirectory: app.getPath("userData"),
         showOsNotification: (notification) => {
