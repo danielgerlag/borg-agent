@@ -476,13 +476,28 @@ test("keeps an ask-user interaction pending while the window is hidden", async (
       application.evaluate(() => {
         const api = (
           globalThis as typeof globalThis & {
-            __borgTest?: { trayTitle(): string };
+            __borgTest?: { trayToolTip(): string };
           }
         ).__borgTest;
-        return api?.trayTitle() ?? "";
+        return api?.trayToolTip() ?? "";
       }),
     )
-    .toBe("1");
+    .toBe("Borg · 1 pending");
+  // Electron's Tray.setTitle only renders on macOS; elsewhere getTitle() stays "".
+  if (process.platform === "darwin") {
+    await expect
+      .poll(() =>
+        application.evaluate(() => {
+          const api = (
+            globalThis as typeof globalThis & {
+              __borgTest?: { trayTitle(): string };
+            }
+          ).__borgTest;
+          return api?.trayTitle() ?? "";
+        }),
+      )
+      .toBe("1");
+  }
 
   await application.evaluate(() => {
     const api = (
@@ -525,6 +540,18 @@ test("keeps an ask-user interaction pending while the window is hidden", async (
       }),
     )
     .toContain("Pending interactions: 0");
+  await expect
+    .poll(() =>
+      application.evaluate(() => {
+        const api = (
+          globalThis as typeof globalThis & {
+            __borgTest?: { trayToolTip(): string };
+          }
+        ).__borgTest;
+        return api?.trayToolTip() ?? "pending";
+      }),
+    )
+    .toBe("Borg");
   await expect
     .poll(() =>
       application.evaluate(() => {
