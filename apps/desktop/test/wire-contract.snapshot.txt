@@ -1,0 +1,247 @@
+command borg.a2a.getStatus timeout=- input=b989db56556fc123 output=840b2f56c92910da
+command borg.anthropic.connect timeout=- input=b989db56556fc123 output=5a3db377ed1e308e
+command borg.anthropic.disconnect timeout=- input=b989db56556fc123 output=5a3db377ed1e308e
+command borg.anthropic.getStatus timeout=- input=b989db56556fc123 output=5a3db377ed1e308e
+command borg.azure.connect timeout=- input=b989db56556fc123 output=eb4200ab57ebb216
+command borg.azure.disconnect timeout=- input=b989db56556fc123 output=eb4200ab57ebb216
+command borg.azure.getStatus timeout=- input=b989db56556fc123 output=eb4200ab57ebb216
+command borg.bots.create timeout=- input=a145c2497dc3a33b output=0fa13438b836b074
+command borg.bots.delete timeout=- input=b2340319a2326663 output=16000b23cd94cbab
+command borg.bots.get timeout=- input=b2340319a2326663 output=02b4c72fcf9fbf4e
+command borg.bots.list timeout=- input=b989db56556fc123 output=f68fd2609a7b6c04
+command borg.bots.listLogs timeout=- input=b2340319a2326663 output=e84ad1ed0c0e5ca8
+command borg.bots.start timeout=- input=b2340319a2326663 output=0fa13438b836b074
+command borg.bots.stop timeout=- input=b2340319a2326663 output=0fa13438b836b074
+command borg.channel.discord.disconnect timeout=- input=b844f42798a2e1dc output=6c38dfb8a10e4fea
+command borg.channel.discord.getStatus timeout=- input=b844f42798a2e1dc output=6c38dfb8a10e4fea
+command borg.channel.discord.verify timeout=30000 input=b844f42798a2e1dc output=6c38dfb8a10e4fea
+command borg.channel.google.connect timeout=180000 input=b844f42798a2e1dc output=b05f70f99ef80779
+command borg.channel.google.disconnect timeout=- input=b844f42798a2e1dc output=b05f70f99ef80779
+command borg.channel.google.getStatus timeout=- input=b844f42798a2e1dc output=b05f70f99ef80779
+command borg.channel.google.inject timeout=- input=138f8445eab8a252 output=0583761a5b3897f5
+command borg.channel.imap.inject timeout=- input=138f8445eab8a252 output=0583761a5b3897f5
+command borg.channel.m365.connect timeout=180000 input=b844f42798a2e1dc output=b05f70f99ef80779
+command borg.channel.m365.disconnect timeout=- input=b844f42798a2e1dc output=b05f70f99ef80779
+command borg.channel.m365.getStatus timeout=- input=b844f42798a2e1dc output=b05f70f99ef80779
+command borg.channel.m365.inject timeout=- input=138f8445eab8a252 output=0583761a5b3897f5
+command borg.channel.mock.inject timeout=- input=a9e1fb0845aee9ec output=0583761a5b3897f5
+command borg.channel.mock.send timeout=- input=517fd4ce71221acf output=7dfcab6cb59d7e07
+command borg.channel.slack.disconnect timeout=- input=b844f42798a2e1dc output=1fdf70587bc06f15
+command borg.channel.slack.getStatus timeout=- input=b844f42798a2e1dc output=1fdf70587bc06f15
+command borg.channel.slack.verify timeout=30000 input=b844f42798a2e1dc output=1fdf70587bc06f15
+command borg.chat.append timeout=- input=fe5227c77b3b4895 output=9f1fce6ae2876389
+command borg.chat.createSession timeout=- input=61e874992d2b2c59 output=4d782004d2486a70
+command borg.chat.deleteSession timeout=- input=c7248f6508de5386 output=16000b23cd94cbab
+command borg.chat.getSession timeout=- input=c7248f6508de5386 output=bbbeb00be787e912
+command borg.chat.importWorkspaceFiles timeout=- input=2cb1c623a47f9073 output=4db5fd456ab9231e
+command borg.chat.listSessions timeout=- input=ac69dd971e79c962 output=86e71441fd16ace0
+command borg.chat.listWorkspace timeout=- input=c7248f6508de5386 output=52d4b2b155f3978a
+command borg.chat.previewWorkspaceFile timeout=- input=8ac18980f2b9e3e0 output=6f0a6ad6465ce2e5
+command borg.chat.sendMessage timeout=- input=6788bbbfd9fca0e9 output=8ac3d0d22511617f
+command borg.chat.spawnSubAgent timeout=- input=093025c954b7f518 output=57fcaf5ac9827e42
+command borg.coinbase.disconnect timeout=- input=b844f42798a2e1dc output=496297c024303031
+command borg.coinbase.getStatus timeout=- input=b844f42798a2e1dc output=496297c024303031
+command borg.coinbase.verify timeout=30000 input=b844f42798a2e1dc output=496297c024303031
+command borg.copilot.connect timeout=- input=b989db56556fc123 output=27e31cfb6f80e25a
+command borg.copilot.disconnect timeout=- input=b989db56556fc123 output=27e31cfb6f80e25a
+command borg.copilot.getStatus timeout=- input=b989db56556fc123 output=27e31cfb6f80e25a
+command borg.copilot.pollDeviceFlow timeout=- input=b989db56556fc123 output=a7a06fa130658a31
+command borg.copilot.startDeviceFlow timeout=- input=b989db56556fc123 output=2aadba32fad71d49
+command borg.feedback.ask timeout=86405000 input=14505b3caf720953 output=076dbb9bd63c8e30
+command borg.graphs.cancelInstance timeout=- input=28d48badaac4a062 output=5da6abecae0a026f
+command borg.graphs.deleteDefinition timeout=- input=8debd594ba257ec3 output=16000b23cd94cbab
+command borg.graphs.getDefinition timeout=- input=8debd594ba257ec3 output=5c03c7cd98e60400
+command borg.graphs.getInstance timeout=- input=28d48badaac4a062 output=62d8fa94a7956d54
+command borg.graphs.launch timeout=- input=af1c1813c2bc58be output=28d48badaac4a062
+command borg.graphs.listCatalog timeout=- input=b989db56556fc123 output=db27dac1854880b6
+command borg.graphs.listContributions timeout=- input=b989db56556fc123 output=3774630bad4092cd
+command borg.graphs.listDefinitions timeout=- input=b989db56556fc123 output=9065f247d3125bbf
+command borg.graphs.listInstances timeout=- input=f6d91cbe68492a2e output=1c948c1aaff3c480
+command borg.graphs.listRunning timeout=- input=34b60c83be78ffdd output=1c948c1aaff3c480
+command borg.graphs.saveDefinition timeout=- input=4af8973c41b94e2f output=4af8973c41b94e2f
+command borg.hello.getStatus timeout=- input=b989db56556fc123 output=6f7c4ca5008ba605
+command borg.mcp.getStatus timeout=- input=a0c3d13ef72fb8c2 output=b78f38c1e24ca3bf
+command borg.mcp.listServers timeout=- input=36a6d76a7483ff6c output=edef4a1b9fac387e
+command borg.mcp.refresh timeout=- input=c40e0e45d0d87672 output=edef4a1b9fac387e
+command borg.mcpApps.cancelTool timeout=- input=29c05df81346c90c output=5da6abecae0a026f
+command borg.mcpApps.invokeTool timeout=300000 input=90c5dd459b96e0a4 output=d9ce7ffff6b4b8aa
+command borg.ollama.connect timeout=- input=b989db56556fc123 output=33504f6e931032b0
+command borg.ollama.disconnect timeout=- input=b989db56556fc123 output=33504f6e931032b0
+command borg.ollama.getStatus timeout=- input=b989db56556fc123 output=33504f6e931032b0
+command borg.openai.connect timeout=- input=b989db56556fc123 output=5a3db377ed1e308e
+command borg.openai.disconnect timeout=- input=b989db56556fc123 output=5a3db377ed1e308e
+command borg.openai.getStatus timeout=- input=b989db56556fc123 output=5a3db377ed1e308e
+command borg.openrouter.connect timeout=- input=b989db56556fc123 output=5a3db377ed1e308e
+command borg.openrouter.disconnect timeout=- input=b989db56556fc123 output=5a3db377ed1e308e
+command borg.openrouter.getStatus timeout=- input=b989db56556fc123 output=5a3db377ed1e308e
+command borg.search.brave.connect timeout=- input=b989db56556fc123 output=aee9eb810fac8eea
+command borg.search.brave.disconnect timeout=- input=b989db56556fc123 output=aee9eb810fac8eea
+command borg.search.brave.getStatus timeout=- input=b989db56556fc123 output=aee9eb810fac8eea
+command borg.search.tavily.connect timeout=- input=b989db56556fc123 output=aee9eb810fac8eea
+command borg.search.tavily.disconnect timeout=- input=b989db56556fc123 output=aee9eb810fac8eea
+command borg.search.tavily.getStatus timeout=- input=b989db56556fc123 output=aee9eb810fac8eea
+event borg.bots.completed payload=0fa13438b836b074
+event borg.bots.failed payload=0fa13438b836b074
+event borg.bots.started payload=0fa13438b836b074
+event borg.bots.stopped payload=0fa13438b836b074
+event borg.bots.updated payload=0fa13438b836b074
+event borg.channel.inboundMessage payload=5226fd30600755a4
+event borg.chat.message.appended payload=88d575dd2664ea9f
+event borg.chat.session.deleted payload=c7248f6508de5386
+event borg.chat.session.updated payload=8dbe92fa2c5d4f79
+event borg.chat.turn.completed payload=ed07f4cd49f291a5
+event borg.chat.turn.started payload=848e63d5a6997f28
+event borg.chat.workspace.updated payload=c7248f6508de5386
+event borg.embeddedContent.registered payload=6f73253b20e3f6f9
+event borg.feedback.requested payload=14fe88df7360f9f9
+event borg.feedback.resolved payload=b1406b0e1829ec1b
+event borg.graphs.definition.deleted payload=8debd594ba257ec3
+event borg.graphs.definition.saved payload=4af8973c41b94e2f
+event borg.graphs.instance.completed payload=75fd098bac699f21
+event borg.graphs.instance.failed payload=af13192041e603e9
+event borg.graphs.instance.started payload=040e45b7afcb9863
+event borg.graphs.instance.updated payload=040e45b7afcb9863
+event borg.graphs.step.completed payload=4014396a6074c18b
+event borg.mcp.appDiscovered payload=fbf6f46acad946a4
+event borg.mcpApps.toolResponded payload=7da3c8d0c1aca447
+schema a2aConfigSchema beece7bfa0f9d960
+schema a2aStatusSchema 840b2f56c92910da
+schema anthropicStatusSchema 5a3db377ed1e308e
+schema azureAuthModeSchema dc190a8f92308026
+schema azureStatusSchema eb4200ab57ebb216
+schema botLogLevelSchema ad35cc72ca81ec84
+schema botLogSchema 73e010f3b06df1d9
+schema botSchema 54564a2b6f809525
+schema botStatusSchema 3df6b5229d3bf8e5
+schema boundedProvenanceSchema b13b180a27906636
+schema calendarCreateInputSchema fcf5718a628dc9a4
+schema calendarCreateOutputSchema 6d50dc05418ef53e
+schema calendarEventSchema a680c19a7f2d0df5
+schema calendarListInputSchema 9ca12132bb4bdfb3
+schema calendarListOutputSchema 14198b9766a31da2
+schema channelAttachmentHandleSchema cabeb154f8500986
+schema channelCapacitySchema a78c7753869afc1a
+schema chatDocumentSchema bbbeb00be787e912
+schema chatEntryRoleSchema bd66f33575ac1dbf
+schema chatEntrySchema 7b8e66411582062b
+schema chatSessionSchema caaec36959722659
+schema chatUsageSchema 9e041405aecd9750
+schema coinbaseAccountSchema b403dfc132b61e40
+schema coinbaseCreateOrderInputSchema b403b6e288541042
+schema coinbaseCreateOrderOutputSchema 88d7eb7a5fd460d2
+schema coinbaseGetAccountInputSchema cf8ab050ba76adc3
+schema coinbaseGetAccountOutputSchema b403dfc132b61e40
+schema coinbaseGetPriceInputSchema 818ce328ae69795d
+schema coinbaseGetPriceOutputSchema 2fd26e17ae69f437
+schema coinbaseListAccountsInputSchema 5699fc0124384f4f
+schema coinbaseListAccountsOutputSchema 8ee1ea6421b03599
+schema coinbaseListOrdersInputSchema 5699fc0124384f4f
+schema coinbaseListOrdersOutputSchema fa27bca7df1bd057
+schema coinbaseListTransactionsInputSchema cf8ab050ba76adc3
+schema coinbaseListTransactionsOutputSchema 136aee9ddb80f72a
+schema coinbaseOrderSchema 4a1270e5ff9b2f60
+schema coinbaseProductSchema 2fd26e17ae69f437
+schema coinbaseSendCryptoInputSchema fe070bd43be756c7
+schema coinbaseSendCryptoOutputSchema d0e1b8546ac24525
+schema coinbaseStatusSchema 496297c024303031
+schema coinbaseTransactionSchema d0e1b8546ac24525
+schema commandErrorCodeSchema 19fa5b09673706e5
+schema commandErrorSchema a78ca899966588ca
+schema connectorAccountIdSchema 7e7f47aa856f017c
+schema connectorAccountNameSchema eabd046f6a0645bb
+schema connectorCommandInputSchema b844f42798a2e1dc
+schema contactSchema a31d33ab040d5024
+schema contactsSearchInputSchema 72f46b9ac49eb89f
+schema contactsSearchOutputSchema 3f056f43afd923ae
+schema contractJsonValueSchema ac0ce75361aca4ae
+schema copilotDeviceFlowPollSchema a7a06fa130658a31
+schema copilotDeviceFlowStartSchema 2aadba32fad71d49
+schema copilotStatusSchema 27e31cfb6f80e25a
+schema costSummarySchema 2b0a2bbe1363b075
+schema dataClassificationSchema 1fbfe547053e571f
+schema discordChannelStatusSchema 6c38dfb8a10e4fea
+schema driveFileSchema 0b04efc69f1a65f9
+schema driveReadInputSchema f6f99d1365b02743
+schema driveReadOutputSchema 6b9385f4064b9cb5
+schema driveSearchInputSchema 8c1e8042c361a998
+schema driveSearchOutputSchema 23221d1be16a8781
+schema embeddedContentSnapshotSchema f372672588780987
+schema executionBindingFingerprintSchema 648925e653798221
+schema executionCloseInputSchema 00aa74bcdc9e60e9
+schema executionIdSchema 2838136b1745d7d6
+schema executionLifecycleSchema 633762c109fab301
+schema executionObservationInputSchema 23e8e34e1c3817a4
+schema executionResultFlowSchema bb0d141237065309
+schema executionResumeBindInputSchema ce2dc53821c2efe4
+schema executionRootBindInputSchema 59247e01bbf39122
+schema executionSecurityContextSchema d6e26c1a7c3b3f32
+schema executionSecuritySummarySchema d7cffa7d965fc702
+schema executionSubjectSchema 707f944692ffbab4
+schema feedbackAnswerSchema 951243471c1cd9f5
+schema feedbackAskInputSchema 14505b3caf720953
+schema googleChannelStatusSchema b05f70f99ef80779
+schema graphContributionDescriptorSchema f4313ecf6d2f1846
+schema graphDefinitionSchema e62a6006d0349b37
+schema graphEdgeSchema 22e29ca6b6803c49
+schema graphErrorStrategySchema 1f2b93a487049838
+schema graphInstanceSchema a2b46d3b699f977e
+schema graphInstanceStatusSchema def97156fe505081
+schema graphNodeSchema e6f6b035f55ac2a7
+schema graphNodeStateSchema b46b31c6191c1d5f
+schema graphToolCatalogEntrySchema 7ddb74b6524745cf
+schema graphTriggerKindSchema db6b690c4362d2bb
+schema graphValueMapSchema c350b68516a9b884
+schema interactionChoiceSchema a8c8fb74ab9e7493
+schema interactionKindSchema 55744fd0b894e97c
+schema interactionResponseSchema 42c7d9d998313c1b
+schema interactionSourceSchema 46a186e57ab580ba
+schema loopEventSchema 93882b8370d9335d
+schema loopRunSnapshotSchema 6fc606ade415dc92
+schema loopRunStatusSchema 7a8e7d54ed0e0369
+schema loopSecurityInputSchema 410dc96666b43b91
+schema loopStartInputSchema 8856ee735f211d77
+schema m365ChannelStatusSchema b05f70f99ef80779
+schema mcpAppCspSchema a7fd74e217c71b48
+schema mcpAppPermissionsSchema 7d025d124958d7ad
+schema mcpAppRequestIdSchema 5705850f96c4198a
+schema mcpAppSnapshotSchema 456386c12bf9b95c
+schema mcpAppToolArgumentsSchema 76d0081d404a68a8
+schema mcpAppToolResponseSchema e64e89b5b0d2b652
+schema mcpAppToolSchema 1cf6bfbdfd4910c9
+schema mcpServerConfigSchema bc16656f6e102b4c
+schema mcpServerSnapshotSchema b78f38c1e24ca3bf
+schema mcpServerStatusSchema 1e22a54a18e235cd
+schema modelCompletionRequestSchema d6520f9871b40f2a
+schema modelCompletionResultSchema 0faec7168f0cead5
+schema modelDescriptorSchema f5db2ccc9be271ff
+schema modelGatewayRequestSchema b604f6e5d7e10788
+schema modelMessageSchema 51871c53402af2bd
+schema modelOperationKeySchema 3b25c555fb2b97c6
+schema modelOperationPrefixSchema f9432793de58a6fa
+schema modelToolCallSchema f17698c4a6d5bfdd
+schema modelToolDefinitionSchema 79c197d595a94a56
+schema modelUsageSchema f9d95812dc6a2dd6
+schema ollamaStatusSchema 33504f6e931032b0
+schema openaiStatusSchema 5a3db377ed1e308e
+schema openrouterStatusSchema 5a3db377ed1e308e
+schema pendingInteractionSchema ca741f471b214cd0
+schema personaIdSchema 895ffc985db4dcfc
+schema personaSchema de121e676294f5f4
+schema promptScanActionSchema 3e286171050bfea1
+schema promptScanFindingSchema 489eba4436e2cbea
+schema promptScanStageSchema 8f8576ce6ff6bfb9
+schema provenanceSeedSchema 04805cf002ff97c2
+schema providerEgressSchema d6b41d6eb3272aca
+schema releasedModelCompletionSchema 47252a96a1a85ecb
+schema searchProviderStatusSchema aee9eb810fac8eea
+schema securityObservationSchema e9dd877c00692017
+schema slackChannelStatusSchema 1fdf70587bc06f15
+schema slackSocketStateSchema 210410d79a227244
+schema toolApprovalSchema 7ce8457921079649
+schema usageRecordSchema 343b324ecbaf9fc8
+schema webSearchHitSchema 3ca3a32622cbc4b9
+schema webSearchInputSchema d959242b6c29aa13
+schema webSearchOutputSchema 8519d736b781503e
+schema workspaceFileSchema 6c76fbf998cfae43
+schema workspaceImportResultSchema 4db5fd456ab9231e
+schema workspacePreviewSchema 6f0a6ad6465ce2e5
