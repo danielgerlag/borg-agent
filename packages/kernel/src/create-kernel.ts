@@ -80,10 +80,35 @@ export interface Kernel {
   readonly models: ModelGateway;
   readonly costs: CostLedger;
   readonly workspaces: WorkspaceService;
-  /** Activates the config store, secret store, then every other plugin. Throws on bootstrap failure; services stay usable. */
+  /**
+   * Activates the config store, secret store, then every other plugin. Throws on bootstrap failure; services stay usable.
+   * A kernel starts at most once: calling start() again, or after stop(), throws.
+   */
   start(): Promise<void>;
-  /** Deactivates plugins and shuts every service down. Idempotent. */
+  /** Deactivates plugins and shuts every service down. Allowed in any state, including while starting. Idempotent. */
   stop(): Promise<void>;
+}
+
+type KernelState =
+  | "idle"
+  | "starting"
+  | "started"
+  | "failed"
+  | "stopping"
+  | "stopped";
+
+function startRejection(state: Exclude<KernelState, "idle">): string {
+  switch (state) {
+    case "starting":
+      return "Kernel is already starting";
+    case "started":
+      return "Kernel is already started";
+    case "failed":
+      return "Kernel start already failed; create a new kernel to retry";
+    case "stopping":
+    case "stopped":
+      return "Kernel has been stopped; create a new kernel to start again";
+  }
 }
 
 function manifestOf(source: PluginSource) {
@@ -228,9 +253,33 @@ export function createKernel(options: CreateKernelOptions): Kernel {
 
   let a2aConfigWatch: Disposable | undefined;
   let pluginEnablementRegistration: Disposable | undefined;
-  let stopped = false;
+  let state: KernelState = "idle";
+
+  // stop() may run while start() is awaiting; bail out before activating more plugins.
+  function assertStarting(): void {
+    if (state !== "starting") {
+      throw new Error("Kernel was stopped while starting");
+    }
+  }
 
   async function start(): Promise<void> {
+    if (state !== "idle") {
+      throw new Error(startRejection(state));
+    }
+    state = "starting";
+    try {
+      await bootstrap();
+      assertStarting();
+      state = "started";
+    } catch (error) {
+      if (state === "starting") {
+        state = "failed";
+      }
+      throw error;
+    }
+  }
+
+  async function bootstrap(): Promise<void> {
     const configStoreSources = options.plugins.filter(
       (source) =>
         contributes(source, "configStore") &&
@@ -246,17 +295,20 @@ export function createKernel(options: CreateKernelOptions): Kernel {
     }
     const configStoreSource = configStoreSources[0];
     await plugins.activateConfigStore(configStoreSource);
+    assertStarting();
     if (!persistence.hasConfigStore()) {
       throw new Error("The selected config store did not install its provider");
     }
     await executions.initialize();
     await personas.initialize();
+    assertStarting();
 
     pluginEnablementRegistration = config.registerSchema(
       PLUGIN_ENABLEMENT_NAMESPACE,
       pluginEnablementSchema,
     );
     const secretStoreId = await options.resolveSecretStore(config);
+    assertStarting();
     const secretStoreSources = options.plugins.filter((source) =>
       contributes(source, "secretStore"),
     );
@@ -269,6 +321,7 @@ export function createKernel(options: CreateKernelOptions): Kernel {
       );
     }
     await plugins.activate(selectedSecretSource);
+    assertStarting();
     if (!persistence.hasSecretStore()) {
       throw new Error("The selected secret store did not install its provider");
     }
@@ -286,6 +339,7 @@ export function createKernel(options: CreateKernelOptions): Kernel {
         !contributes(source, "secretStore"),
     );
     await plugins.activateAll(ordinarySources);
+    assertStarting();
     if (plugins.isActive(A2A_OWNER_PLUGIN_ID)) {
       const syncListener = async (value: unknown): Promise<void> => {
         try {
@@ -302,28 +356,32 @@ export function createKernel(options: CreateKernelOptions): Kernel {
   }
 
   async function stop(): Promise<void> {
-    if (stopped) {
+    if (state === "stopping" || state === "stopped") {
       return;
     }
-    stopped = true;
+    state = "stopping";
     try {
-      await plugins.deactivateAll();
+      try {
+        await plugins.deactivateAll();
+      } finally {
+        await a2aConfigWatch?.dispose();
+        a2aConfigWatch = undefined;
+        await a2a.close();
+        scheduler.shutdown();
+        loops.shutdown();
+        interactions.cancelAll();
+        await processes.shutdown();
+        channels.shutdown();
+        tls.shutdown();
+        oauth.shutdown();
+        webSockets.shutdown();
+        network.shutdown();
+      }
+      await pluginEnablementRegistration?.dispose();
+      pluginEnablementRegistration = undefined;
     } finally {
-      await a2aConfigWatch?.dispose();
-      a2aConfigWatch = undefined;
-      await a2a.close();
-      scheduler.shutdown();
-      loops.shutdown();
-      interactions.cancelAll();
-      await processes.shutdown();
-      channels.shutdown();
-      tls.shutdown();
-      oauth.shutdown();
-      webSockets.shutdown();
-      network.shutdown();
+      state = "stopped";
     }
-    await pluginEnablementRegistration?.dispose();
-    pluginEnablementRegistration = undefined;
   }
 
   return {

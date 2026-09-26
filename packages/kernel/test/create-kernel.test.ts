@@ -112,6 +112,32 @@ function sourceFor(definition: {
   };
 }
 
+function memoryConfigSource(): PluginSource {
+  return sourceFor({
+    id: "test.config",
+    version: "0.1.0",
+    engines: { borg: "^0.1.0" },
+    permissions: [],
+    contributes: { kinds: ["configStore"] },
+    activate(context) {
+      context.persistence.registerConfigStore(new MemoryConfigStore());
+    },
+  });
+}
+
+function memorySecretSource(): PluginSource {
+  return sourceFor({
+    id: "test.secrets",
+    version: "0.1.0",
+    engines: { borg: "^0.1.0" },
+    permissions: [],
+    contributes: { kinds: ["secretStore"] },
+    activate(context) {
+      context.persistence.registerSecretStore(new MemorySecretStore());
+    },
+  });
+}
+
 describe("createKernel", () => {
   let dataDirectory: string | undefined;
   let kernel: Kernel | undefined;
@@ -259,5 +285,76 @@ describe("createKernel", () => {
     await kernel.stop();
     expect(kernel.plugins.getActivePluginIds()).toEqual([]);
     await expect(kernel.stop()).resolves.toBeUndefined();
+  });
+
+  it("rejects a second start() while the kernel is started", async () => {
+    dataDirectory = mkdtempSync(path.join(os.tmpdir(), "borg-kernel-"));
+    kernel = createKernel({
+      plugins: [memoryConfigSource(), memorySecretSource()],
+      host: { dataDirectory },
+      resolveSecretStore: async () => "test.secrets",
+    });
+    await kernel.start();
+
+    await expect(kernel.start()).rejects.toThrow("Kernel is already started");
+    expect(kernel.plugins.getActivePluginIds()).toEqual([
+      "test.config",
+      "test.secrets",
+    ]);
+  });
+
+  it("rejects a concurrent start() while the kernel is starting", async () => {
+    dataDirectory = mkdtempSync(path.join(os.tmpdir(), "borg-kernel-"));
+    kernel = createKernel({
+      plugins: [memoryConfigSource(), memorySecretSource()],
+      host: { dataDirectory },
+      resolveSecretStore: async () => "test.secrets",
+    });
+    const first = kernel.start();
+
+    await expect(kernel.start()).rejects.toThrow("Kernel is already starting");
+    await expect(first).resolves.toBeUndefined();
+  });
+
+  it("rejects start() after stop()", async () => {
+    dataDirectory = mkdtempSync(path.join(os.tmpdir(), "borg-kernel-"));
+    kernel = createKernel({
+      plugins: [memoryConfigSource(), memorySecretSource()],
+      host: { dataDirectory },
+      resolveSecretStore: async () => "test.secrets",
+    });
+    await kernel.start();
+    await kernel.stop();
+
+    await expect(kernel.start()).rejects.toThrow(
+      "Kernel has been stopped; create a new kernel to start again",
+    );
+    expect(kernel.plugins.getActivePluginIds()).toEqual([]);
+  });
+
+  it("stops activating plugins when stop() is called while starting", async () => {
+    dataDirectory = mkdtempSync(path.join(os.tmpdir(), "borg-kernel-"));
+    let markRequested!: () => void;
+    const secretStoreRequested = new Promise<void>((resolve) => {
+      markRequested = resolve;
+    });
+    let releaseSecretStore!: (id: string) => void;
+    kernel = createKernel({
+      plugins: [memoryConfigSource(), memorySecretSource()],
+      host: { dataDirectory },
+      resolveSecretStore: () =>
+        new Promise<string>((resolve) => {
+          releaseSecretStore = resolve;
+          markRequested();
+        }),
+    });
+    const starting = kernel.start();
+    await secretStoreRequested;
+
+    await kernel.stop();
+    releaseSecretStore("test.secrets");
+
+    await expect(starting).rejects.toThrow("Kernel was stopped while starting");
+    expect(kernel.plugins.getActivePluginIds()).toEqual([]);
   });
 });
