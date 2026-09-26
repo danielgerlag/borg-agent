@@ -1,10 +1,9 @@
 import {
-  mcpAppDiscovered,
   mcpServerConfigSchema,
   type McpServerConfig,
-  type McpServerSnapshot,
   type Persona,
 } from "@borg/contracts";
+import { mcpAppDiscovered, type McpServerSnapshot } from "./contract";
 import type {
   DynamicToolDefinition,
   JsonValue,
