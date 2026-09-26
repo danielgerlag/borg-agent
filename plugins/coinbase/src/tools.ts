@@ -13,7 +13,7 @@ import {
   coinbaseListTransactionsOutputSchema,
   coinbaseSendCryptoInputSchema,
   coinbaseSendCryptoOutputSchema,
-} from "@borg/contracts";
+} from "./contract";
 import {
   defineTool,
   type Disposable,
