@@ -2,7 +2,7 @@ import {
   openrouterConnect,
   openrouterDisconnect,
   openrouterGetStatus,
-} from "@borg/contracts";
+} from "./contract";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Panel, TextField } from "@borg/ui-kit";
 import { Globe, KeyRound } from "lucide-solid";

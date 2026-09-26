@@ -2,7 +2,7 @@ import {
   ollamaConnect,
   ollamaDisconnect,
   ollamaGetStatus,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   createTestHarness,
   type Disposable,

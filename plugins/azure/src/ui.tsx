@@ -2,7 +2,7 @@ import {
   azureConnect,
   azureDisconnect,
   azureGetStatus,
-} from "@borg/contracts";
+} from "./contract";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Panel, Select, TextField } from "@borg/ui-kit";
 import { Cloud, KeyRound } from "lucide-solid";

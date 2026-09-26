@@ -2,7 +2,7 @@ import {
   ollamaConnect,
   ollamaDisconnect,
   ollamaGetStatus,
-} from "@borg/contracts";
+} from "./contract";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Panel, TextField } from "@borg/ui-kit";
 import { Server } from "lucide-solid";

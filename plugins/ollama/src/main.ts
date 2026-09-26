@@ -3,7 +3,7 @@ import {
   ollamaDisconnect,
   ollamaGetStatus,
   type OllamaStatus,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   type Disposable,

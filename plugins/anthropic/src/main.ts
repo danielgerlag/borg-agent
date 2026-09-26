@@ -3,7 +3,7 @@ import {
   anthropicDisconnect,
   anthropicGetStatus,
   type AnthropicStatus,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   type Disposable,

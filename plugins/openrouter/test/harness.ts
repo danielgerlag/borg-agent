@@ -2,7 +2,7 @@ import {
   openrouterConnect,
   openrouterDisconnect,
   openrouterGetStatus,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   createTestHarness,
   type Disposable,
