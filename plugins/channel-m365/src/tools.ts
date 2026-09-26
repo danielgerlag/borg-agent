@@ -3,13 +3,17 @@ import {
   calendarCreateOutputSchema,
   calendarListInputSchema,
   calendarListOutputSchema,
+} from "@borg/contracts/calendar";
+import {
   contactsSearchInputSchema,
   contactsSearchOutputSchema,
+} from "@borg/contracts/contacts";
+import {
   driveReadInputSchema,
   driveReadOutputSchema,
   driveSearchInputSchema,
   driveSearchOutputSchema,
-} from "@borg/contracts";
+} from "@borg/contracts/drive";
 import {
   defineTool,
   type Disposable,

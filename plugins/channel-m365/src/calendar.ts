@@ -6,7 +6,7 @@ import {
   type CalendarEvent,
   type CalendarListInput,
   type CalendarListOutput,
-} from "@borg/contracts";
+} from "@borg/contracts/calendar";
 import {
   GraphError,
   graphRequest,

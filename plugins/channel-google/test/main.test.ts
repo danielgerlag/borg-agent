@@ -1,7 +1,5 @@
-import {
-  driveReadInputSchema,
-  oauthGrantKey,
-} from "@borg/contracts";
+import { oauthGrantKey } from "@borg/contracts";
+import { driveReadInputSchema } from "@borg/contracts/drive";
 import {
   googleChannelConnect,
   googleChannelDisconnect,
