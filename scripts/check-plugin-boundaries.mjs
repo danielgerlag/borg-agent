@@ -53,6 +53,30 @@ for (const filename of productionFiles) {
   }
 }
 
+// The kernel and the workspace packages it depends on must load in plain Node.
+const electronImport =
+  /(?:\bfrom\s+|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)["']electron(?:\/[^"']*)?["']/;
+for (const packageName of ["kernel", "plugin-sdk", "contracts"]) {
+  const packageDirectory = path.join(projectRoot, "packages", packageName);
+  const manifest = JSON.parse(
+    await readFile(path.join(packageDirectory, "package.json"), "utf8"),
+  );
+  for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+    if (manifest[field]?.electron !== undefined) {
+      failures.push(
+        `packages/${packageName}/package.json depends on electron; the kernel must stay host-agnostic`,
+      );
+    }
+  }
+  for (const filename of await sourceFiles(path.join(packageDirectory, "src"))) {
+    if (electronImport.test(await readFile(filename, "utf8"))) {
+      failures.push(
+        `${path.relative(projectRoot, filename)} imports electron; the kernel must stay host-agnostic`,
+      );
+    }
+  }
+}
+
 const contractsSource = await readFile(
   path.join(projectRoot, "packages/contracts/src/index.ts"),
   "utf8",
