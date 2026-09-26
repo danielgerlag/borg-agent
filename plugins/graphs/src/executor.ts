@@ -1,7 +1,14 @@
 import {
   channelInboundMessage,
-  chatAppend,
+  executionIdSchema,
   feedbackAsk,
+  type DataClassification,
+  type ExecutionId,
+  type LoopRunSnapshot,
+  type ProvenanceSeed,
+} from "@borg/contracts";
+import { chatAppend } from "@borg/plugin-chat/contract";
+import {
   graphDefinitionDeleted,
   graphDefinitionSaved,
   graphDefinitionSchema,
@@ -11,16 +18,11 @@ import {
   graphInstanceStarted,
   graphInstanceUpdated,
   graphStepCompleted,
-  executionIdSchema,
   type GraphDefinition,
   type GraphInstance,
   type GraphNode,
   type GraphNodeState,
-  type LoopRunSnapshot,
-  type DataClassification,
-  type ExecutionId,
-  type ProvenanceSeed,
-} from "@borg/contracts";
+} from "./contract";
 import {
   IndeterminateModelCallError,
   type Disposable,

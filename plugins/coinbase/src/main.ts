@@ -1,11 +1,13 @@
 import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
+  connectorSecretKey,
+} from "@borg/contracts";
+import {
   coinbaseDisconnect,
   coinbaseGetStatus,
   coinbaseVerify,
-  connectorSecretKey,
   type CoinbaseStatus,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   type Disposable,

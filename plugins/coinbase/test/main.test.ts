@@ -3,7 +3,7 @@ import {
   coinbaseGetStatus,
   coinbaseVerify,
   type CoinbaseStatus,
-} from "@borg/contracts";
+} from "../src/contract";
 import { createTestHarness, type ToolExecutionContext } from "@borg/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";

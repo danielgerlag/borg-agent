@@ -6,7 +6,7 @@ import {
   copilotStartDeviceFlow,
   type CopilotDeviceFlowPoll,
   type CopilotStatus,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   type Disposable,

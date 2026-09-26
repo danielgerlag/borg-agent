@@ -1,14 +1,16 @@
 import {
+  executionIdSchema,
+  executionSecurityContextSchema,
+  modelOperationPrefixSchema,
+} from "@borg/contracts";
+import {
   botSchema,
   botsCreate,
   botsList,
   botsListLogs,
   botsStart,
   botsStop,
-  executionIdSchema,
-  executionSecurityContextSchema,
-  modelOperationPrefixSchema,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   createTestHarness,
   pluginManifestSchema,

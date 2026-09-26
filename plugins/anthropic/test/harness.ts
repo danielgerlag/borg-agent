@@ -2,7 +2,7 @@ import {
   anthropicConnect,
   anthropicDisconnect,
   anthropicGetStatus,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   createTestHarness,
   type Disposable,

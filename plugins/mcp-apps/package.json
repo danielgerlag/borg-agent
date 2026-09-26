@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@borg/contracts": "workspace:*",
+    "@borg/plugin-chat": "workspace:*",
     "@borg/plugin-sdk": "workspace:*",
     "solid-js": "^1.9.15"
   },

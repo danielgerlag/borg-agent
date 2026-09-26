@@ -1,11 +1,13 @@
 import {
-  braveConnect,
-  braveDisconnect,
-  braveGetStatus,
   webSearchInputSchema,
   webSearchOutputSchema,
   type SearchProviderStatus,
-} from "@borg/contracts";
+} from "@borg/contracts/web-search";
+import {
+  braveConnect,
+  braveDisconnect,
+  braveGetStatus,
+} from "./contract";
 import {
   definePlugin,
   defineTool,

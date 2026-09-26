@@ -2,12 +2,14 @@ import {
   CONNECTOR_ACCOUNT_NAME_MAX,
   MAX_CONNECTOR_ACCOUNTS,
   allocateConnectorAccountId,
+  connectorSecretKey,
+} from "@borg/contracts";
+import {
   coinbaseDisconnect,
   coinbaseGetStatus,
   coinbaseVerify,
-  connectorSecretKey,
   type CoinbaseStatus,
-} from "@borg/contracts";
+} from "./contract";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { Coins, KeyRound, Plus, Save, Trash2 } from "lucide-solid";
