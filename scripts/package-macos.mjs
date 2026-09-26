@@ -47,7 +47,6 @@ execFileSync(
     "@borg/desktop",
     "deploy",
     "--prod",
-    "--trust-lockfile",
     "--node-linker=hoisted",
     stageDirectory,
   ],
