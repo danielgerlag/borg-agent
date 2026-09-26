@@ -1,0 +1,263 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  definePlugin,
+  defineTool,
+  type BorgPluginManifest,
+  type ConfigStoreProvider,
+  type JsonValue,
+  type SecretStoreProvider,
+  type StoreEntry,
+  type StoreTransactionOperation,
+  z,
+} from "@borg/plugin-sdk";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createKernel, type Kernel, type PluginSource } from "../src";
+
+class MemoryConfigStore implements ConfigStoreProvider {
+  readonly configs = new Map<string, JsonValue>();
+  readonly values = new Map<string, Map<string, JsonValue>>();
+
+  async readConfig(namespace: string): Promise<unknown | undefined> {
+    return this.configs.get(namespace);
+  }
+
+  async writeConfig(namespace: string, value: JsonValue): Promise<void> {
+    this.configs.set(namespace, value);
+  }
+
+  async getStore(
+    namespace: string,
+    key: string,
+  ): Promise<JsonValue | undefined> {
+    return this.values.get(namespace)?.get(key);
+  }
+
+  async listStore(
+    namespace: string,
+    prefix: string,
+  ): Promise<readonly StoreEntry[]> {
+    return [...(this.values.get(namespace) ?? new Map()).entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([key, value]) => ({ key, value }));
+  }
+
+  async applyStoreTransaction(
+    namespace: string,
+    operations: readonly StoreTransactionOperation[],
+  ): Promise<void> {
+    const next = new Map(this.values.get(namespace));
+    for (const operation of operations) {
+      if (operation.type === "set") {
+        next.set(operation.key, operation.value);
+      } else {
+        next.delete(operation.key);
+      }
+    }
+    this.values.set(namespace, next);
+  }
+}
+
+class MemorySecretStore implements SecretStoreProvider {
+  readonly kind = "development" as const;
+  readonly values = new Map<string, string>();
+
+  async get(namespace: string, key: string): Promise<string | undefined> {
+    return this.values.get(`${namespace}:${key}`);
+  }
+
+  async set(namespace: string, key: string, value: string): Promise<void> {
+    this.values.set(`${namespace}:${key}`, value);
+  }
+
+  async delete(namespace: string, key: string): Promise<void> {
+    this.values.delete(`${namespace}:${key}`);
+  }
+
+  async has(namespace: string, key: string): Promise<boolean> {
+    return this.values.has(`${namespace}:${key}`);
+  }
+}
+
+function sourceFor(definition: {
+  readonly id: string;
+  readonly version: string;
+  readonly engines: { readonly borg: string };
+  readonly permissions: readonly string[];
+  readonly contributes: BorgPluginManifest["contributes"];
+  activate: NonNullable<
+    Parameters<typeof definePlugin>[0]["activate"]
+  >;
+}): PluginSource {
+  const manifest = {
+    id: definition.id,
+    version: definition.version,
+    engines: definition.engines,
+    main: `${definition.id}/main`,
+    permissions: definition.permissions,
+    contributes: definition.contributes,
+  } as const satisfies BorgPluginManifest;
+  return {
+    manifest,
+    loadMain: async () =>
+      definePlugin({
+        id: manifest.id,
+        version: manifest.version,
+        engines: manifest.engines,
+        permissions: manifest.permissions,
+        contributes: manifest.contributes,
+        activate: definition.activate,
+      }),
+  };
+}
+
+describe("createKernel", () => {
+  let dataDirectory: string | undefined;
+  let kernel: Kernel | undefined;
+
+  afterEach(async () => {
+    await kernel?.stop();
+    kernel = undefined;
+    if (dataDirectory !== undefined) {
+      rmSync(dataDirectory, { recursive: true, force: true });
+      dataDirectory = undefined;
+    }
+  });
+
+  it("boots headless in plain Node, runs a tool call through the loop, and stops cleanly", async () => {
+    dataDirectory = mkdtempSync(path.join(os.tmpdir(), "borg-kernel-"));
+    const toolInputs: { readonly text: string }[] = [];
+    const plugins: PluginSource[] = [
+      sourceFor({
+        id: "test.config",
+        version: "0.1.0",
+        engines: { borg: "^0.1.0" },
+        permissions: [],
+        contributes: { kinds: ["configStore"] },
+        activate(context) {
+          context.persistence.registerConfigStore(new MemoryConfigStore());
+        },
+      }),
+      sourceFor({
+        id: "test.secrets",
+        version: "0.1.0",
+        engines: { borg: "^0.1.0" },
+        permissions: [],
+        contributes: { kinds: ["secretStore"] },
+        activate(context) {
+          context.persistence.registerSecretStore(new MemorySecretStore());
+        },
+      }),
+      // A scripted stand-in registered under the mock-llm id, so the kernel's
+      // default fallback preference (borg.mock-llm:mock:scripted) selects it.
+      sourceFor({
+        id: "borg.mock-llm",
+        version: "0.1.0",
+        engines: { borg: "^0.1.0" },
+        permissions: ["models.register"],
+        contributes: { kinds: ["llmProvider"] },
+        activate(context) {
+          context.models.registerProvider({
+            id: "borg.mock-llm",
+            models: ["mock:scripted"],
+            egress: {
+              kind: "remote",
+              capacity: "internal",
+              destination: "https://models.test.invalid/v1/generate",
+            },
+            async complete(request, permit) {
+              await permit.commit();
+              const toolMessage = request.messages.find(
+                (message) => message.role === "tool",
+              );
+              if (toolMessage) {
+                return {
+                  content: `continued with ${toolMessage.content}`,
+                  usage: { inputTokens: 2, outputTokens: 2 },
+                };
+              }
+              return {
+                toolCalls: [
+                  {
+                    id: "call-1",
+                    name: "test.echo",
+                    input: { text: "kernel" },
+                  },
+                ],
+                usage: { inputTokens: 1, outputTokens: 1 },
+              };
+            },
+          });
+        },
+      }),
+      sourceFor({
+        id: "test.tools",
+        version: "0.1.0",
+        engines: { borg: "^0.1.0" },
+        permissions: ["tools.register"],
+        contributes: { kinds: ["tool"] },
+        activate(context) {
+          context.tools.register(
+            defineTool({
+              id: "test.echo",
+              description: "Echo one string",
+              input: z.object({ text: z.string() }).strict(),
+              output: z.object({ echoed: z.string() }).strict(),
+              approval: "auto",
+              sideEffect: false,
+              execute: (input) => {
+                toolInputs.push({ text: input.text });
+                return { echoed: input.text };
+              },
+            }),
+          );
+        },
+      }),
+    ];
+
+    kernel = createKernel({
+      plugins,
+      host: { dataDirectory },
+      resolveSecretStore: async () => "test.secrets",
+    });
+    await kernel.start();
+
+    expect(kernel.plugins.getActivePluginIds()).toEqual([
+      "test.config",
+      "test.secrets",
+      "borg.mock-llm",
+      "test.tools",
+    ]);
+
+    const run = await kernel.loops.start({
+      prompt: "Echo kernel",
+      security: {
+        kind: "root",
+        subject: { kind: "kernel-test", id: "tool-call" },
+        classification: "internal",
+        provenance: {
+          kind: "plugin",
+          id: "borg.kernel.create-kernel-test",
+        },
+        operationPrefix: "create-kernel/tool-call",
+      },
+    });
+    await vi.waitFor(() => {
+      const status = kernel?.loops.get(run.id)?.status;
+      expect(
+        status === "completed" || status === "failed" || status === "cancelled",
+      ).toBe(true);
+    });
+
+    expect(kernel.loops.get(run.id)?.status).toBe("completed");
+    expect(kernel.loops.get(run.id)?.output).toBe(
+      'continued with {"echoed":"kernel"}',
+    );
+    expect(toolInputs).toEqual([{ text: "kernel" }]);
+
+    await kernel.stop();
+    expect(kernel.plugins.getActivePluginIds()).toEqual([]);
+    await expect(kernel.stop()).resolves.toBeUndefined();
+  });
+});
