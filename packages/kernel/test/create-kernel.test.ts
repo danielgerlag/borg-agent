@@ -13,7 +13,22 @@ import {
   z,
 } from "@borg/plugin-sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createKernel, type Kernel, type PluginSource } from "../src";
+import {
+  A2AService,
+  CommunicationService,
+  InteractionService,
+  LoopManager,
+  NetworkService,
+  OAuthService,
+  ProcessSupervisor,
+  SchedulerCore,
+  TlsService,
+  WebSocketService,
+  createKernel,
+  type Kernel,
+  type PluginSource,
+} from "../src";
+import { PLUGIN_ENABLEMENT_NAMESPACE } from "../src/plugin-enablement";
 
 class MemoryConfigStore implements ConfigStoreProvider {
   readonly configs = new Map<string, JsonValue>();
@@ -145,6 +160,7 @@ describe("createKernel", () => {
   afterEach(async () => {
     await kernel?.stop();
     kernel = undefined;
+    vi.restoreAllMocks();
     if (dataDirectory !== undefined) {
       rmSync(dataDirectory, { recursive: true, force: true });
       dataDirectory = undefined;
@@ -357,4 +373,78 @@ describe("createKernel", () => {
     await expect(starting).rejects.toThrow("Kernel was stopped while starting");
     expect(kernel.plugins.getActivePluginIds()).toEqual([]);
   });
+
+  it("runs every teardown step when earlier steps fail and rejects stop() with an AggregateError", async () => {
+    dataDirectory = mkdtempSync(path.join(os.tmpdir(), "borg-kernel-"));
+    kernel = createKernel({
+      plugins: [memoryConfigSource(), memorySecretSource()],
+      host: { dataDirectory },
+      resolveSecretStore: async () => "test.secrets",
+    });
+    const registerSchema = kernel.config.registerSchema.bind(kernel.config);
+    const disposeEnablementSchema = vi.fn();
+    vi.spyOn(kernel.config, "registerSchema").mockImplementation(
+      (namespace, schema) => {
+        const registration = registerSchema(namespace, schema);
+        if (namespace !== PLUGIN_ENABLEMENT_NAMESPACE) {
+          return registration;
+        }
+        return {
+          dispose: async () => {
+            disposeEnablementSchema();
+            await registration.dispose();
+          },
+        };
+      },
+    );
+    await kernel.start();
+
+    const pluginFailure = new Error("plugin deactivation failed");
+    const processFailure = new Error("process supervisor shutdown failed");
+    const deactivateAll = vi
+      .spyOn(kernel.plugins, "deactivateAll")
+      .mockRejectedValueOnce(pluginFailure);
+    const processShutdown = vi
+      .spyOn(ProcessSupervisor.prototype, "shutdown")
+      .mockRejectedValueOnce(processFailure);
+    const steps = [
+      deactivateAll,
+      vi.spyOn(A2AService.prototype, "close"),
+      vi.spyOn(SchedulerCore.prototype, "shutdown"),
+      vi.spyOn(LoopManager.prototype, "shutdown"),
+      vi.spyOn(InteractionService.prototype, "cancelAll"),
+      processShutdown,
+      vi.spyOn(CommunicationService.prototype, "shutdown"),
+      vi.spyOn(TlsService.prototype, "shutdown"),
+      vi.spyOn(OAuthService.prototype, "shutdown"),
+      vi.spyOn(WebSocketService.prototype, "shutdown"),
+      vi.spyOn(NetworkService.prototype, "shutdown"),
+      disposeEnablementSchema,
+    ];
+
+    const failure = await kernel.stop().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).message).toBe(
+      "Kernel stop completed with 2 teardown failure(s)",
+    );
+    expect((failure as AggregateError).errors).toEqual([
+      pluginFailure,
+      processFailure,
+    ]);
+    for (const step of steps) {
+      expect(step).toHaveBeenCalledTimes(1);
+    }
+    const callOrder = steps.map((step) => step.mock.invocationCallOrder[0] ?? -1);
+    expect(callOrder).toEqual([...callOrder].sort((left, right) => left - right));
+
+    await expect(kernel.stop()).resolves.toBeUndefined();
+    for (const step of steps) {
+      expect(step).toHaveBeenCalledTimes(1);
+    }
+  });
+
 });

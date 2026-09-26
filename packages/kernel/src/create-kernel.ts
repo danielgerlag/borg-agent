@@ -85,7 +85,11 @@ export interface Kernel {
    * A kernel starts at most once: calling start() again, or after stop(), throws.
    */
   start(): Promise<void>;
-  /** Deactivates plugins and shuts every service down. Allowed in any state, including while starting. Idempotent. */
+  /**
+   * Deactivates plugins and shuts every service down. Allowed in any state, including while starting.
+   * Every teardown step runs even if an earlier one fails; failures are reported together as an AggregateError.
+   * Idempotent: later calls resolve without running teardown again.
+   */
   stop(): Promise<void>;
 }
 
@@ -355,32 +359,61 @@ export function createKernel(options: CreateKernelOptions): Kernel {
     }
   }
 
+  let teardown: Promise<void> | undefined;
+
   async function stop(): Promise<void> {
-    if (state === "stopping" || state === "stopped") {
+    if (teardown) {
+      // Teardown runs once; later calls wait for it and resolve even if it reported failures.
+      await teardown.catch(() => undefined);
       return;
     }
     state = "stopping";
+    teardown = runTeardown();
     try {
-      try {
-        await plugins.deactivateAll();
-      } finally {
-        await a2aConfigWatch?.dispose();
-        a2aConfigWatch = undefined;
-        await a2a.close();
-        scheduler.shutdown();
-        loops.shutdown();
-        interactions.cancelAll();
-        await processes.shutdown();
-        channels.shutdown();
-        tls.shutdown();
-        oauth.shutdown();
-        webSockets.shutdown();
-        network.shutdown();
-      }
-      await pluginEnablementRegistration?.dispose();
-      pluginEnablementRegistration = undefined;
+      await teardown;
     } finally {
       state = "stopped";
+    }
+  }
+
+  // Each step runs even if an earlier one threw, in the same order as before.
+  async function runTeardown(): Promise<void> {
+    const errors: unknown[] = [];
+    const step = async (action: () => unknown): Promise<void> => {
+      try {
+        await action();
+      } catch (error) {
+        errors.push(error);
+      }
+    };
+
+    await step(() => plugins.deactivateAll());
+    await step(async () => {
+      const watch = a2aConfigWatch;
+      a2aConfigWatch = undefined;
+      await watch?.dispose();
+    });
+    await step(() => a2a.close());
+    await step(() => scheduler.shutdown());
+    await step(() => loops.shutdown());
+    await step(() => interactions.cancelAll());
+    await step(() => processes.shutdown());
+    await step(() => channels.shutdown());
+    await step(() => tls.shutdown());
+    await step(() => oauth.shutdown());
+    await step(() => webSockets.shutdown());
+    await step(() => network.shutdown());
+    await step(async () => {
+      const registration = pluginEnablementRegistration;
+      pluginEnablementRegistration = undefined;
+      await registration?.dispose();
+    });
+
+    if (errors.length > 0) {
+      throw new AggregateError(
+        errors,
+        `Kernel stop completed with ${errors.length} teardown failure(s)`,
+      );
     }
   }
 
