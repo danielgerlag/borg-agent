@@ -4,7 +4,7 @@ import {
   copilotGetStatus,
   copilotPollDeviceFlow,
   copilotStartDeviceFlow,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   createTestHarness,
   type Disposable,

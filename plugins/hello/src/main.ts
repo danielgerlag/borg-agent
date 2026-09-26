@@ -1,4 +1,4 @@
-import { helloGetStatus } from "@borg/contracts";
+import { helloGetStatus } from "./contract";
 import { definePlugin, z } from "@borg/plugin-sdk";
 
 export default definePlugin({

@@ -2,7 +2,7 @@ import {
   azureConnect,
   azureDisconnect,
   azureGetStatus,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   createTestHarness,
   type Disposable,

@@ -3,7 +3,7 @@ import {
   openaiDisconnect,
   openaiGetStatus,
   type OpenAIStatus,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   type Disposable,

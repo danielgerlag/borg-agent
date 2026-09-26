@@ -3,7 +3,7 @@ import {
   openrouterDisconnect,
   openrouterGetStatus,
   type OpenRouterStatus,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   type Disposable,
