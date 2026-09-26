@@ -254,8 +254,8 @@ importers:
         specifier: ^1.9.15
         version: 1.9.15
       zod:
-        specifier: 4.5.0-canary.20260826T002553
-        version: 4.5.0-canary.20260826T002553
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.3.3
@@ -276,8 +276,8 @@ importers:
   packages/contracts:
     dependencies:
       zod:
-        specifier: 4.5.0-canary.20260826T002553
-        version: 4.5.0-canary.20260826T002553
+        specifier: 4.6.5
+        version: 4.6.5
 
   packages/kernel:
     dependencies:
@@ -294,8 +294,8 @@ importers:
         specifier: workspace:*
         version: link:../contracts
       zod:
-        specifier: 4.5.0-canary.20260826T002553
-        version: 4.5.0-canary.20260826T002553
+        specifier: 4.6.5
+        version: 4.6.5
 
   packages/ui-kit:
     dependencies:
@@ -2187,8 +2187,8 @@ packages:
     resolution: {integrity: sha512-rwu/ClNdSMpkSrUb+d6BRsSkLUq1fmfsY6TOpYzTwvwkg1/NRG85KBy3kq++A8LKQwX6lsu+aWad+2khvuXrqw==}
     engines: {node: ^20.19.0 || ^22.12.0 || >=23}
 
-  zod@4.5.0-canary.20260826T002553:
-    resolution: {integrity: sha512-xJIt1S173AB680nucPpnl6Cqr8Uf6mxEKIYxBVwd705OoIMXaB5NxiGPcDqTHMiH7VMLY9u9m0rCnwJmDhj9hg==}
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
 snapshots:
 
@@ -3369,4 +3369,4 @@ snapshots:
 
   yargs-parser@22.0.0: {}
 
-  zod@4.5.0-canary.20260826T002553: {}
+  zod@4.6.5: {}
