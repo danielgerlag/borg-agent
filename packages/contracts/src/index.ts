@@ -784,7 +784,7 @@ export const personaIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/);
 
-const mcpServerIdSchema = z
+export const mcpServerIdSchema = z
   .string()
   .min(1)
   .max(200)

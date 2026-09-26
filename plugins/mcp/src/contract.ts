@@ -1,16 +1,10 @@
 import {
   defineCommand,
   defineEvent,
-  mcpServerConfigSchema,
+  mcpServerIdSchema,
   personaIdSchema,
 } from "@borg/contracts";
 import { z } from "zod";
-
-// The server id schema is private to the @borg/contracts root, where the
-// persona MCP server config uses it. Take that same instance from the
-// exported config schema instead of copying it (a copy could drift) or
-// exporting it (that would add a schema to the wire surface).
-const mcpServerIdSchema = mcpServerConfigSchema.options[0].shape.id;
 
 export const MCP_APP_MAX_MESSAGE_BYTES = 256 * 1024;
 
