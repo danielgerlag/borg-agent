@@ -8,6 +8,7 @@ const failures = [];
 const kernelSourceDirectory = path.join(projectRoot, "packages/kernel/src");
 const contractsSourceDirectory = path.join(projectRoot, "packages/contracts/src");
 const appSourceDirectory = path.join(projectRoot, "apps/desktop/src");
+const distributionsDirectory = path.join(projectRoot, "distributions");
 const dependencyFields = [
   "dependencies",
   "devDependencies",
@@ -121,22 +122,36 @@ for (const filename of productionFiles) {
 // The kernel and the workspace packages it depends on must load in plain Node.
 const electronImport =
   /(?:\bfrom\s+|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)["']electron(?:\/[^"']*)?["']/;
-for (const packageName of ["kernel", "plugin-sdk", "contracts"]) {
-  const packageDirectory = path.join(projectRoot, "packages", packageName);
+// Distributions run on that kernel and must load in plain Node as well.
+const distributionDirectories = (
+  await readdir(distributionsDirectory, { withFileTypes: true })
+)
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => path.join(distributionsDirectory, entry.name));
+for (const packageDirectory of [
+  ...["kernel", "plugin-sdk", "contracts"].map((name) =>
+    path.join(projectRoot, "packages", name),
+  ),
+  ...distributionDirectories,
+]) {
+  const packageLabel = path.relative(projectRoot, packageDirectory).split(path.sep).join("/");
+  const hostAgnostic = packageLabel.startsWith("distributions/")
+    ? "distributions must stay host-agnostic"
+    : "the kernel must stay host-agnostic";
   const manifest = JSON.parse(
     await readFile(path.join(packageDirectory, "package.json"), "utf8"),
   );
   for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
     if (manifest[field]?.electron !== undefined) {
       failures.push(
-        `packages/${packageName}/package.json depends on electron; the kernel must stay host-agnostic`,
+        `${packageLabel}/package.json depends on electron; ${hostAgnostic}`,
       );
     }
   }
   for (const filename of await sourceFiles(path.join(packageDirectory, "src"))) {
     if (electronImport.test(await readFile(filename, "utf8"))) {
       failures.push(
-        `${path.relative(projectRoot, filename)} imports electron; the kernel must stay host-agnostic`,
+        `${path.relative(projectRoot, filename)} imports electron; ${hostAgnostic}`,
       );
     }
   }
@@ -220,6 +235,55 @@ for (const packageName of ["kernel", "plugin-sdk"]) {
   }
 }
 
+// The kernel surface never depends on a distribution: distributions sit on top.
+for (const packageName of ["kernel", "plugin-sdk", "contracts"]) {
+  const packageDirectory = path.join(projectRoot, "packages", packageName);
+  const manifest = JSON.parse(
+    await readFile(path.join(packageDirectory, "package.json"), "utf8"),
+  );
+  for (const field of dependencyFields) {
+    for (const dependency of Object.keys(manifest[field] ?? {})) {
+      if (dependency.startsWith("@borg/distribution-")) {
+        failures.push(
+          `packages/${packageName}/package.json lists ${dependency} in ${field}; packages/${packageName} must not depend on a distribution`,
+        );
+      }
+    }
+  }
+  for (const filename of await sourceFiles(path.join(packageDirectory, "src"))) {
+    for (const specifier of importSpecifiers(await readFile(filename, "utf8"))) {
+      if (dependencyName(specifier).startsWith("@borg/distribution-")) {
+        failures.push(
+          `${path.relative(projectRoot, filename)} imports ${specifier}; packages/${packageName} must not import a distribution`,
+        );
+      }
+    }
+  }
+}
+
+// A distribution declares plugins by id and runs on the kernel. Its sources
+// may import only @borg/kernel and zod, and relative files inside its own src.
+for (const distributionDirectory of distributionDirectories) {
+  const sourceDirectory = path.join(distributionDirectory, "src");
+  const label = path.relative(projectRoot, sourceDirectory).split(path.sep).join("/");
+  for (const filename of await sourceFiles(sourceDirectory)) {
+    const relative = path.relative(projectRoot, filename);
+    for (const specifier of importSpecifiers(await readFile(filename, "utf8"))) {
+      if (specifier.startsWith(".")) {
+        if (!isInside(sourceDirectory, path.resolve(path.dirname(filename), specifier))) {
+          failures.push(`${relative} imports ${specifier}, which leaves ${label}`);
+        }
+        continue;
+      }
+      if (specifier !== "@borg/kernel" && specifier !== "zod") {
+        failures.push(
+          `${relative} imports ${specifier}; ${label} may import only @borg/kernel, zod, and relative files inside that directory`,
+        );
+      }
+    }
+  }
+}
+
 // The @borg/contracts root export is the kernel surface. It must not reach any
 // file that backs a capability subpath export (e.g. ./web-search).
 const contractsPackage = JSON.parse(
@@ -288,7 +352,7 @@ async function workspaceSourceFiles(directory) {
   }
   return files;
 }
-for (const root of ["apps", "packages", "plugins", "tests"]) {
+for (const root of ["apps", "distributions", "packages", "plugins", "tests"]) {
   for (const filename of await workspaceSourceFiles(path.join(projectRoot, root))) {
     const relative = path.relative(projectRoot, filename).split(path.sep).join("/");
     if (

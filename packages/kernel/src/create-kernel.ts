@@ -6,6 +6,11 @@ import { ClassificationService } from "./classification-service";
 import { CommandEventBus } from "./command-event-bus";
 import { CommunicationService } from "./communication-service";
 import { CostLedger } from "./cost-ledger";
+import {
+  distributionLabel,
+  readDistribution,
+  type Distribution,
+} from "./distribution";
 import { satisfiesBorgEngine } from "./engine-range";
 import { ExecutionSecurityService } from "./execution-security";
 import { GraphContributionRegistry } from "./graph-contribution-registry";
@@ -29,6 +34,7 @@ import {
 import {
   PLUGIN_ENABLEMENT_NAMESPACE,
   pluginEnablementSchema,
+  pluginEnablementSchemaFor,
 } from "./plugin-enablement";
 import { PluginManager, type PluginSource } from "./plugin-manager";
 import { ProcessSupervisor } from "./process-supervisor";
@@ -62,6 +68,8 @@ export interface KernelHost {
 
 export interface CreateKernelOptions {
   readonly plugins: readonly PluginSource[];
+  /** When set, only these plugins activate. Order follows `plugins`. */
+  readonly distribution?: Distribution;
   readonly host: KernelHost;
   /** Returns the plugin id of the secret store to activate. Runs after the config store is active. */
   readonly resolveSecretStore: (config: ConfigFacade) => Promise<string>;
@@ -123,7 +131,105 @@ function contributes(source: PluginSource, kind: string): boolean {
   return manifestOf(source).contributes.kinds?.includes(kind) ?? false;
 }
 
+function sourceManifestId(source: PluginSource): string | undefined {
+  const manifest = source.manifest;
+  if (typeof manifest !== "object" || manifest === null || !("id" in manifest)) {
+    return undefined;
+  }
+  const { id } = manifest;
+  return typeof id === "string" ? id : undefined;
+}
+
+function distributionRunProblems(
+  distribution: Distribution,
+  sources: readonly PluginSource[],
+): readonly string[] {
+  const problems: string[] = [];
+  if (!satisfiesBorgEngine(distribution.kernel, KERNEL_API_VERSION)) {
+    problems.push(
+      `kernel range ${distribution.kernel} is not satisfied by kernel API version ${KERNEL_API_VERSION}`,
+    );
+  }
+
+  const declared = new Set(distribution.plugins.map((plugin) => plugin.id));
+  const counts = new Map<string, number>();
+  for (const source of sources) {
+    const id = sourceManifestId(source);
+    if (id === undefined || !declared.has(id)) {
+      continue;
+    }
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  for (const id of declared) {
+    const count = counts.get(id) ?? 0;
+    if (count === 0) {
+      problems.push(`missing plugin source ${id}`);
+    } else if (count > 1) {
+      problems.push(`duplicate plugin source ${id}`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * Re-validates the distribution with the same checks as `defineDistribution`,
+ * because `Distribution` is structural and can be built by hand.
+ */
+function resolveDistribution(
+  options: CreateKernelOptions,
+): Distribution | undefined {
+  const candidate: unknown = options.distribution;
+  if (candidate === undefined) {
+    return undefined;
+  }
+  const problems: string[] = [];
+  const distribution = readDistribution(candidate, problems);
+  if (distribution) {
+    problems.push(...distributionRunProblems(distribution, options.plugins));
+  }
+  if (problems.length > 0) {
+    const version =
+      typeof candidate === "object" &&
+      candidate !== null &&
+      "version" in candidate &&
+      typeof candidate.version === "string"
+        ? candidate.version
+        : "(unknown)";
+    throw new Error(
+      `Distribution ${distributionLabel(candidate)}@${version} cannot run on this kernel:\n${problems
+        .map((problem) => `- ${problem}`)
+        .join("\n")}`,
+    );
+  }
+  return distribution;
+}
+
+function pluginsForDistribution(
+  distribution: Distribution | undefined,
+  plugins: readonly PluginSource[],
+): readonly PluginSource[] {
+  if (distribution === undefined) {
+    return plugins;
+  }
+  const declared = new Set(distribution.plugins.map((plugin) => plugin.id));
+  return plugins.filter((source) => {
+    const id = sourceManifestId(source);
+    return id !== undefined && declared.has(id);
+  });
+}
+
 export function createKernel(options: CreateKernelOptions): Kernel {
+  const distribution = resolveDistribution(options);
+  const availablePlugins = pluginsForDistribution(distribution, options.plugins);
+  // #39 removes these built-in fallbacks.
+  const fallbackPreferences =
+    distribution?.defaults.models ?? ["borg.mock-llm:mock:scripted"];
+  const detachedResults = distribution?.policy.detachedResults;
+  const defaultDisabled =
+    distribution?.plugins
+      .filter((plugin) => !plugin.enabled)
+      .map((plugin) => plugin.id) ?? [];
+
   const {
     dataDirectory,
     showOsNotification,
@@ -162,7 +268,7 @@ export function createKernel(options: CreateKernelOptions): Kernel {
     authorizer,
     costs,
     options: {
-      fallbackPreferences: ["borg.mock-llm:mock:scripted"],
+      fallbackPreferences,
     },
   });
   const personas = new PersonaService(store);
@@ -237,15 +343,25 @@ export function createKernel(options: CreateKernelOptions): Kernel {
     tls,
     oauth,
     a2a,
-    executionResultFlow: (pluginId, subject) =>
-      (pluginId === "borg.chat" &&
+    executionResultFlow: (pluginId, subject) => {
+      if (detachedResults) {
+        return detachedResults.some(
+          (entry) =>
+            entry.pluginId === pluginId &&
+            entry.subjectKinds.includes(subject.kind),
+        )
+          ? "detached"
+          : "merge_to_parent";
+      }
+      return (pluginId === "borg.chat" &&
         (subject.kind === "chat-session" || subject.kind === "chat-turn")) ||
-      (pluginId === "borg.bots" &&
-        (subject.kind === "bot" || subject.kind === "bot-attempt")) ||
-      (pluginId === "borg.graphs" && subject.kind === "graph-instance") ||
-      (pluginId === A2A_OWNER_PLUGIN_ID && subject.kind === "a2a-task")
+        (pluginId === "borg.bots" &&
+          (subject.kind === "bot" || subject.kind === "bot-attempt")) ||
+        (pluginId === "borg.graphs" && subject.kind === "graph-instance") ||
+        (pluginId === A2A_OWNER_PLUGIN_ID && subject.kind === "a2a-task")
         ? "detached"
-        : "merge_to_parent",
+        : "merge_to_parent";
+    },
     ...(showWindow ? { showWindow } : {}),
     getPluginDataDirectory: (pluginId) => {
       const directory = path.join(dataDirectory, "plugins", pluginId);
@@ -284,7 +400,7 @@ export function createKernel(options: CreateKernelOptions): Kernel {
   }
 
   async function bootstrap(): Promise<void> {
-    const configStoreSources = options.plugins.filter(
+    const configStoreSources = availablePlugins.filter(
       (source) =>
         contributes(source, "configStore") &&
         satisfiesBorgEngine(
@@ -309,11 +425,13 @@ export function createKernel(options: CreateKernelOptions): Kernel {
 
     pluginEnablementRegistration = config.registerSchema(
       PLUGIN_ENABLEMENT_NAMESPACE,
-      pluginEnablementSchema,
+      defaultDisabled.length === 0
+        ? pluginEnablementSchema
+        : pluginEnablementSchemaFor(defaultDisabled),
     );
     const secretStoreId = await options.resolveSecretStore(config);
     assertStarting();
-    const secretStoreSources = options.plugins.filter((source) =>
+    const secretStoreSources = availablePlugins.filter((source) =>
       contributes(source, "secretStore"),
     );
     const selectedSecretSource = secretStoreSources.find(
@@ -336,7 +454,7 @@ export function createKernel(options: CreateKernelOptions): Kernel {
       "Required for Borg to start",
     );
 
-    const ordinarySources = options.plugins.filter(
+    const ordinarySources = availablePlugins.filter(
       (source) =>
         source !== configStoreSource &&
         source !== selectedSecretSource &&

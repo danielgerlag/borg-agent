@@ -6,6 +6,7 @@
   "main": "dist/main/index.js",
   "dependencies": {
     "@borg/contracts": "workspace:*",
+    "@borg/distribution-desktop": "workspace:*",
     "@borg/kernel": "workspace:*",
     "@borg/plugin-a2a": "workspace:*",
     "@borg/plugin-anthropic": "workspace:*",
@@ -55,7 +56,7 @@
     "vite-plugin-solid": "^2.11.14"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.electron.json && vite build",
+    "build": "node ../../scripts/generate-bundled-plugins.mjs && tsc -p tsconfig.electron.json && vite build",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
   }
 }

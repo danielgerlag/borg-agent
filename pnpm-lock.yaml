@@ -136,6 +136,9 @@ importers:
       '@borg/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@borg/distribution-desktop':
+        specifier: workspace:*
+        version: link:../../distributions/desktop
       '@borg/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -272,6 +275,12 @@ importers:
       vite-plugin-solid:
         specifier: ^2.11.14
         version: 2.11.14(solid-js@1.9.15)(supports-color@7.2.0)(vite@8.2.2(@types/node@26.3.0)(jiti@2.7.0))
+
+  distributions/desktop:
+    dependencies:
+      '@borg/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
 
   packages/contracts:
     dependencies:

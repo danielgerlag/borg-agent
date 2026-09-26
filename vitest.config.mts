@@ -4,12 +4,14 @@ export default defineConfig({
   test: {
     include: [
       "apps/**/test/**/*.test.ts",
+      "distributions/**/test/**/*.test.ts",
       "packages/**/test/**/*.test.ts",
       "plugins/**/test/**/*.test.ts",
     ],
     coverage: {
       include: [
         "apps/**/src/**/*.ts",
+        "distributions/**/src/**/*.ts",
         "packages/**/src/**/*.ts",
         "plugins/**/src/**/*.ts",
       ],

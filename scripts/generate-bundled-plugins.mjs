@@ -1,9 +1,35 @@
+import { createRequire } from "node:module";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pluginsDirectory = path.join(projectRoot, "plugins");
+const desktopPackageJsonPath = path.join(projectRoot, "apps/desktop/package.json");
+
+const requireFromDesktop = createRequire(desktopPackageJsonPath);
+let desktopDistribution;
+try {
+  desktopDistribution = requireFromDesktop("@borg/distribution-desktop").desktopDistribution;
+} catch (error) {
+  throw new Error(
+    "Could not load @borg/distribution-desktop. Build the distribution package before generating bundled plugins.",
+    { cause: error },
+  );
+}
+if (!desktopDistribution || !Array.isArray(desktopDistribution.plugins)) {
+  throw new Error("@borg/distribution-desktop did not export desktopDistribution.plugins");
+}
+const declaredIds = desktopDistribution.plugins.map((entry) => {
+  if (typeof entry === "string") {
+    return entry;
+  }
+  if (entry && typeof entry.id === "string") {
+    return entry.id;
+  }
+  throw new Error("Desktop distribution has a plugin entry without an id");
+});
+const declaredIdSet = new Set(declaredIds);
 
 const entries = await readdir(pluginsDirectory, { withFileTypes: true });
 const plugins = [];
@@ -51,6 +77,7 @@ for (const entry of entries) {
 
   plugins.push({
     id: borg.id,
+    name,
     manifest,
     main,
     ui,
@@ -58,14 +85,43 @@ for (const entry of entries) {
 }
 
 plugins.sort((left, right) => left.id.localeCompare(right.id));
-const duplicateIds = plugins.filter(
-  (plugin, index) => plugins.findIndex((candidate) => candidate.id === plugin.id) !== index,
-);
-if (duplicateIds.length > 0) {
-  throw new Error(`Duplicate bundled plugin IDs: ${duplicateIds.map(({ id }) => id).join(", ")}`);
+const packagesById = new Map();
+for (const plugin of plugins) {
+  const names = packagesById.get(plugin.id) ?? [];
+  names.push(plugin.name);
+  packagesById.set(plugin.id, names);
+}
+const sharedIds = [...packagesById.entries()].filter(([, names]) => names.length > 1);
+if (sharedIds.length > 0) {
+  throw new Error(
+    `Plugin packages share an id: ${sharedIds
+      .map(([id, names]) => `${id} (${names.join(", ")})`)
+      .join("; ")}`,
+  );
 }
 
-const mainEntries = plugins
+const missingIds = declaredIds.filter((id) => !packagesById.has(id));
+if (missingIds.length > 0) {
+  throw new Error(
+    `Desktop distribution declares plugin ids with no package: ${missingIds.join(", ")}`,
+  );
+}
+
+const desktopPackage = JSON.parse(await readFile(desktopPackageJsonPath, "utf8"));
+const desktopDependencies = desktopPackage.dependencies ?? {};
+const selected = plugins.filter((plugin) => declaredIdSet.has(plugin.id));
+const missingDependencies = selected.filter(
+  (plugin) => desktopDependencies[plugin.name] === undefined,
+);
+if (missingDependencies.length > 0) {
+  throw new Error(
+    `Selected plugins are not dependencies of @borg/desktop: ${missingDependencies
+      .map((plugin) => `${plugin.id} (${plugin.name})`)
+      .join(", ")}`,
+  );
+}
+
+const mainEntries = selected
   .map(
     (plugin) => `  {
     manifest: ${JSON.stringify(plugin.manifest, null, 2).replaceAll("\n", "\n    ")},
@@ -83,7 +139,7 @@ ${mainEntries}
 ];
 `;
 
-const uiEntries = plugins
+const uiEntries = selected
   .filter((plugin) => plugin.ui !== undefined)
   .map(
     (plugin) => `  ${JSON.stringify(plugin.id)}: async () => import(${JSON.stringify(plugin.ui)}),`,
