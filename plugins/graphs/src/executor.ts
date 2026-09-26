@@ -1,12 +1,12 @@
 import {
   channelInboundMessage,
   executionIdSchema,
-  feedbackAsk,
   type DataClassification,
   type ExecutionId,
   type LoopRunSnapshot,
   type ProvenanceSeed,
 } from "@borg/contracts";
+import { feedbackAsk } from "@borg/plugin-feedback/contract";
 import { chatAppend } from "@borg/plugin-chat/contract";
 import {
   graphDefinitionDeleted,

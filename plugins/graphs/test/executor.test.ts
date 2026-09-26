@@ -1,10 +1,10 @@
 import {
   executionIdSchema,
-  feedbackAsk,
   modelOperationKeySchema,
   type ExecutionId,
   type ModelCompletionResult,
 } from "@borg/contracts";
+import { feedbackAsk } from "@borg/plugin-feedback/contract";
 import {
   graphDefinitionSaved,
   graphDefinitionSchema,
