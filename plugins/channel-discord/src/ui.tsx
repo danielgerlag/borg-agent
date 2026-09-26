@@ -1,10 +1,12 @@
 import {
-  CONNECTOR_ACCOUNT_NAME_MAX,
-  MAX_CONNECTOR_ACCOUNTS,
-  allocateConnectorAccountId,
   connectorAdapterId,
   connectorSecretKey,
 } from "@borg/contracts";
+import {
+  CONNECTOR_ACCOUNT_NAME_MAX,
+  MAX_CONNECTOR_ACCOUNTS,
+  allocateConnectorAccountId,
+} from "@borg/contracts/connector-accounts";
 import {
   discordChannelDisconnect,
   discordChannelGetStatus,

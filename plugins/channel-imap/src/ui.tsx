@@ -1,10 +1,12 @@
 import {
-  CONNECTOR_ACCOUNT_NAME_MAX,
-  MAX_CONNECTOR_ACCOUNTS,
-  allocateConnectorAccountId,
   connectorAdapterId,
   connectorSecretKey,
 } from "@borg/contracts";
+import {
+  CONNECTOR_ACCOUNT_NAME_MAX,
+  MAX_CONNECTOR_ACCOUNTS,
+  allocateConnectorAccountId,
+} from "@borg/contracts/connector-accounts";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { KeyRound, Mail, Plus, Save, Trash2 } from "lucide-solid";

@@ -1,10 +1,12 @@
 import {
   connectorAccountIdSchema,
-  connectorAccountNameSchema,
-  connectorCommandInputSchema,
   dataClassificationSchema,
   defineCommand,
 } from "@borg/contracts";
+import {
+  connectorAccountNameSchema,
+  connectorCommandInputSchema,
+} from "@borg/contracts/connector-accounts";
 import { z } from "zod";
 
 export const m365ChannelStatusSchema = z
