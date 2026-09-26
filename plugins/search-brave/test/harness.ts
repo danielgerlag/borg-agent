@@ -2,7 +2,7 @@ import {
   braveConnect,
   braveDisconnect,
   braveGetStatus,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   createTestHarness,
   type Disposable,

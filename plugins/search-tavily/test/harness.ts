@@ -2,7 +2,7 @@ import {
   tavilyConnect,
   tavilyDisconnect,
   tavilyGetStatus,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   createTestHarness,
   type Disposable,

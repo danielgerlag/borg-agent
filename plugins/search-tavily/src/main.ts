@@ -1,11 +1,13 @@
 import {
-  tavilyConnect,
-  tavilyDisconnect,
-  tavilyGetStatus,
   webSearchInputSchema,
   webSearchOutputSchema,
   type SearchProviderStatus,
-} from "@borg/contracts";
+} from "@borg/contracts/web-search";
+import {
+  tavilyConnect,
+  tavilyDisconnect,
+  tavilyGetStatus,
+} from "./contract";
 import {
   definePlugin,
   defineTool,

@@ -5,6 +5,10 @@
   "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./web-search": "./dist/web-search.js"
+  },
   "files": [
     "dist"
   ],
