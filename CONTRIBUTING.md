@@ -64,7 +64,7 @@ Rules for contributors:
 
 ## Architecture rules
 
-Read `docs/architecture.md` before changing `packages/kernel` or the plugin SDK. A plugin must not import another plugin package. `pnpm check:boundaries` enforces this and runs as part of `build`, `typecheck`, and `test`. Plugin package layout is in [docs/plugin-authoring.md](docs/plugin-authoring.md).
+Read `docs/architecture.md` before changing `packages/kernel` or the plugin SDK. A plugin must not import another plugin package except through its `@borg/plugin-<name>/contract` export. `pnpm check:boundaries` enforces this and runs as part of `build`, `typecheck`, and `test`. The full rule list is in [docs/boundaries.md](docs/boundaries.md). Plugin package layout is in [docs/plugin-authoring.md](docs/plugin-authoring.md).
 
 ## Commits and pull requests
 

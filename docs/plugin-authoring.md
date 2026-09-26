@@ -222,11 +222,11 @@ export const botUpdated = defineEvent({
 
 - The target must be `./dist/contract.js`.
 - `src/contract.ts` must exist.
-- `tsconfig.main.json` `include` must contain `src/contract.ts`.
+- The tsconfig named by the package's `build` script (`tsconfig.main.json` for hello) must list `src/contract.ts`, `src/*.ts`, or `src/**/*.ts` in `include`.
 - If `src/contract.ts` exists, `package.json` must export `./contract`.
 - `src/contract.ts` may import `zod`, `@borg/contracts`, `@borg/contracts/<subpath>` matching `[a-z0-9-]+`, or `@borg/plugin-<name>/contract`.
 
-`defineCommand(` and `defineEvent(` outside `packages/contracts/src` and `plugins/*/src/contract.ts` fail that script, except three kernel tests named in the allowlist. See the boundary section of [../README.md](../README.md).
+`defineCommand(` and `defineEvent(` outside `packages/contracts/src` and `plugins/*/src/contract.ts` fail that script, except three kernel tests named in the allowlist. The full rule list is in [boundaries.md](boundaries.md).
 
 Another plugin imports the built contract and lists the package in `dependencies`. `plugins/graphs/src/executor.ts` imports `chatAppend`, and `plugins/graphs/package.json` lists `"@borg/plugin-chat": "workspace:*"`.
 
