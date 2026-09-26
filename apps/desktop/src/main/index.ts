@@ -1,42 +1,9 @@
 import {
-  A2AService,
-  A2A_OWNER_PLUGIN_ID,
-  CommandEventBus,
-  ClassificationService,
-  CommunicationService,
-  ConfigFacade,
-  CostLedger,
-  DurableModelCallJournal,
-  ExecutionSecurityService,
-  GraphContributionRegistry,
-  InteractionService,
-  LoopManager,
-  MemoryFacade,
-  ModelGateway,
-  NetworkService,
-  NotificationService,
-  PersonaService,
-  PersistenceRegistry,
-  PLUGIN_ENABLEMENT_NAMESPACE,
-  pluginEnablementSchema,
-  PluginManager,
-  ProcessSupervisor,
-  PromptAssembler,
-  SandboxFactory,
-  SchedulerCore,
-  ScannerRegistry,
-  SecretFacade,
-  StoreFacade,
-  ToolService,
-  TrustAuthorizer,
-  TlsService,
-  OAuthService,
-  WebSocketService,
-  WorkspaceService,
-  satisfiesBorgEngine,
-  type PluginSource,
+  KERNEL_VERSION,
+  createKernel,
+  type Kernel,
 } from "@borg/kernel";
-import { pluginManifestSchema, z, type Disposable } from "@borg/plugin-sdk";
+import { z, type Disposable } from "@borg/plugin-sdk";
 import {
   app,
   BrowserWindow,
@@ -49,14 +16,12 @@ import {
   type NativeImage,
 } from "electron";
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { bundledMainPlugins } from "./bundled-plugins";
 import { installEmbeddedContentProtocol } from "./embedded-content-protocol";
 import { registerIpcBridge } from "./ipc";
 
-const KERNEL_VERSION = "0.1.0";
 const startedAt = new Date().toISOString();
 const shellCapability = randomUUID();
 const rendererFile = path.join(__dirname, "../renderer/index.html");
@@ -81,21 +46,7 @@ const setupSchema = z.object({
 
 let mainWindow: BrowserWindow | undefined;
 let tray: Tray | undefined;
-let pluginManager: PluginManager | undefined;
-let configFacade: ConfigFacade | undefined;
-let secretFacade: SecretFacade | undefined;
-let notificationService: NotificationService | undefined;
-let interactionService: InteractionService | undefined;
-let loopManager: LoopManager | undefined;
-let a2aService: A2AService | undefined;
-let a2aConfigWatch: Disposable | undefined;
-let scheduler: SchedulerCore | undefined;
-let processSupervisor: ProcessSupervisor | undefined;
-let networkService: NetworkService | undefined;
-let communicationService: CommunicationService | undefined;
-let webSocketService: WebSocketService | undefined;
-let tlsService: TlsService | undefined;
-let oauthService: OAuthService | undefined;
+let kernel: Kernel | undefined;
 let removeEmbeddedContentProtocol: (() => void) | undefined;
 let removeIpcBridge: (() => Promise<void>) | undefined;
 let notificationSubscription: Disposable | undefined;
@@ -103,7 +54,6 @@ let interactionSubscription: Disposable | undefined;
 let loopSubscription: Disposable | undefined;
 let pluginLifecycleSubscription: Disposable | undefined;
 let setupSchemaRegistration: Disposable | undefined;
-let pluginEnablementSchemaRegistration: Disposable | undefined;
 let startupRecovery: { readonly message: string } | undefined;
 let windowServicesReady = false;
 let pluginReloadPaused = 0;
@@ -119,27 +69,19 @@ let currentRunningBots = 0;
 
 type SetupState = z.infer<typeof setupSchema>;
 
-function getManifest(source: PluginSource) {
-  return pluginManifestSchema.parse(source.manifest);
-}
-
-function contributes(source: PluginSource, kind: string): boolean {
-  return getManifest(source).contributes.kinds?.includes(kind) ?? false;
-}
-
 async function getSetupState(): Promise<SetupState> {
-  if (!configFacade) {
+  if (!kernel) {
     throw new Error("Config facade is unavailable");
   }
-  return setupSchema.parse(await configFacade.get("system.setup"));
+  return setupSchema.parse(await kernel.config.get("system.setup"));
 }
 
 async function completeSetup(): Promise<SetupState> {
-  if (!configFacade) {
+  if (!kernel) {
     throw new Error("Config facade is unavailable");
   }
   return setupSchema.parse(
-    await configFacade.update("system.setup", { wizardCompleted: true }),
+    await kernel.config.update("system.setup", { wizardCompleted: true }),
   );
 }
 
@@ -165,8 +107,8 @@ function hideMainWindow(): void {
 }
 
 function refreshRunCounts(): void {
-  currentRunningLoops = loopManager?.countLive() ?? 0;
-  currentRunningBots = loopManager?.countLive(BOTS_PLUGIN_ID) ?? 0;
+  currentRunningLoops = kernel?.loops.countLive() ?? 0;
+  currentRunningBots = kernel?.loops.countLive(BOTS_PLUGIN_ID) ?? 0;
 }
 
 function rebuildTrayMenu(): void {
@@ -409,23 +351,7 @@ async function requestQuit(): Promise<void> {
     await interactionSubscription?.dispose();
     await loopSubscription?.dispose();
     await pluginLifecycleSubscription?.dispose();
-    try {
-      await pluginManager?.deactivateAll();
-    } finally {
-      await a2aConfigWatch?.dispose();
-      a2aConfigWatch = undefined;
-      await a2aService?.close();
-      scheduler?.shutdown();
-      loopManager?.shutdown();
-      interactionService?.cancelAll();
-      await processSupervisor?.shutdown();
-      communicationService?.shutdown();
-      tlsService?.shutdown();
-      oauthService?.shutdown();
-      webSocketService?.shutdown();
-      networkService?.shutdown();
-    }
-    await pluginEnablementSchemaRegistration?.dispose();
+    await kernel?.stop();
     await setupSchemaRegistration?.dispose();
   } finally {
     removeEmbeddedContentProtocol?.();
@@ -460,8 +386,8 @@ function installTestApi(): void {
     showWindow: showMainWindow,
     hideWindow: hideMainWindow,
     isWindowVisible: () => mainWindow?.isVisible() ?? false,
-    activePluginIds: () => pluginManager?.getActivePluginIds() ?? [],
-    disablePlugin: async (pluginId) => pluginManager?.deactivate(pluginId),
+    activePluginIds: () => kernel?.plugins.getActivePluginIds() ?? [],
+    disablePlugin: async (pluginId) => kernel?.plugins.deactivate(pluginId),
     userDataPath: () => app.getPath("userData"),
     trayMenuLabels: () => currentTrayMenuLabels,
     trayTitle: () => tray?.getTitle() ?? "",
@@ -488,142 +414,35 @@ if (!app.requestSingleInstanceLock()) {
     removeEmbeddedContentProtocol = installEmbeddedContentProtocol();
     createTray();
 
-    const bus = new CommandEventBus();
-    const persistence = new PersistenceRegistry();
-    configFacade = new ConfigFacade(persistence);
-    const storeFacade = new StoreFacade(persistence);
-    secretFacade = new SecretFacade(persistence);
-    notificationService = new NotificationService((notification) => {
-      if (Notification.isSupported()) {
-        new Notification({
-          title: notification.title,
-          body: notification.body,
-        }).show();
-      }
-    });
-    interactionService = new InteractionService();
-    const classification = new ClassificationService();
-    const scanners = new ScannerRegistry();
-    const authorizer = new TrustAuthorizer(interactionService, {
-      classification,
-      store: storeFacade,
-    });
-    const costs = new CostLedger();
-    const executions = new ExecutionSecurityService(storeFacade);
-    const tools = new ToolService(interactionService, {
-      classification,
-      executions,
-      scanners,
-      authorizer,
-    });
-    const models = new ModelGateway({
-      journal: new DurableModelCallJournal(storeFacade),
-      executions,
-      scanners,
-      authorizer,
-      costs,
-      options: {
-        fallbackPreferences: ["borg.mock-llm:mock:scripted"],
+    kernel = createKernel({
+      plugins: bundledMainPlugins,
+      host: {
+        dataDirectory: app.getPath("userData"),
+        showOsNotification: (notification) => {
+          if (Notification.isSupported()) {
+            new Notification({
+              title: notification.title,
+              body: notification.body,
+            }).show();
+          }
+        },
+        openExternal: (url) => shell.openExternal(url),
+        showWindow: showMainWindow,
       },
-    });
-    const personaService = new PersonaService(storeFacade);
-    const memoryFacade = new MemoryFacade();
-    const promptAssembler = new PromptAssembler(personaService, memoryFacade);
-    const workspaceService = new WorkspaceService(
-      path.join(app.getPath("userData"), "workspaces", "sessions"),
-    );
-    const graphContributions = new GraphContributionRegistry();
-    scheduler = new SchedulerCore();
-    processSupervisor = new ProcessSupervisor();
-    const sandboxFactory = new SandboxFactory();
-    networkService = new NetworkService();
-    communicationService = new CommunicationService(
-      bus,
-      storeFacade,
-      classification,
-      scanners,
-      authorizer,
-    );
-    webSocketService = new WebSocketService();
-    tlsService = new TlsService();
-    if (!secretFacade) {
-      throw new Error("Secret facade is unavailable");
-    }
-    oauthService = new OAuthService({
-      secrets: secretFacade,
-      openExternal: (url) => shell.openExternal(url),
-    });
-    loopManager = new LoopManager(
-      models,
-      executions,
-      tools,
-      costs,
-      (pluginId) =>
-        pluginId === "kernel.loop" ||
-        pluginId === A2A_OWNER_PLUGIN_ID ||
-        pluginManager?.hasPermission(pluginId, "tools.invoke") === true,
-      personaService,
-      promptAssembler,
-      workspaceService,
-      sandboxFactory,
-    );
-    a2aService = new A2AService({
-      loops: loopManager,
-      personas: personaService,
-      workspaces: workspaceService,
-      hostVersion: KERNEL_VERSION,
-    });
-    pluginManager = new PluginManager(bus, KERNEL_VERSION, {
-      config: configFacade,
-      store: storeFacade,
-      secrets: secretFacade,
-      persistence,
-      notifications: notificationService,
-      tools,
-      models,
-      executions,
-      loops: loopManager,
-      interactions: interactionService,
-      costs,
-      personas: personaService,
-      prompts: promptAssembler,
-      memory: memoryFacade,
-      workspaces: workspaceService,
-      graphContributions,
-      scheduler,
-      processes: processSupervisor,
-      sandbox: sandboxFactory,
-      http: networkService,
-      scanners,
-      channels: communicationService,
-      webSockets: webSocketService,
-      tls: tlsService,
-      oauth: oauthService,
-      a2a: a2aService,
-      executionResultFlow: (pluginId, subject) =>
-        (pluginId === "borg.chat" &&
-          (subject.kind === "chat-session" ||
-            subject.kind === "chat-turn")) ||
-        (pluginId === "borg.bots" &&
-          (subject.kind === "bot" ||
-            subject.kind === "bot-attempt")) ||
-        (pluginId === "borg.graphs" &&
-          subject.kind === "graph-instance") ||
-        (pluginId === A2A_OWNER_PLUGIN_ID && subject.kind === "a2a-task")
-          ? "detached"
-          : "merge_to_parent",
-      showWindow: showMainWindow,
-      getPluginDataDirectory: (pluginId) => {
-        const directory = path.join(
-          app.getPath("userData"),
-          "plugins",
-          pluginId,
+      resolveSecretStore: async (config) => {
+        setupSchemaRegistration = config.registerSchema(
+          "system.setup",
+          setupSchema,
         );
-        mkdirSync(directory, { recursive: true });
-        return directory;
+        const setup = setupSchema.parse(await config.get("system.setup"));
+        await config.update("system.setup", {
+          secretBackend: setup.secretBackend,
+          wizardCompleted: setup.wizardCompleted,
+        });
+        return setup.secretBackend;
       },
     });
-    pluginLifecycleSubscription = pluginManager.subscribe(() => {
+    pluginLifecycleSubscription = kernel.plugins.subscribe(() => {
       if (
         pluginReloadPaused === 0 &&
         windowServicesReady &&
@@ -636,86 +455,7 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     try {
-      const configStoreSources = bundledMainPlugins.filter(
-        (source) =>
-          contributes(source, "configStore") &&
-          satisfiesBorgEngine(
-            getManifest(source).engines.borg,
-            KERNEL_VERSION,
-          ),
-      );
-      if (configStoreSources.length !== 1 || !configStoreSources[0]) {
-        throw new Error(
-          `Expected one compatible config store, found ${configStoreSources.length}`,
-        );
-      }
-      await pluginManager.activateConfigStore(configStoreSources[0]);
-      if (!persistence.hasConfigStore()) {
-        throw new Error("The selected config store did not install its provider");
-      }
-      await executions.initialize();
-      await personaService.initialize();
-
-      setupSchemaRegistration = configFacade.registerSchema(
-        "system.setup",
-        setupSchema,
-      );
-      pluginEnablementSchemaRegistration = configFacade.registerSchema(
-        PLUGIN_ENABLEMENT_NAMESPACE,
-        pluginEnablementSchema,
-      );
-      const setup = await getSetupState();
-      await configFacade.update("system.setup", {
-        secretBackend: setup.secretBackend,
-        wizardCompleted: setup.wizardCompleted,
-      });
-
-      const secretStoreSources = bundledMainPlugins.filter((source) =>
-        contributes(source, "secretStore"),
-      );
-      const selectedSecretSource = secretStoreSources.find(
-        (source) => getManifest(source).id === setup.secretBackend,
-      );
-      if (!selectedSecretSource) {
-        throw new Error(
-          `Configured secret store ${setup.secretBackend} is unavailable`,
-        );
-      }
-      await pluginManager.activate(selectedSecretSource);
-      if (!persistence.hasSecretStore()) {
-        throw new Error("The selected secret store did not install its provider");
-      }
-
-      pluginManager.lock(
-        getManifest(configStoreSources[0]).id,
-        "Required for Borg to start",
-      );
-      pluginManager.lock(
-        getManifest(selectedSecretSource).id,
-        "Required for Borg to start",
-      );
-
-      const ordinarySources = bundledMainPlugins.filter(
-        (source) =>
-          source !== configStoreSources[0] &&
-          source !== selectedSecretSource &&
-          !contributes(source, "secretStore"),
-      );
-      await pluginManager.activateAll(ordinarySources);
-      if (pluginManager.isActive(A2A_OWNER_PLUGIN_ID) && a2aService) {
-        const service = a2aService;
-        const syncListener = async (config: unknown): Promise<void> => {
-          try {
-            await service.applyConfig(config);
-          } catch (failure) {
-            console.error("[kernel] A2A listener failed", failure);
-          }
-        };
-        a2aConfigWatch = configFacade.watch(A2A_OWNER_PLUGIN_ID, (config) => {
-          void syncListener(config);
-        });
-        await syncListener(await configFacade.get(A2A_OWNER_PLUGIN_ID));
-      }
+      await kernel.start();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       startupRecovery = { message };
@@ -723,37 +463,37 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     mainWindow = createMainWindow();
-    currentPendingInteractions = interactionService.listPending().length;
+    currentPendingInteractions = kernel.interactions.listPending().length;
     refreshRunCounts();
     rebuildTrayMenu();
-    notificationSubscription = notificationService.subscribe((notification) => {
+    notificationSubscription = kernel.notifications.subscribe((notification) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("borg:notification", notification);
       }
     });
-    interactionSubscription = interactionService.subscribe((pending) => {
+    interactionSubscription = kernel.interactions.subscribe((pending) => {
       currentPendingInteractions = pending.length;
       rebuildTrayMenu();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("borg:interactions", pending);
       }
     });
-    loopSubscription = loopManager.subscribe(() => {
+    loopSubscription = kernel.loops.subscribe(() => {
       refreshRunCounts();
       rebuildTrayMenu();
     });
     removeIpcBridge = registerIpcBridge({
-      bus,
-      plugins: pluginManager,
-      config: configFacade,
-      secrets: secretFacade,
-      notifications: notificationService,
-      interactions: interactionService,
-      loops: loopManager,
-      personas: personaService,
-      models,
-      costs,
-      workspaces: workspaceService,
+      bus: kernel.bus,
+      plugins: kernel.plugins,
+      config: kernel.config,
+      secrets: kernel.secrets,
+      notifications: kernel.notifications,
+      interactions: kernel.interactions,
+      loops: kernel.loops,
+      personas: kernel.personas,
+      models: kernel.models,
+      costs: kernel.costs,
+      workspaces: kernel.workspaces,
       kernelVersion: KERNEL_VERSION,
       startedAt,
       shellCapability,
