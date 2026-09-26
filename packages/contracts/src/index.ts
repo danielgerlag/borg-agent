@@ -1565,9 +1565,3 @@ export const a2aStatusSchema = z
 
 export type A2AStatus = z.infer<typeof a2aStatusSchema>;
 
-export const a2aGetStatus = defineCommand({
-  id: "borg.a2a.getStatus",
-  input: z.object({}).strict(),
-  output: a2aStatusSchema,
-});
-
