@@ -2,7 +2,7 @@ import {
   buildAppCsp,
   grantFromProxyUrl,
   mcpAppRequestAllowed,
-} from "@borg/contracts";
+} from "@borg/plugin-mcp-apps/mcp-app-csp";
 
 export const EMBEDDED_CONTENT_SCHEME = "borg-embedded";
 

@@ -135,13 +135,13 @@ Generic graph support in the kernel is limited to `GraphContributionRegistry`, `
 `@borg/contracts` contains:
 
 - `defineCommand` and `defineEvent`;
-- the kernel's Zod schemas and inferred TypeScript types (bus, interactions, execution security, models, costs, loops, personas, workspaces, inbound messages) in its root export;
+- the kernel's Zod schemas and inferred TypeScript types (bus, interactions, execution security, models, costs, loops, personas and the MCP server config they embed, workspaces, prompt scanning, tool approval, A2A config and status, the feedback answer and embedded-content snapshot shapes the SDK exposes, and inbound messages) in its root export. The root defines no plugin command, and its only event is the kernel-guarded `borg.channel.inboundMessage`;
 - the connector account id and every persisted key format derived from it (`connectorAccountIdSchema`, `DEFAULT_CONNECTOR_ACCOUNT_ID`, `oauthGrantKey`, `connectorAdapterId`, `connectorSecretKey`, `connectorStoreKey`) in its root export, so one parser owns all key formats;
 - shared capability schemas that several plugins implement but the kernel never uses, each on its own subpath (`@borg/contracts/web-search` for Brave and Tavily; `@borg/contracts/calendar`, `@borg/contracts/contacts` and `@borg/contracts/drive` for Google and Microsoft 365), outside the root export;
 - connector account management shared by the multi-account plugins (`slugifyConnectorAccountName`, `allocateConnectorAccountId`, `MAX_CONNECTOR_ACCOUNTS`, `CONNECTOR_ACCOUNT_NAME_MAX`, `connectorAccountNameSchema`, `connectorCommandInputSchema`) on `@borg/contracts/connector-accounts`. A subpath may import from the root; the root never imports a subpath;
 - no handlers, services, UI components, or feature implementation.
 
-A plugin that owns commands, events, or schemas publishes them from `src/contract.ts` as `@borg/plugin-<name>/contract` (built to `dist/contract.js`). That file may import only `zod`, `@borg/contracts`, and other plugins' `/contract` subpaths, so consumers such as other plugins or the desktop get the schemas without the plugin runtime. `apps/desktop/test/wire-contract.test.ts` snapshots every command and event id, timeout, and schema digest across all of these modules.
+A plugin that owns commands, events, or schemas publishes them from `src/contract.ts` as `@borg/plugin-<name>/contract` (built to `dist/contract.js`). That file may import only `zod`, `@borg/contracts`, and other plugins' `/contract` subpaths, so consumers such as other plugins or the desktop get the schemas without the plugin runtime. Dependencies between contracts point one way: `mcp-apps` builds on `@borg/plugin-mcp/contract`, and `borg.embeddedContent.registered` lives in `@borg/plugin-chat/contract` because chat consumes it and producers such as `mcp-apps` already depend on chat's contract. A plugin may also publish runtime-free helpers that the desktop host needs on a named subpath, for example `@borg/plugin-mcp-apps/mcp-app-csp`. `apps/desktop/test/wire-contract.test.ts` snapshots every command and event id, timeout, and schema digest across all of these modules.
 
 `@borg/plugin-sdk` contains:
 
@@ -1111,7 +1111,12 @@ A slice is complete only when:
 
 Before starting a later slice, CI should enforce:
 
-- no import of another `plugins/*` package except its `/contract` subpath, which must be a declared dependency; a plugin's `src/contract.ts` imports only `zod`, `@borg/contracts`, and other `/contract` subpaths; `@borg/contracts` imports nothing outside itself;
+- the contract boundaries in `scripts/check-plugin-boundaries.mjs`:
+  - a plugin imports another `plugins/*` package only through its `/contract` subpath, which must be a declared dependency, and declared `@borg/plugin-*` dependencies form no cycle;
+  - a plugin's `src/contract.ts` imports only `zod`, `@borg/contracts` (root or subpath), and other `/contract` subpaths; a plugin with `src/contract.ts` exports it as `./contract` (`./dist/contract.js`) and its build tsconfig includes it;
+  - `defineCommand`/`defineEvent` are called only in `packages/contracts/src` and `plugins/*/src/contract.ts`, plus kernel bus tests allowlisted by path with a reason;
+  - `@borg/contracts` imports nothing outside itself, and its root index never reaches a file that backs a subpath export;
+  - `packages/kernel/src` and `packages/plugin-sdk/src` import `@borg/contracts` only by its root specifier and no plugin other than `@borg/plugin-sdk`, and their relative imports stay inside their own `src`;
 - no `langgraph` dependency under `plugins/graphs`;
 - no Electron IPC import outside main/preload;
 - no Node/Electron import in renderer/plugin UI;

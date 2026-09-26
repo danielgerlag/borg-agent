@@ -209,6 +209,7 @@ schema mcpAppToolArgumentsSchema 76d0081d404a68a8
 schema mcpAppToolResponseSchema e64e89b5b0d2b652
 schema mcpAppToolSchema 1cf6bfbdfd4910c9
 schema mcpServerConfigSchema bc16656f6e102b4c
+schema mcpServerIdSchema 044fca3cfee9272f
 schema mcpServerSnapshotSchema b78f38c1e24ca3bf
 schema mcpServerStatusSchema 1e22a54a18e235cd
 schema modelCompletionRequestSchema d6520f9871b40f2a

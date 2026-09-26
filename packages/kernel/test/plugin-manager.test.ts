@@ -2,8 +2,8 @@ import {
   channelInboundMessage,
   defineCommand,
   defineEvent,
-  feedbackAsk,
-  feedbackResolved,
+  feedbackAnswerSchema,
+  interactionSourceSchema,
   modelOperationKeySchema,
 } from "@borg/contracts";
 import {
@@ -49,6 +49,37 @@ import {
   TlsService,
   type PluginSource,
 } from "../src";
+
+// The kernel lets only borg.feedback request human input, and only while it
+// handles borg.feedback.ask (see PluginManager). It keys that rule on the ids
+// and never reads the feedback plugin's schemas, so these stand-ins carry the
+// ids without making the kernel package depend on a plugin.
+const feedbackAsk = defineCommand({
+  id: "borg.feedback.ask",
+  input: z
+    .object({
+      prompt: z.string().min(1),
+      form: z.literal("text"),
+      source: interactionSourceSchema
+        .omit({ pluginId: true, feature: true })
+        .default({}),
+    })
+    .strict(),
+  output: z.object({
+    interactionId: z.string().uuid(),
+    answer: feedbackAnswerSchema,
+  }),
+  timeoutMs: 86_405_000,
+});
+
+const feedbackResolved = defineEvent({
+  id: "borg.feedback.resolved",
+  payload: z.object({
+    interactionId: z.string().uuid(),
+    source: interactionSourceSchema,
+    status: z.enum(["answered", "cancelled", "timed_out"]),
+  }),
+});
 
 const ping = defineCommand({
   id: "test.ping",

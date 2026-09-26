@@ -1,15 +1,19 @@
+import type { CommandErrorCode } from "@borg/contracts";
 import {
-  MCP_APP_RENDERER_ID,
-  embeddedContentRegistered,
   mcpAppDiscovered,
   mcpAppSnapshotSchema,
+  type McpAppSnapshot,
+} from "@borg/plugin-mcp/contract";
+import {
+  MCP_APP_RENDERER_ID,
   mcpAppToolResponded,
   mcpAppsCancelTool,
   mcpAppsInvokeTool,
-  type CommandErrorCode,
-  type McpAppSnapshot,
-} from "@borg/contracts";
-import { chatSessionDeleted } from "@borg/plugin-chat/contract";
+} from "./contract";
+import {
+  chatSessionDeleted,
+  embeddedContentRegistered,
+} from "@borg/plugin-chat/contract";
 import {
   definePlugin,
   type Disposable,

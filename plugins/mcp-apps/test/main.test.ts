@@ -1,11 +1,13 @@
+import { embeddedContentRegistered } from "@borg/plugin-chat/contract";
 import {
-  embeddedContentRegistered,
   mcpAppDiscovered,
   mcpAppSnapshotSchema,
+} from "@borg/plugin-mcp/contract";
+import {
   mcpAppToolResponded,
   mcpAppsCancelTool,
   mcpAppsInvokeTool,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   createTestHarness,
   type JsonValue,

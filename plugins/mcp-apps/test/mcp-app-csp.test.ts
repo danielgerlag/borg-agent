@@ -12,7 +12,7 @@ import {
   originMatchesGrant,
   parseMcpAppNetworkGrant,
   permissionsFromProxyUrl,
-} from "../src/index";
+} from "../src/mcp-app-csp";
 
 describe("mcp app csp grants", () => {
   it("keeps only https, wss, and loopback origins", () => {

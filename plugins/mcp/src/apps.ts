@@ -3,7 +3,7 @@ import {
   mcpAppPermissionsSchema,
   type McpAppCsp,
   type McpAppPermissions,
-} from "@borg/contracts";
+} from "./contract";
 import { createHash } from "node:crypto";
 import {
   MAX_HTML_BYTES,

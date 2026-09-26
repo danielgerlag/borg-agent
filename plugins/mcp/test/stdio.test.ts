@@ -1,9 +1,6 @@
 import { createTestHarness } from "@borg/plugin-sdk";
-import {
-  mcpAppDiscovered,
-  mcpAppSnapshotSchema,
-  personaSchema,
-} from "@borg/contracts";
+import { personaSchema } from "@borg/contracts";
+import { mcpAppDiscovered, mcpAppSnapshotSchema } from "../src/contract";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
