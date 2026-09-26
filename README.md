@@ -16,8 +16,16 @@ This is `examples/headless/src/main.ts`. It defines a four-plugin distribution, 
 ```ts
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createKernel, defineDistribution, type PluginSource } from "@borg/kernel";
+import { createKernel, defineDistribution } from "@borg/kernel";
+import configSqliteManifest from "@borg/plugin-config-sqlite/borg.plugin.json";
+import configSqlite from "@borg/plugin-config-sqlite/main";
+import helloManifest from "@borg/plugin-hello/borg.plugin.json";
 import { helloGetStatus } from "@borg/plugin-hello/contract";
+import hello from "@borg/plugin-hello/main";
+import mockLlmManifest from "@borg/plugin-mock-llm/borg.plugin.json";
+import mockLlm from "@borg/plugin-mock-llm/main";
+import secretsDevManifest from "@borg/plugin-secrets-dev/borg.plugin.json";
+import secretsDev from "@borg/plugin-secrets-dev/main";
 
 const distribution = defineDistribution({
   id: "example.headless",
@@ -28,10 +36,12 @@ const distribution = defineDistribution({
 });
 const kernel = createKernel({
   distribution,
-  plugins: ["config-sqlite", "secrets-dev", "mock-llm", "hello"].map((name): PluginSource => ({
-    manifest: require(`@borg/plugin-${name}/borg.plugin.json`),
-    loadMain: async () => require(`@borg/plugin-${name}/main`),
-  })),
+  plugins: [
+    { manifest: configSqliteManifest, loadMain: async () => configSqlite },
+    { manifest: secretsDevManifest, loadMain: async () => secretsDev },
+    { manifest: mockLlmManifest, loadMain: async () => mockLlm },
+    { manifest: helloManifest, loadMain: async () => hello },
+  ],
   host: { dataDirectory: mkdtempSync(`${tmpdir()}/borg-headless-`) },
   resolveSecretStore: async () => "borg.secrets.dev",
 });
@@ -68,6 +78,7 @@ pnpm checks the committed lockfile against its supply-chain policies on every in
 Checks:
 
 ```sh
+corepack pnpm lint
 corepack pnpm typecheck
 corepack pnpm test
 corepack pnpm test:coverage

@@ -643,7 +643,7 @@ export class ModelGateway {
           `LLM provider ${target.providerId} registration changed`,
         );
       }
-      existing = await this.dependencies.journal.save({
+      await this.dependencies.journal.save({
         ...existing,
         providerRegistrationId: registration.registrationId,
       });
