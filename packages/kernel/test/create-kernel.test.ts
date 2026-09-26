@@ -447,4 +447,25 @@ describe("createKernel", () => {
     }
   });
 
+  it("stops cleanly after start() fails because no config store is available", async () => {
+    dataDirectory = mkdtempSync(path.join(os.tmpdir(), "borg-kernel-"));
+    kernel = createKernel({
+      plugins: [memorySecretSource()],
+      host: { dataDirectory },
+      resolveSecretStore: async () => "test.secrets",
+    });
+
+    await expect(kernel.start()).rejects.toThrow(
+      "Expected one compatible config store, found 0",
+    );
+    expect(kernel.plugins.getActivePluginIds()).toEqual([]);
+
+    await expect(kernel.stop()).resolves.toBeUndefined();
+    expect(kernel.plugins.getActivePluginIds()).toEqual([]);
+    expect(kernel.loops.countLive()).toBe(0);
+    expect(kernel.interactions.listPending()).toEqual([]);
+    await expect(kernel.start()).rejects.toThrow(
+      "Kernel has been stopped; create a new kernel to start again",
+    );
+  });
 });
