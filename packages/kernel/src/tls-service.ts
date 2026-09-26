@@ -151,7 +151,7 @@ function isPlausibleHost(value: string): boolean {
     return false;
   }
   const unbracketed = stripIpv6Brackets(value);
-  if (unbracketed.length === 0 || /[\[\]]/.test(unbracketed)) {
+  if (unbracketed.length === 0 || /[[\]]/.test(unbracketed)) {
     return false;
   }
   if (unbracketed.includes(":")) {

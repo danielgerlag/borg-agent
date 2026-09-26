@@ -22,6 +22,7 @@ node node_modules/electron/install.js
 ## Verify
 
 ```sh
+pnpm lint            # ESLint (typescript-eslint recommended) over the whole repo
 pnpm typecheck       # plugin boundary checks, full build, then tsc for every package and the tests
 pnpm test            # build, then the Vitest unit suite
 pnpm test:coverage   # the same suite with v8 coverage
@@ -30,7 +31,7 @@ pnpm test:e2e        # build, then Playwright against the real Electron app
 
 `pnpm test:e2e` needs a display. On Linux without one, run it under `xvfb-run -a pnpm test:e2e`. Electron only renders tray titles on macOS, so the e2e tests assert the tray title there and check the tray tooltip and menu on every platform.
 
-CI (`.github/workflows/ci.yml`) runs on every pull request in two jobs. The macOS job runs install, `typecheck`, `test:coverage`, and `test:e2e`. The Linux job runs install, `typecheck`, `test`, and `test:e2e` under Xvfb.
+CI (`.github/workflows/ci.yml`) runs on every pull request in two jobs. The macOS job runs install, `lint`, `typecheck`, `test:coverage`, and `test:e2e`. The Linux job runs install, `lint`, `typecheck`, `test`, and `test:e2e` under Xvfb.
 
 ## Installing behind a corporate or private npm feed
 
@@ -68,4 +69,4 @@ Read `docs/architecture.md` before changing `packages/kernel` or the plugin SDK.
 
 ## Commits and pull requests
 
-Use [Conventional Commits](https://www.conventionalcommits.org/) with a scope when one fits, as the history does: `feat(graphs): ...`, `fix(azure): ...`, `docs: ...`, `test(e2e): ...`, `build: ...`, `chore: ...`. Keep each pull request to one focused change, and make sure `pnpm typecheck` and `pnpm test` pass before you open it.
+Use [Conventional Commits](https://www.conventionalcommits.org/) with a scope when one fits, as the history does: `feat(graphs): ...`, `fix(azure): ...`, `docs: ...`, `test(e2e): ...`, `build: ...`, `chore: ...`. Keep each pull request to one focused change, and make sure `pnpm lint`, `pnpm typecheck`, and `pnpm test` pass before you open it.
