@@ -1,23 +1,25 @@
 import {
-  MCP_APP_BRIDGE_CHANNEL,
-  MCP_APP_MAX_MESSAGE_BYTES,
   buildAllowAttribute,
   buildAppCsp,
   encodeMcpAppCspQuery,
   encodeMcpAppPermissionsQuery,
-  mcpAppToolArgumentsSchema,
   parseMcpAppNetworkGrant,
+} from "@borg/contracts";
+import {
+  MCP_APP_MAX_MESSAGE_BYTES,
   type McpAppCsp,
   type McpAppPermissions,
-  type McpAppRequestId,
   type McpAppSnapshot,
-  type McpAppToolArguments,
-} from "@borg/contracts";
-
-export {
+} from "@borg/plugin-mcp/contract";
+import {
   MCP_APP_BRIDGE_CHANNEL,
-  MCP_APP_MAX_MESSAGE_BYTES,
-} from "@borg/contracts";
+  mcpAppToolArgumentsSchema,
+  type McpAppRequestId,
+  type McpAppToolArguments,
+} from "./contract";
+
+export { MCP_APP_MAX_MESSAGE_BYTES } from "@borg/plugin-mcp/contract";
+export { MCP_APP_BRIDGE_CHANNEL } from "./contract";
 
 export interface McpAppBridgeEnvelope {
   readonly channel: typeof MCP_APP_BRIDGE_CHANNEL;

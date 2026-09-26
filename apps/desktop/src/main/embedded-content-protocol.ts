@@ -1,11 +1,11 @@
 import {
-  MCP_APP_BRIDGE_CHANNEL,
-  MCP_APP_MAX_MESSAGE_BYTES,
   buildPermissionsPolicy,
   buildProxyCsp,
   grantFromProxyUrl,
   permissionsFromProxyUrl,
 } from "@borg/contracts";
+import { MCP_APP_BRIDGE_CHANNEL } from "@borg/plugin-mcp-apps/contract";
+import { MCP_APP_MAX_MESSAGE_BYTES } from "@borg/plugin-mcp/contract";
 import {
   app,
   protocol,

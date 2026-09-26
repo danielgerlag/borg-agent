@@ -3,7 +3,7 @@ import {
   mcpGetStatus,
   mcpListServers,
   mcpRefresh,
-} from "@borg/contracts";
+} from "./contract";
 import { definePlugin, defineToolProvider } from "@borg/plugin-sdk";
 import { McpCatalogManager } from "./catalog";
 

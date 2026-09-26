@@ -1,11 +1,13 @@
 import {
-  MCP_APP_RENDERER_ID,
   mcpAppSnapshotSchema,
+  type McpAppSnapshot,
+} from "@borg/plugin-mcp/contract";
+import {
+  MCP_APP_RENDERER_ID,
   mcpAppsCancelTool,
   mcpAppsInvokeTool,
   type McpAppRequestId,
-  type McpAppSnapshot,
-} from "@borg/contracts";
+} from "./contract";
 import {
   defineUiPlugin,
   type EmbeddedContentRendererProps,
