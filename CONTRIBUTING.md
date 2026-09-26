@@ -13,7 +13,7 @@ pnpm install --frozen-lockfile
 
 `--frozen-lockfile` fails when `pnpm-lock.yaml` no longer matches the manifests. Drop the flag only when you are intentionally changing dependencies, and commit the updated lockfile with that change.
 
-If an Electron command reports that Electron failed to install, its postinstall download did not run. Fetch the binary with:
+Electron 44 has no postinstall step. It downloads its binary the first time something asks for it. To fetch it up front, or if an Electron command reports that Electron failed to install, run:
 
 ```sh
 node node_modules/electron/install.js
@@ -28,9 +28,9 @@ pnpm test:coverage   # the same suite with v8 coverage
 pnpm test:e2e        # build, then Playwright against the real Electron app
 ```
 
-`pnpm test:e2e` needs a display. On Linux without one, run it under `xvfb-run -a pnpm test:e2e`. Two tray assertions read the tray title, which Electron only sets on macOS, so they fail on Linux. CI runs on macOS, where they pass.
+`pnpm test:e2e` needs a display. On Linux without one, run it under `xvfb-run -a pnpm test:e2e`. Electron only renders tray titles on macOS, so the e2e tests assert the tray title there and check the tray tooltip and menu on every platform.
 
-CI (`.github/workflows/ci.yml`) runs install, `typecheck`, `test:coverage`, and `test:e2e` on every pull request.
+CI (`.github/workflows/ci.yml`) runs on every pull request in two jobs. The macOS job runs install, `typecheck`, `test:coverage`, and `test:e2e`. The Linux job runs install, `typecheck`, `test`, and `test:e2e` under Xvfb.
 
 ## Installing behind a corporate or private npm feed
 

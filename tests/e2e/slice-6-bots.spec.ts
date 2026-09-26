@@ -119,6 +119,17 @@ async function trayLabels(): Promise<readonly string[]> {
   });
 }
 
+async function trayToolTip(): Promise<string> {
+  return application!.evaluate(() => {
+    const api = (
+      globalThis as typeof globalThis & {
+        __borgTest?: { trayToolTip(): string };
+      }
+    ).__borgTest;
+    return api?.trayToolTip() ?? "";
+  });
+}
+
 async function trayTitle(): Promise<string> {
   return application!.evaluate(() => {
     const api = (
@@ -197,7 +208,11 @@ test("keeps a hidden bot question in the tray until it is answered", async () =>
 
   await setWindowVisibility(false);
   await expect.poll(trayLabels).toContain("Pending interactions: 1");
-  await expect.poll(trayTitle).toBe("1");
+  await expect.poll(trayToolTip).toBe("Borg · 1 pending");
+  // Electron's Tray.setTitle only renders on macOS; elsewhere getTitle() stays "".
+  if (process.platform === "darwin") {
+    await expect.poll(trayTitle).toBe("1");
+  }
   await expect.poll(trayLabels).toContain("Running bots: 1");
 
   await setWindowVisibility(true);
@@ -210,5 +225,6 @@ test("keeps a hidden bot question in the tray until it is answered", async () =>
     "User answered: continue the bot",
   );
   await expect.poll(trayLabels).toContain("Pending interactions: 0");
+  await expect.poll(trayToolTip).toBe("Borg");
   await expect.poll(trayLabels).toContain("Running bots: 0");
 });

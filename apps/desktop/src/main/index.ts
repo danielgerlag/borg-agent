@@ -61,6 +61,7 @@ let quitting = false;
 let shutdownComplete = false;
 let currentTrayMenuLabels: readonly string[] = [];
 let currentTrayIconIsEmpty = true;
+let currentTrayToolTip = "";
 const BOTS_PLUGIN_ID = "borg.bots";
 
 let currentPendingInteractions = 0;
@@ -156,12 +157,19 @@ function rebuildTrayMenu(): void {
   tray.setTitle(
     currentPendingInteractions > 0 ? String(currentPendingInteractions) : "",
   );
-  tray.setToolTip(
+  // Tray titles only render on macOS; the tooltip carries the pending count on every platform.
+  setTrayToolTip(
+    tray,
     currentPendingInteractions > 0
       ? `Borg · ${currentPendingInteractions} pending`
       : "Borg",
   );
   tray.setContextMenu(Menu.buildFromTemplate(template));
+}
+
+function setTrayToolTip(target: Tray, toolTip: string): void {
+  currentTrayToolTip = toolTip;
+  target.setToolTip(toolTip);
 }
 
 function createTrayIcon(): NativeImage {
@@ -242,7 +250,7 @@ function createTray(): void {
     throw new Error("Borg tray icon could not be created");
   }
   tray = new Tray(icon);
-  tray.setToolTip("Borg");
+  setTrayToolTip(tray, "Borg");
   tray.on("click", () => {
     if (mainWindow?.isVisible()) {
       hideMainWindow();
@@ -387,6 +395,7 @@ function installTestApi(): void {
       userDataPath(): string;
       trayMenuLabels(): readonly string[];
       trayTitle(): string;
+      trayToolTip(): string;
       trayIconIsEmpty(): boolean;
     };
   };
@@ -400,6 +409,7 @@ function installTestApi(): void {
     userDataPath: () => app.getPath("userData"),
     trayMenuLabels: () => currentTrayMenuLabels,
     trayTitle: () => tray?.getTitle() ?? "",
+    trayToolTip: () => currentTrayToolTip,
     trayIconIsEmpty: () => currentTrayIconIsEmpty,
   };
 }
