@@ -389,6 +389,9 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   plugins/channel-discord:
     dependencies:
@@ -626,6 +629,9 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   plugins/mcp:
     dependencies:
