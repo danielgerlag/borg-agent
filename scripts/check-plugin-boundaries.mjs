@@ -481,13 +481,28 @@ for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {
         `${packageJson.name} exports ./contract but src/contract.ts does not exist`,
       );
     }
-    const tsconfig = JSON.parse(
-      await readFile(path.join(pluginDirectory, "tsconfig.main.json"), "utf8"),
-    );
-    if (!tsconfig.include?.includes("src/contract.ts")) {
+    // The build script names the tsconfig that emits dist/ (most plugins use
+    // tsconfig.main.json; main-only plugins such as channel-mock use tsconfig.json).
+    const buildTsconfig =
+      /\btsc\s+-p\s+(\S+)/.exec(packageJson.scripts?.build ?? "")?.[1] ??
+      "tsconfig.main.json";
+    const buildTsconfigPath = path.join(pluginDirectory, buildTsconfig);
+    if (!(await fileExists(buildTsconfigPath))) {
       failures.push(
-        `${packageJson.name} exports ./contract but tsconfig.main.json include does not contain "src/contract.ts"`,
+        `${packageJson.name} exports ./contract but its build tsconfig ${buildTsconfig} does not exist`,
       );
+    } else {
+      const tsconfig = JSON.parse(await readFile(buildTsconfigPath, "utf8"));
+      const include = tsconfig.include ?? [];
+      if (
+        !["src/contract.ts", "src/*.ts", "src/**/*.ts"].some((entry) =>
+          include.includes(entry),
+        )
+      ) {
+        failures.push(
+          `${packageJson.name} exports ./contract but ${buildTsconfig} include does not contain "src/contract.ts"`,
+        );
+      }
     }
   }
 }
