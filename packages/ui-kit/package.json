@@ -2,6 +2,7 @@
   "name": "@borg/ui-kit",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "exports": {
     ".": "./src/index.tsx"
   },

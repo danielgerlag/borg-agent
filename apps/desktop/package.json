@@ -2,6 +2,7 @@
   "name": "@borg/desktop",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "main": "dist/main/index.js",
   "dependencies": {
     "@borg/contracts": "workspace:*",
