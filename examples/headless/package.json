@@ -1,0 +1,19 @@
+{
+  "name": "@borg/example-headless",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "main": "dist/main.js",
+  "dependencies": {
+    "@borg/kernel": "workspace:*",
+    "@borg/plugin-config-sqlite": "workspace:*",
+    "@borg/plugin-hello": "workspace:*",
+    "@borg/plugin-mock-llm": "workspace:*",
+    "@borg/plugin-secrets-dev": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js"
+  }
+}
