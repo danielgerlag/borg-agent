@@ -1,4 +1,4 @@
-import { mockChannelInject, mockChannelSend } from "@borg/contracts";
+import { mockChannelInject, mockChannelSend } from "./contract";
 import { definePlugin, type PluginContext } from "@borg/plugin-sdk";
 import {
   MOCK_CHANNEL_ADAPTER_ID,

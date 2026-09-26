@@ -2,8 +2,8 @@ import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
   connectorAdapterId,
   connectorStoreKey,
-  type M365ChannelStatus,
 } from "@borg/contracts";
+import type { M365ChannelStatus } from "./contract";
 import type {
   ChannelAdapterReceipt,
   ChannelInboundDraft,

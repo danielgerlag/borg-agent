@@ -4,11 +4,13 @@ import {
   allocateConnectorAccountId,
   connectorAdapterId,
   connectorSecretKey,
+} from "@borg/contracts";
+import {
   discordChannelDisconnect,
   discordChannelGetStatus,
   discordChannelVerify,
   type DiscordChannelStatus,
-} from "@borg/contracts";
+} from "./contract";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { KeyRound, Plus, PlugZap, Save, Trash2 } from "lucide-solid";

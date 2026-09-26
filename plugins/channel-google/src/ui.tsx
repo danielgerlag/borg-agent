@@ -3,11 +3,13 @@ import {
   MAX_CONNECTOR_ACCOUNTS,
   allocateConnectorAccountId,
   connectorAdapterId,
+} from "@borg/contracts";
+import {
   googleChannelConnect,
   googleChannelDisconnect,
   googleChannelGetStatus,
   type GoogleChannelStatus,
-} from "@borg/contracts";
+} from "./contract";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { Mail, Plus, Save, Trash2 } from "lucide-solid";

@@ -419,6 +419,9 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   plugins/channel-google:
     dependencies:
@@ -437,6 +440,9 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   plugins/channel-imap:
     dependencies:
@@ -455,6 +461,9 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   plugins/channel-m365:
     dependencies:
@@ -473,6 +482,9 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   plugins/channel-mock:
     dependencies:
@@ -482,6 +494,9 @@ importers:
       '@borg/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   plugins/channel-slack:
     dependencies:
@@ -500,6 +515,9 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   plugins/chat:
     dependencies:
