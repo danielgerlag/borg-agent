@@ -319,6 +319,10 @@ function loadMainWindow(window: BrowserWindow): void {
     });
 }
 
+function logKernelError(message: string, error: unknown): void {
+  console.error(message, error);
+}
+
 async function requestQuit(): Promise<void> {
   if (quitting) {
     return;
@@ -351,7 +355,12 @@ async function requestQuit(): Promise<void> {
     await interactionSubscription?.dispose();
     await loopSubscription?.dispose();
     await pluginLifecycleSubscription?.dispose();
-    await kernel?.stop();
+    try {
+      await kernel?.stop();
+    } catch (error) {
+      // stop() still ran every teardown step; an AggregateError lists what failed. Keep quitting.
+      logKernelError("[kernel] shutdown completed with errors", error);
+    }
     await setupSchemaRegistration?.dispose();
   } finally {
     removeEmbeddedContentProtocol?.();
@@ -428,6 +437,7 @@ if (!app.requestSingleInstanceLock()) {
         },
         openExternal: (url) => shell.openExternal(url),
         showWindow: showMainWindow,
+        logError: logKernelError,
       },
       resolveSecretStore: async (config) => {
         setupSchemaRegistration = config.registerSchema(
