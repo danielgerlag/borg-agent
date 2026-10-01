@@ -1,5 +1,9 @@
 # Borg Agent
 
+Local desktop agent harness. A TypeScript microkernel you bundle plugins with: models, tools, MCP, channels, and graphs.
+
+![Borg desktop open on Chat. The rail lists Chat, Bots, Graphs, and Activity.](docs/images/desktop.png)
+
 The product is plugins. Borg Agent is an agentic harness microkernel. It's a minimal, stable core (agent loop, tool dispatch, context, lifecycle, plugin contract) that you bundle plugins with to create domain-specific harnesses. The desktop app is one distribution.
 
 - Model and tool calls go through the kernel, which scans prompts and output, enforces data-classification ceilings, and asks for approval when policy requires it.
