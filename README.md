@@ -57,6 +57,28 @@ kernel.start()
 
 After `pnpm build`, run it with `node examples/headless/dist/main.js`. It prints `borg.hello: Kernel alive`. `pnpm test` runs it too, and fails if the block above stops matching the file. The embedding API is in [packages/kernel/README.md](packages/kernel/README.md).
 
+## A local agent whose features are plugins
+
+The desktop app is a local agent. Features such as chat, graphs, model providers, MCP, and channels are plugins. The kernel hosts them. It owns process lifetime, trust, personas, the loop runtime, the tool pipeline, and the slots where plugin screens sit.
+
+A plugin is a package. Its manifest names the version, the kernel range it supports, the permissions it needs, and the commands, tools, and screens it adds. At activation the kernel checks the manifest. When the plugin calls the host, the kernel enforces those permissions.
+
+The headless example above is the same shape as the desktop app, with a shorter plugin list:
+
+```ts
+const distribution = defineDistribution({
+  id: "example.headless",
+  name: "Headless example",
+  version: "0.1.0",
+  kernel: "^0.1.0",
+  plugins: ["borg.config.sqlite", "borg.secrets.dev", "borg.mock-llm", "borg.hello"],
+});
+```
+
+`borg.config.sqlite` and `borg.secrets.dev` are in that list because the kernel needs a config store and a secret store to start. `borg.mock-llm` is the model provider. `borg.hello` is the feature the example calls. `createKernel()` loads the list in a normal Node process. The desktop host calls `createKernel()` with `borg.desktop`, which names the plugins bundled in the app.
+
+Plugins do not import one another. They call commands on the kernel bus, or they import another plugin's `/contract` export. Personas and the safety checks stay in the kernel, because every plugin uses them. A distribution can leave a feature out.
+
 ## Quickstart
 
 You need Node.js 22 or newer, from `engines.node` in the root `package.json`, and pnpm 12.0.0, from `packageManager`.
