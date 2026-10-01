@@ -11,7 +11,7 @@ The product is plugins. Borg Agent is an agentic harness microkernel. It's a min
 - Model providers are plugins, so a harness bundles the ones it needs: Anthropic, OpenAI, Azure, GitHub Copilot, Ollama, OpenRouter, or a scripted mock.
 - A distribution names a harness by id and version, pins the kernel range, and lists its plugins, and `createKernel()` rejects one that doesn't fit the running kernel.
 
-**Status:** alpha. The desktop app is the reference distribution. macOS is the primary platform. CI runs typecheck, unit tests, and the Electron end-to-end tests on both macOS and Linux. The packages are not published to npm yet. MIT licensed.
+**Status:** alpha. The desktop app is the reference distribution. macOS is the primary platform. CI runs typecheck, unit tests, and the Electron end-to-end tests on both macOS and Linux. [Publishing to npm](CONTRIBUTING.md#publishing-to-npm) ships `@borg/contracts`, `@borg/plugin-sdk`, and `@borg/kernel`. The other packages stay private. MIT licensed.
 
 ## Run a harness headless
 

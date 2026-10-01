@@ -63,6 +63,52 @@ Rules for contributors:
   rg -i 'tarball:|pkgs\.dev|visualstudio\.com|_packaging' pnpm-lock.yaml
   ```
 
+## Publishing to npm
+
+`.github/workflows/publish.yml` publishes three packages, in this order:
+
+1. `@borg/contracts`
+2. `@borg/plugin-sdk` (`@borg/contracts` is a dependency)
+3. `@borg/kernel` (both of the others are dependencies)
+
+`scripts/publish-npm.mjs` rewrites each `workspace:*` dependency to the version in that package's `package.json` and publishes to `https://registry.npmjs.org`. The root package, the desktop app, and every plugin stay private. A consumer can install `@borg/kernel` after all three versions are on npm.
+
+Run **Publish npm packages** from the Actions tab, on `main`, after CI is green. The workflow publishes the versions already committed in those three files. It skips a package whose version is already on npm. Bump the version in git before you publish again. The workflow does not change versions.
+
+The workflow cannot answer an interactive 2FA prompt. Log in with a granular access token, or with a trusted publisher after the packages exist.
+
+### Granular access token
+
+Use a token for the first publish. npm will not attach a trusted publisher to a package that does not exist yet.
+
+1. Sign in at [npmjs.com](https://www.npmjs.com) and turn on 2FA for the account.
+2. Create the npm org `borg` if you do not already own it, and make your account an owner. The scope in `@borg/kernel` is that org. Org membership alone does not let a token publish. Package access is a separate setting on the token.
+3. Open your profile menu, then **Access Tokens**, then **Generate New Token**.
+4. Check **Bypass two-factor authentication**. A workflow cannot enter a one-time code. Leave **Allowed IP ranges** empty. GitHub-hosted runner addresses change.
+5. Under **Packages and scopes**, set the permission to **Read and write (publish and stage)**. Choose **Only select packages and scopes**, and select the `borg` scope. That covers the first publish of these three names. **Read and write (stage only)** cannot run `npm publish`.
+6. Set an expiration. Copy the token from the next screen. npm shows the full token only once.
+7. In the GitHub repo, open **Settings**, then **Secrets and variables**, then **Actions**, then **New repository secret**. Name it `NPM_TOKEN` and paste the token.
+
+Run the workflow with **auth** set to `token`. The secret is read as `secrets.NPM_TOKEN`. Do not commit the token, do not put it in `.npmrc`, and do not write it into the workflow file.
+
+### Trusted publisher
+
+After the first publish, prefer this login. npm gives that workflow run a short-lived credential. You do not store a token in GitHub.
+
+For each of `@borg/contracts`, `@borg/plugin-sdk`, and `@borg/kernel`:
+
+1. Open the package on npmjs.com and go to **Settings**, then **Trusted Publisher**.
+2. Choose **GitHub Actions**.
+3. Organization or user: `danielgerlag`
+4. Repository: `borg-agent`
+5. Workflow filename: `publish.yml` (the file name only, including `.yml`)
+6. Leave the environment name empty. This workflow does not use a GitHub environment.
+7. Allow `npm publish`. A trusted publisher created after 3 September 2026 can stage a package, and it does not publish directly until you allow `npm publish`.
+
+Run the workflow with **auth** set to `trusted-publisher`. The job needs `id-token: write` and a GitHub-hosted runner. Both are set. npm CLI 11.5.1 or newer exchanges the OIDC token. Node 24 on the runner provides that CLI.
+
+Provenance is attached for a public package published this way from this public repo. When a trusted-publisher run succeeds, revoke the granular token and delete the `NPM_TOKEN` secret.
+
 ## Architecture rules
 
 Read `docs/architecture.md` before changing `packages/kernel` or the plugin SDK. A plugin must not import another plugin package except through its `@borg/plugin-<name>/contract` export. `pnpm check:boundaries` enforces this and runs as part of `build`, `typecheck`, and `test`. The full rule list is in [docs/boundaries.md](docs/boundaries.md). Plugin package layout is in [docs/plugin-authoring.md](docs/plugin-authoring.md).

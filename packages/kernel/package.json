@@ -1,8 +1,18 @@
 {
   "name": "@borg/kernel",
   "version": "0.1.0",
-  "private": true,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danielgerlag/borg-agent.git",
+    "directory": "packages/kernel"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
