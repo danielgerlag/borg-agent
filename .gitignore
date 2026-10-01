@@ -10,3 +10,4 @@ coverage/
 
 # Read-only upstream source used during architecture research.
 .research/
+.verify-borg/
