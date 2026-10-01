@@ -1,9 +1,9 @@
+import type { SearchProviderStatus } from "@borg/contracts/web-search";
 import {
   braveConnect,
   braveDisconnect,
   braveGetStatus,
-  type SearchProviderStatus,
-} from "@borg/contracts";
+} from "./contract";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Panel, TextField } from "@borg/ui-kit";
 import { KeyRound, Shield } from "lucide-solid";

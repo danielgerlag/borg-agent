@@ -1,3 +1,4 @@
+import type { Persona } from "@borg/contracts";
 import {
   botCompleted,
   botFailed,
@@ -12,8 +13,7 @@ import {
   botsStop,
   type Bot,
   type BotLog,
-  type Persona,
-} from "@borg/contracts";
+} from "./contract";
 import { defineUiPlugin, type Disposable } from "@borg/plugin-sdk";
 import { Button, EmptyState, Panel, Select, TextField } from "@borg/ui-kit";
 import { Activity, Play, Plus, Square, Trash2 } from "lucide-solid";

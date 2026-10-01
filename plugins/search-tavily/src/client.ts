@@ -1,7 +1,7 @@
 import {
   webSearchOutputSchema,
   type WebSearchOutput,
-} from "@borg/contracts";
+} from "@borg/contracts/web-search";
 
 export const TAVILY_PRODUCTION_ENDPOINT = "https://api.tavily.com/search";
 export const TAVILY_TIMEOUT_MS = 15_000;

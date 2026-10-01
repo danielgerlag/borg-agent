@@ -1,10 +1,17 @@
 import {
+  embeddedContentSnapshotSchema,
+  type EmbeddedContentSnapshot,
+  type Persona,
+  type WorkspaceFile,
+  type WorkspacePreview,
+} from "@borg/contracts";
+import {
   chatCreateSession,
   chatDeleteSession,
   chatDocumentSchema,
   chatGetSession,
-  chatListSessions,
   chatImportWorkspaceFiles,
+  chatListSessions,
   chatListWorkspace,
   chatMessageAppended,
   chatPreviewWorkspaceFile,
@@ -14,16 +21,11 @@ import {
   chatSpawnSubAgent,
   chatTurnCompleted,
   chatWorkspaceUpdated,
-  embeddedContentSnapshotSchema,
   emptyChatUsage,
   type ChatEntry,
-  type EmbeddedContentSnapshot,
   type ChatSession,
   type ChatUsage,
-  type Persona,
-  type WorkspaceFile,
-  type WorkspacePreview,
-} from "@borg/contracts";
+} from "./contract";
 import {
   defineUiPlugin,
   type Disposable,

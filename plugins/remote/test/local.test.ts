@@ -35,7 +35,7 @@ describe("local remote provider", () => {
         },
         once(event, listener) {
           if (event === "spawn") {
-            listener();
+            (listener as () => void)();
           }
         },
       };

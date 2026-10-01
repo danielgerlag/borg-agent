@@ -1,4 +1,10 @@
 import {
+  executionIdSchema,
+  modelOperationPrefixSchema,
+  type ExecutionId,
+  type LoopEvent,
+} from "@borg/contracts";
+import {
   botCompleted,
   botFailed,
   botLogSchema,
@@ -6,13 +12,9 @@ import {
   botStarted,
   botStopped,
   botUpdated,
-  executionIdSchema,
-  modelOperationPrefixSchema,
   type Bot,
   type BotLog,
-  type ExecutionId,
-  type LoopEvent,
-} from "@borg/contracts";
+} from "./contract";
 import type {
   Disposable,
   JsonValue,

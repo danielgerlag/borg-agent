@@ -1,10 +1,11 @@
 packages:
   - apps/*
+  - distributions/*
+  - examples/*
   - packages/*
   - plugins/*
+  - tooling/*
 
 onlyBuiltDependencies:
   - electron
   - esbuild
-
-trustLockfile: true

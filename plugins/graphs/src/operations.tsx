@@ -12,7 +12,7 @@ import {
   graphValueMapSchema,
   type GraphDefinition,
   type GraphInstance,
-} from "@borg/contracts";
+} from "./contract";
 import type { Disposable, PluginUiContext } from "@borg/plugin-sdk";
 import { Button, EmptyState, Panel } from "@borg/ui-kit";
 import {

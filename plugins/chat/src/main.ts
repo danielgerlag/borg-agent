@@ -1,12 +1,24 @@
 import {
+  embeddedContentSnapshotSchema,
+  executionIdSchema,
+  modelOperationPrefixSchema,
+  type ExecutionId,
+  type LoopEvent,
+  type LoopRunSnapshot,
+} from "@borg/contracts";
+import {
+  feedbackRequested,
+  feedbackResolved,
+} from "@borg/plugin-feedback/contract";
+import {
   chatAppend,
   chatCreateSession,
   chatDeleteSession,
   chatDocumentSchema,
   chatEntrySchema,
   chatGetSession,
-  chatListSessions,
   chatImportWorkspaceFiles,
+  chatListSessions,
   chatListWorkspace,
   chatMessageAppended,
   chatPreviewWorkspaceFile,
@@ -24,19 +36,11 @@ import {
   chatTurnStarted,
   chatWorkspaceUpdated,
   embeddedContentRegistered,
-  embeddedContentSnapshotSchema,
-  feedbackRequested,
-  feedbackResolved,
   emptyChatUsage,
-  executionIdSchema,
-  modelOperationPrefixSchema,
   type ChatEntry,
   type ChatSession,
   type ChatUsage,
-  type LoopEvent,
-  type LoopRunSnapshot,
-  type ExecutionId,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   type Disposable,

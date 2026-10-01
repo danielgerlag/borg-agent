@@ -3,7 +3,7 @@ import {
   azureDisconnect,
   azureGetStatus,
   type AzureStatus,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   type Disposable,

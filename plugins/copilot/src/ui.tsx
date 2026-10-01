@@ -4,7 +4,7 @@ import {
   copilotGetStatus,
   copilotPollDeviceFlow,
   copilotStartDeviceFlow,
-} from "@borg/contracts";
+} from "./contract";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Button, Panel } from "@borg/ui-kit";
 import { Sparkles } from "lucide-solid";

@@ -74,7 +74,10 @@ describe("borg.remote plugin", () => {
     await expect(
       harness.invokeSubmit("local/dev", {
         ...legal,
-        persona: { ...legal.persona, allowedTools: ["tools.ask"] },
+        persona: {
+          ...legal.persona,
+          allowedTools: ["tools.ask"] as unknown as typeof legal.persona.allowedTools,
+        },
       }),
     ).rejects.toThrow(/cannot use/);
     await active.deactivate();

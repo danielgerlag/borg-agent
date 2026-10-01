@@ -2,11 +2,13 @@ import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
   connectorAdapterId,
   connectorSecretKey,
+} from "@borg/contracts";
+import {
   slackChannelDisconnect,
   slackChannelGetStatus,
   slackChannelVerify,
   type SlackChannelStatus,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   type ChannelAdapterReceipt,

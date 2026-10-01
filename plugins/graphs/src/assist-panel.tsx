@@ -1,5 +1,5 @@
 import { Button, TextField } from "@borg/ui-kit";
-import type { AssistQuestion } from "@borg/contracts";
+import type { AssistQuestion } from "./contract";
 import { HelpCircle, LoaderCircle, RefreshCw, Send, Sparkles, X } from "lucide-solid";
 import {
   For,

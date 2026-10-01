@@ -21,7 +21,7 @@ export interface PromptAssemblyContext {
     | undefined;
 }
 
-export interface PromptSlot extends PromptSlotContribution {}
+export type PromptSlot = PromptSlotContribution;
 
 export interface AssembledPrompt {
   readonly system: string;

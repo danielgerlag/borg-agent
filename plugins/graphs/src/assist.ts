@@ -1,15 +1,13 @@
+import { type ModelMessage } from "@borg/contracts";
 import {
   assistQuestionSchema,
   graphDefinitionSchema,
   type AssistQuestion,
   type GraphDefinition,
   type GraphNode,
-  type ModelMessage,
-} from "@borg/contracts";
+} from "./contract";
 import { GRAPH_ENGINE_ID } from "./engine-id";
 import { builtInKinds } from "./kind-registry";
-
-export type { AssistChoice, AssistQuestion } from "@borg/contracts";
 
 export const GRAPH_ASK_USER_TOOL_ID = "graphs.ask";
 

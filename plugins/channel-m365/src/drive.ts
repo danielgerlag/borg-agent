@@ -5,7 +5,7 @@ import {
   type DriveReadOutput,
   type DriveSearchInput,
   type DriveSearchOutput,
-} from "@borg/contracts";
+} from "@borg/contracts/drive";
 import {
   GraphError,
   graphRequest,

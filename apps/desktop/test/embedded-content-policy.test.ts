@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeMcpAppCspQuery } from "@borg/contracts";
+import { encodeMcpAppCspQuery } from "@borg/plugin-mcp-apps/mcp-app-csp";
 import {
   belongsToEmbeddedContent,
   embeddedAppCsp,

@@ -10,6 +10,8 @@
   },
   "include": [
     "apps/**/test/**/*.ts",
+    "distributions/**/test/**/*.ts",
+    "examples/**/test/**/*.ts",
     "apps/desktop/src/renderer/global.d.ts",
     "packages/**/test/**/*.ts",
     "plugins/**/test/**/*.ts",

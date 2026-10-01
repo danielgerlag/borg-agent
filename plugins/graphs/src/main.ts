@@ -1,5 +1,9 @@
 import {
   channelInboundMessage,
+  modelOperationPrefixSchema,
+  type LoopEvent,
+} from "@borg/contracts";
+import {
   graphDefinitionDeleted,
   graphDefinitionSaved,
   graphDefinitionSchema,
@@ -21,11 +25,9 @@ import {
   graphsListInstances,
   graphsListRunning,
   graphsSaveDefinition,
-  modelOperationPrefixSchema,
   type AssistQuestion,
   type GraphDefinition,
-  type LoopEvent,
-} from "@borg/contracts";
+} from "./contract";
 import {
   definePlugin,
   defineTool,
@@ -41,8 +43,8 @@ import {
   parseAskUser,
   parseAssistedTurn,
 } from "./assist";
-import { builtInKinds } from "./kind-registry";
 import { GraphEngine } from "./executor";
+import { builtInKinds } from "./kind-registry";
 
 export default definePlugin({
   id: "borg.graphs",

@@ -1,4 +1,4 @@
-import type { GraphDefinition, GraphNode } from "@borg/contracts";
+import type { GraphDefinition, GraphNode } from "../src/contract";
 import { GRAPH_ENGINE_ID } from "../src/executor";
 
 export type BattleComplexity = "simple" | "medium" | "complex";

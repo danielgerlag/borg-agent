@@ -2,10 +2,12 @@
   "name": "@borg/plugin-ollama",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "main": "dist/main.js",
   "types": "dist/main.d.ts",
   "exports": {
     "./main": "./dist/main.js",
+    "./contract": "./dist/contract.js",
     "./ui": "./src/ui.tsx"
   },
   "borg": {
@@ -19,7 +21,8 @@
     "@borg/plugin-sdk": "workspace:*",
     "@borg/ui-kit": "workspace:*",
     "lucide-solid": "^1.34.0",
-    "solid-js": "^1.9.15"
+    "solid-js": "^1.9.15",
+    "zod": "4.6.5"
   },
   "scripts": {
     "build": "tsc -p tsconfig.main.json",

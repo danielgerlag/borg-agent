@@ -1,12 +1,12 @@
+import { oauthGrantKey } from "@borg/contracts";
+import { driveReadInputSchema } from "@borg/contracts/drive";
 import {
-  driveReadInputSchema,
   googleChannelConnect,
   googleChannelDisconnect,
   googleChannelGetStatus,
   googleChannelInject,
-  oauthGrantKey,
   type GoogleChannelStatus,
-} from "@borg/contracts";
+} from "../src/contract";
 import { createTestHarness, type ToolContribution } from "@borg/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";

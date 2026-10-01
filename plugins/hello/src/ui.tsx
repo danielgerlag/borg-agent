@@ -1,4 +1,4 @@
-import { helloGetStatus } from "@borg/contracts";
+import { helloGetStatus } from "./contract";
 import { defineUiPlugin } from "@borg/plugin-sdk";
 import { Panel, TextField } from "@borg/ui-kit";
 import { Activity, CircleAlert, LoaderCircle, MessageSquareText } from "lucide-solid";

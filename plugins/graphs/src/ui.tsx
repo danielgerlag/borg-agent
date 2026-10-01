@@ -1,3 +1,4 @@
+import { type CommandOutput, type Persona } from "@borg/contracts";
 import {
   graphDefinitionDeleted,
   graphDefinitionSaved,
@@ -17,12 +18,10 @@ import {
   graphsSaveDefinition,
   graphValueMapSchema,
   type AssistQuestion,
-  type CommandOutput,
   type GraphDefinition,
   type GraphInstance,
   type GraphNode,
-  type Persona,
-} from "@borg/contracts";
+} from "./contract";
 import { defineUiPlugin, type Disposable } from "@borg/plugin-sdk";
 import {
   Button,

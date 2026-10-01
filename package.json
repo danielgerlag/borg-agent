@@ -2,13 +2,15 @@
   "name": "borg-agent",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "packageManager": "pnpm@12.0.0",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
+    "lint": "eslint .",
     "check:boundaries": "node scripts/check-plugin-boundaries.mjs && node scripts/check-editable-for-lists.mjs && node scripts/check-native-form-controls.mjs",
-    "build": "pnpm check:boundaries && node scripts/generate-bundled-plugins.mjs && pnpm -r --if-present build",
+    "build": "pnpm check:boundaries && pnpm -r --if-present build",
     "dev": "pnpm build && node scripts/run-electron.mjs",
     "start": "pnpm build && node scripts/run-electron.mjs",
     "typecheck": "pnpm build && pnpm -r --if-present typecheck && tsc -p tsconfig.tests.json",
@@ -20,11 +22,13 @@
     "verify:graph-ui": "pnpm build && node scripts/verify-graph-designer.mjs"
   },
   "devDependencies": {
+    "@borg/eslint-config": "workspace:*",
     "@electron/packager": "20.3.0",
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.3.0",
     "@vitest/coverage-v8": "^4.1.11",
     "electron": "^44.0.0",
+    "eslint": "10.11.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }

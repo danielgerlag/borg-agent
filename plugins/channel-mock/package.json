@@ -2,10 +2,12 @@
   "name": "@borg/plugin-channel-mock",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "main": "dist/main.js",
   "types": "dist/main.d.ts",
   "exports": {
-    "./main": "./dist/main.js"
+    "./main": "./dist/main.js",
+    "./contract": "./dist/contract.js"
   },
   "borg": {
     "id": "borg.channel.mock",
@@ -14,7 +16,8 @@
   },
   "dependencies": {
     "@borg/contracts": "workspace:*",
-    "@borg/plugin-sdk": "workspace:*"
+    "@borg/plugin-sdk": "workspace:*",
+    "zod": "4.6.5"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

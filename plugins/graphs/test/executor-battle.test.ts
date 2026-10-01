@@ -1,4 +1,4 @@
-import { feedbackAsk } from "@borg/contracts";
+import { feedbackAsk } from "@borg/plugin-feedback/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   GraphEngine,

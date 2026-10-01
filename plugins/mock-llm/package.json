@@ -2,9 +2,11 @@
   "name": "@borg/plugin-mock-llm",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "main": "dist/main.js",
   "types": "dist/main.d.ts",
   "exports": {
+    "./borg.plugin.json": "./borg.plugin.json",
     "./main": "./dist/main.js",
     "./ui": "./src/ui.tsx"
   },

@@ -2,10 +2,13 @@
   "name": "@borg/plugin-mcp-apps",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "main": "dist/main.js",
   "types": "dist/main.d.ts",
   "exports": {
     "./main": "./dist/main.js",
+    "./contract": "./dist/contract.js",
+    "./mcp-app-csp": "./dist/mcp-app-csp.js",
     "./ui": "./src/ui.tsx"
   },
   "borg": {
@@ -16,8 +19,11 @@
   },
   "dependencies": {
     "@borg/contracts": "workspace:*",
+    "@borg/plugin-chat": "workspace:*",
+    "@borg/plugin-mcp": "workspace:*",
     "@borg/plugin-sdk": "workspace:*",
-    "solid-js": "^1.9.15"
+    "solid-js": "^1.9.15",
+    "zod": "4.6.5"
   },
   "scripts": {
     "build": "tsc -p tsconfig.main.json",

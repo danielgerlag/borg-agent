@@ -66,6 +66,7 @@ describe("coinbase package boundaries", () => {
       "@borg/ui-kit",
       "lucide-solid",
       "solid-js",
+      "zod",
     ]);
     for (const filename of await sourceFiles(path.join(pluginRoot, "src"))) {
       const source = await readFile(filename, "utf8");

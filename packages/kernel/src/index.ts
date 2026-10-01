@@ -1,4 +1,20 @@
 export {
+  KERNEL_API_VERSION,
+  KERNEL_VERSION,
+  createKernel,
+} from "./create-kernel";
+export type {
+  CreateKernelOptions,
+  Kernel,
+  KernelHost,
+} from "./create-kernel";
+export { defineDistribution } from "./distribution";
+export type {
+  Distribution,
+  DistributionDefinition,
+  DistributionPluginEntry,
+} from "./distribution";
+export {
   A2AService,
   A2A_OWNER_PLUGIN_ID,
   A2A_PROTOCOL_VERSION,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GraphDefinition } from "@borg/contracts";
+import type { GraphDefinition } from "../src/contract";
 import { connectNodes } from "../src/connect";
 import { outputPortId, portPosition } from "../src/draw-edges";
 import { GRAPH_ENGINE_ID } from "../src/engine-id";

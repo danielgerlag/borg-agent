@@ -1,8 +1,5 @@
-import {
-  mockChannelInject,
-  mockChannelSend,
-  type CommandDefinition,
-} from "@borg/contracts";
+import { type CommandDefinition } from "@borg/contracts";
+import { mockChannelInject, mockChannelSend } from "../src/contract";
 import type {
   ChannelAdapter,
   ChannelInboundDraft,

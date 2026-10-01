@@ -1,13 +1,15 @@
 import {
+  type DiscoveredSkill,
+  type Skill,
+  type SkillSource,
+} from "@borg/contracts";
+import {
   chatSkillsDiscover,
   chatSkillsInstall,
   chatSkillsListSources,
   chatSkillsPreview,
   chatSkillsSetSources,
-  type DiscoveredSkill,
-  type Skill,
-  type SkillSource,
-} from "@borg/contracts";
+} from "./contract";
 import type { PluginUiContext } from "@borg/plugin-sdk";
 import { Button, Checkbox, Dialog, Panel, TextField } from "@borg/ui-kit";
 import { LoaderCircle, Plus, Trash2 } from "lucide-solid";

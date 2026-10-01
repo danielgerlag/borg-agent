@@ -1,4 +1,4 @@
-import { a2aGetStatus } from "@borg/contracts";
+import { a2aGetStatus } from "../src/contract";
 import {
   createTestHarness,
   type PluginBus,

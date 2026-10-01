@@ -3,7 +3,7 @@ import {
   feedbackAskInputSchema,
   feedbackRequested,
   feedbackResolved,
-} from "@borg/contracts";
+} from "./contract";
 import { definePlugin, defineTool, z } from "@borg/plugin-sdk";
 
 const feedbackConfigSchema = z.object({

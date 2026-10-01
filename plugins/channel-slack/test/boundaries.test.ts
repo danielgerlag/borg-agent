@@ -64,6 +64,7 @@ describe("channel-slack package boundaries", () => {
       "@borg/ui-kit",
       "lucide-solid",
       "solid-js",
+      "zod",
     ]);
   });
 

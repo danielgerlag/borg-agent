@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { imapChannelInject, type CommandDefinition } from "@borg/contracts";
+import { type CommandDefinition } from "@borg/contracts";
+import { imapChannelInject } from "../src/contract";
 import type {
   ChannelAdapter,
   ChannelInboundDraft,

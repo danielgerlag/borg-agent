@@ -2,7 +2,7 @@ import {
   openaiConnect,
   openaiDisconnect,
   openaiGetStatus,
-} from "@borg/contracts";
+} from "../src/contract";
 import {
   createTestHarness,
   type Disposable,

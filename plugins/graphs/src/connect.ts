@@ -1,4 +1,4 @@
-import type { GraphDefinition, GraphEdge } from "@borg/contracts";
+import type { GraphDefinition, GraphEdge } from "./contract";
 
 export type BranchHandle = "true" | "false";
 

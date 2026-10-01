@@ -1,9 +1,5 @@
-import type {
-  GraphDefinition,
-  LoopEvent,
-  LoopRunSnapshot,
-  LoopStartInput,
-} from "@borg/contracts";
+import type { LoopEvent, LoopRunSnapshot, LoopStartInput } from "@borg/contracts";
+import type { GraphDefinition } from "../src/contract";
 import {
   z,
   type Disposable,

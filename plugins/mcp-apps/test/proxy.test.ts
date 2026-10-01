@@ -1,10 +1,12 @@
 import {
   grantFromProxyUrl,
+  permissionsFromProxyUrl,
+} from "../src/mcp-app-csp";
+import {
   mcpAppDiscovered,
   mcpAppSnapshotSchema,
-  mcpAppsInvokeTool,
-  permissionsFromProxyUrl,
-} from "@borg/contracts";
+} from "@borg/plugin-mcp/contract";
+import { mcpAppsInvokeTool } from "../src/contract";
 import { describe, expect, it } from "vitest";
 import {
   MCP_APP_BRIDGE_CHANNEL,
