@@ -135,6 +135,8 @@ corepack pnpm verify:package:mac
 
 The first command builds `.package/Borg-darwin-<arch>.zip`. The second launches that app and runs a short smoke check. Both scripts run only on macOS, and the app is not signed or notarized.
 
+The Apple silicon zip is attached to [v0.1.0-alpha](https://github.com/danielgerlag/borg-agent/releases/tag/v0.1.0-alpha).
+
 The guide map is [docs/README.md](docs/README.md).
 
 ## License
