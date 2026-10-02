@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "main": "dist/electron-main.js",
   "type": "module",
   "exports": {
     "./borg.plugin.json": "./borg.plugin.json",
@@ -16,10 +17,22 @@
     "@borg/plugin-channel-mock": "workspace:*",
     "@borg/plugin-config-sqlite": "workspace:*",
     "@borg/plugin-secrets-dev": "workspace:*",
-    "@borg/plugin-security-prompt-injection": "workspace:*"
+    "@borg/plugin-security-prompt-injection": "workspace:*",
+    "@borg/ui-kit": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
+    "electron": "^44.0.0",
+    "solid-js": "^1.9.15",
+    "tailwindcss": "^4.3.3",
+    "three": "^0.170.0",
+    "vite": "^8.2.2",
+    "vite-plugin-solid": "^2.11.14"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "tsc -p tsconfig.json && node build-renderer.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
+    "start": "electron dist/electron-main.js"
+  },
+  "devDependencies": {
+    "@types/three": "0.170.0"
   }
 }
