@@ -291,6 +291,21 @@ importers:
         specifier: workspace:*
         version: link:../../packages/kernel
 
+  examples/auction-clerk:
+    dependencies:
+      '@borg-agent/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@borg-agent/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/plugin-config-sqlite':
+        specifier: workspace:*
+        version: link:../../plugins/config-sqlite
+      '@borg/plugin-secrets-dev':
+        specifier: workspace:*
+        version: link:../../plugins/secrets-dev
+
   examples/field-catalog:
     dependencies:
       '@borg-agent/kernel':
