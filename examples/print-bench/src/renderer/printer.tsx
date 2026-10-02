@@ -41,7 +41,7 @@ export function PrinterView(props: BenchControl) {
             <p class="text-sm text-[var(--text-muted)]">The operator starts the printer. Change the seat in Settings.</p>
           </Show>
           <Show when={allowed() && !printable()}>
-            <p class="text-sm text-[var(--text-muted)]">The bracket has not passed inspection.</p>
+            <p class="text-sm text-[var(--text-muted)]">The model has not passed inspection.</p>
           </Show>
         </div>
       </div>

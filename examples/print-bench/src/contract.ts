@@ -1,10 +1,11 @@
 import { defineCommand } from "@borg-agent/contracts";
 import { z } from "@borg-agent/plugin-sdk";
 
-export const reviseToolId = "example.print-bench.revise";
-export const acceptToolId = "example.print-bench.accept";
-export const proposeToolId = "example.print-bench.propose";
-export const askToolId = "example.print-bench.ask";
+export const addToolId = "example.print-bench.add";
+export const transformToolId = "example.print-bench.transform";
+export const deleteToolId = "example.print-bench.delete";
+export const selectToolId = "example.print-bench.select";
+export const promptToolId = "example.print-bench.prompt";
 export const sendQuoteToolId = "example.print-bench.send-quote";
 export const startMachineToolId = "example.print-bench.start-machine";
 export const usePersonaToolId = "example.print-bench.use-persona";
@@ -12,20 +13,6 @@ export const usePersonaToolId = "example.print-bench.use-persona";
 export const designerPersonaId = "print-bench/designer";
 export const frontDeskPersonaId = "print-bench/front-desk";
 export const operatorPersonaId = "print-bench/operator";
-
-export const parametersSchema = z
-  .object({
-    wallMm: z.number().positive(),
-    holeMm: z.number().positive(),
-    footprint: z
-      .object({
-        widthMm: z.number().positive(),
-        depthMm: z.number().positive(),
-      })
-      .strict(),
-    chamferDeg: z.number().min(0).max(90),
-  })
-  .strict();
 
 const vecSchema = z
   .object({
@@ -35,9 +22,91 @@ const vecSchema = z
   })
   .strict();
 
+const pose = {
+  position: vecSchema,
+  rotationDeg: vecSchema,
+};
+
+export const bodySchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      id: z.string().uuid(),
+      kind: z.literal("box"),
+      widthMm: z.number().positive(),
+      depthMm: z.number().positive(),
+      heightMm: z.number().positive(),
+      ...pose,
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string().uuid(),
+      kind: z.literal("cylinder"),
+      radiusMm: z.number().positive(),
+      heightMm: z.number().positive(),
+      ...pose,
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string().uuid(),
+      kind: z.literal("cone"),
+      radiusMm: z.number().positive(),
+      heightMm: z.number().positive(),
+      ...pose,
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string().uuid(),
+      kind: z.literal("sphere"),
+      radiusMm: z.number().positive(),
+      ...pose,
+    })
+    .strict(),
+]);
+
+export const primitiveSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("box"),
+      widthMm: z.number().positive(),
+      depthMm: z.number().positive(),
+      heightMm: z.number().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("cylinder"),
+      radiusMm: z.number().positive(),
+      heightMm: z.number().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("cone"),
+      radiusMm: z.number().positive(),
+      heightMm: z.number().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("sphere"),
+      radiusMm: z.number().positive(),
+    })
+    .strict(),
+]);
+
+export const sceneSchema = z
+  .object({
+    bodies: z.array(bodySchema),
+    selectedId: z.string().uuid().nullable(),
+  })
+  .strict();
+
 const findingSchema = z
   .object({
-    code: z.enum(["wall", "hole", "footprint", "overhang"]),
+    code: z.enum(["empty", "footprint", "overhang"]),
     measured: z.number(),
     limit: z.number(),
   })
@@ -56,13 +125,11 @@ const quoteSchema = z
   })
   .strict();
 
-const solidSchema = z
+const measuredSolidSchema = z
   .object({
-    wallMm: z.number(),
-    holeMm: z.number(),
-    facetAngleDeg: z.number(),
     boundsMm: vecSchema,
     volumeCm3: z.number(),
+    overhangDeg: z.number(),
     mesh: z
       .object({
         positions: z.array(z.number()),
@@ -77,7 +144,7 @@ export const inspectionSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("fail"),
       findings: z.array(findingSchema).min(1),
-      solid: solidSchema,
+      solid: measuredSolidSchema,
     })
     .strict(),
   z
@@ -85,7 +152,7 @@ export const inspectionSchema = z.discriminatedUnion("kind", [
       kind: z.literal("pass"),
       findings: z.tuple([]),
       quote: quoteSchema,
-      solid: solidSchema,
+      solid: measuredSolidSchema,
     })
     .strict(),
 ]);
@@ -120,16 +187,9 @@ export const snapshotSchema = z
         })
         .strict(),
     ),
-    parameters: parametersSchema,
+    scene: sceneSchema,
+    reply: z.string(),
     inspection: inspectionSchema,
-    proposal: z
-      .object({
-        id: z.string().uuid(),
-        parameters: parametersSchema,
-        inspection: inspectionSchema,
-      })
-      .strict()
-      .nullable(),
     machine: machineSchema,
     quoteSent: z
       .object({
@@ -144,53 +204,23 @@ export const snapshotSchema = z
 
 export const effectSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("revised") }).strict(),
-  z.object({ type: z.literal("accepted") }).strict(),
   z.object({ type: z.literal("asked") }).strict(),
   z.object({ type: z.literal("persona") }).strict(),
   z.object({ type: z.literal("unquotable") }).strict(),
-  z
-    .object({
-      type: z.literal("sent"),
-      messageId: z.string().min(1),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("duplicate"),
-      messageId: z.string().min(1),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("denied"),
-      reasons: z.array(z.string()),
-    })
-    .strict(),
+  z.object({ type: z.literal("sent"), messageId: z.string().min(1) }).strict(),
+  z.object({ type: z.literal("duplicate"), messageId: z.string().min(1) }).strict(),
+  z.object({ type: z.literal("denied"), reasons: z.array(z.string()) }).strict(),
   z.object({ type: z.literal("not-printable") }).strict(),
   z.object({ type: z.literal("running") }).strict(),
 ]);
 
 export const actInputSchema = z.discriminatedUnion("tool", [
-  z
-    .object({
-      tool: z.literal(reviseToolId),
-      parameters: parametersSchema,
-    })
-    .strict(),
-  z.object({ tool: z.literal(acceptToolId) }).strict(),
-  z
-    .object({
-      tool: z.literal(proposeToolId),
-      parameters: parametersSchema,
-    })
-    .strict(),
-  z.object({ tool: z.literal(askToolId) }).strict(),
-  z
-    .object({
-      tool: z.literal(usePersonaToolId),
-      personaId: z.string().min(1),
-    })
-    .strict(),
+  z.object({ tool: z.literal(addToolId), solid: primitiveSchema }).strict(),
+  z.object({ tool: z.literal(transformToolId), body: bodySchema }).strict(),
+  z.object({ tool: z.literal(deleteToolId), id: z.string().uuid() }).strict(),
+  z.object({ tool: z.literal(selectToolId), id: z.string().uuid().nullable() }).strict(),
+  z.object({ tool: z.literal(promptToolId), text: z.string().min(1) }).strict(),
+  z.object({ tool: z.literal(usePersonaToolId), personaId: z.string().min(1) }).strict(),
   z.object({ tool: z.literal(sendQuoteToolId) }).strict(),
   z.object({ tool: z.literal(startMachineToolId) }).strict(),
 ]);
@@ -216,5 +246,7 @@ export const printBenchAct = defineCommand({
 
 export type BenchSnapshot = z.output<typeof snapshotSchema>;
 export type ActInput = z.output<typeof actInputSchema>;
+export type Primitive = z.output<typeof primitiveSchema>;
+export type SceneBody = z.output<typeof bodySchema>;
 
 export const commandIds = [printBenchSnapshot.id, printBenchAct.id] as const;

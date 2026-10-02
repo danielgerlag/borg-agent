@@ -6,19 +6,18 @@ import type { PendingInteraction } from "@borg-agent/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { startPrintBench } from "../src/boot.js";
 import {
-  askToolId,
+  addToolId,
+  deleteToolId,
   designerPersonaId,
   frontDeskPersonaId,
   operatorPersonaId,
   printBenchAct,
   printBenchSnapshot,
-  reviseToolId,
+  promptToolId,
   sendQuoteToolId,
   startMachineToolId,
   usePersonaToolId,
-  acceptToolId,
 } from "../src/contract.js";
-import { OPENING_PARAMETERS } from "../src/domain.js";
 
 let dataDirectory: string | undefined;
 let kernel: Kernel | undefined;
@@ -33,48 +32,54 @@ afterEach(async () => {
 });
 
 describe("print bench", () => {
-  it("keeps a failing bracket unquoted until a person accepts a repair", async () => {
+  it("builds a solid from the palette and a prompt, then gates the quote and the printer", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);
     const opened = await kernel.bus.invoke(printBenchSnapshot, {});
     expect(opened.persona.id).toBe(designerPersonaId);
+    expect(opened.scene.bodies).toEqual([]);
     expect(opened.inspection.kind).toBe("fail");
-    expect(opened.inspection.findings.map((finding) => finding.code)).toEqual([
-      "wall",
-      "overhang",
-    ]);
+    expect(opened.inspection.findings.map((finding) => finding.code)).toEqual(["empty"]);
     expect("quote" in opened.inspection).toBe(false);
 
-    const revised = await kernel.bus.invoke(printBenchAct, {
-      tool: reviseToolId,
-      parameters: { ...OPENING_PARAMETERS, wallMm: 1.6 },
+    const added = await kernel.bus.invoke(printBenchAct, {
+      tool: addToolId,
+      solid: { kind: "box", widthMm: 40, depthMm: 30, heightMm: 20 },
     });
-    expect(revised.snapshot.inspection.kind).toBe("fail");
-    expect(
-      revised.snapshot.inspection.findings.map((finding) => finding.code),
-    ).toEqual(["overhang"]);
-    expect("quote" in revised.snapshot.inspection).toBe(false);
-
-    const asked = await kernel.bus.invoke(printBenchAct, { tool: askToolId });
-    expect(asked.snapshot.parameters.chamferDeg).toBe(70);
-    expect(asked.snapshot.proposal?.parameters).toMatchObject({
-      wallMm: 1.6,
-      holeMm: 5,
-      chamferDeg: 30,
-      footprint: { widthMm: 80, depthMm: 40 },
-    });
-
-    const accepted = await kernel.bus.invoke(printBenchAct, { tool: acceptToolId });
-    expect(accepted.snapshot.proposal).toBeNull();
-    expect(accepted.snapshot.inspection.kind).toBe("pass");
-    if (accepted.snapshot.inspection.kind !== "pass") {
+    expect(added.snapshot.scene.bodies).toHaveLength(1);
+    expect(added.snapshot.inspection.kind).toBe("pass");
+    if (added.snapshot.inspection.kind !== "pass") {
       return;
     }
-    expect(accepted.snapshot.inspection.quote.price.amount).toBeGreaterThan(0);
+    expect(added.snapshot.inspection.quote.price.amount).toBeGreaterThan(0);
 
-    await expect(
-      kernel.bus.invoke(printBenchAct, { tool: sendQuoteToolId }),
-    ).rejects.toThrow(/not allowed/);
+    const prompted = await kernel.bus.invoke(printBenchAct, {
+      tool: promptToolId,
+      text: "add a sphere radius 15",
+    });
+    expect(prompted.effect.type).toBe("asked");
+    expect(prompted.snapshot.scene.bodies.map((body) => body.kind)).toEqual(["box", "sphere"]);
+    expect(prompted.snapshot.inspection.kind).toBe("fail");
+    expect(prompted.snapshot.inspection.findings.map((finding) => finding.code)).toContain(
+      "overhang",
+    );
+    expect("quote" in prompted.snapshot.inspection).toBe(false);
+    const sphereId = prompted.snapshot.scene.selectedId;
+    expect(sphereId).toEqual(expect.any(String));
+    if (sphereId === null) {
+      return;
+    }
+
+    const deleted = await kernel.bus.invoke(printBenchAct, {
+      tool: deleteToolId,
+      id: sphereId,
+    });
+    expect(deleted.snapshot.scene.bodies).toHaveLength(1);
+    expect(deleted.snapshot.inspection.kind).toBe("pass");
+
+    await expect(kernel.bus.invoke(printBenchAct, { tool: sendQuoteToolId })).rejects.toThrow(
+      /not allowed/,
+    );
 
     await kernel.bus.invoke(printBenchAct, {
       tool: usePersonaToolId,
@@ -99,11 +104,7 @@ describe("print bench", () => {
 
     const again = kernel.bus.invoke(printBenchAct, { tool: sendQuoteToolId });
     void again.catch(() => undefined);
-    const duplicate = await withTimeout(
-      again,
-      2_000,
-      "second send waited on a person",
-    );
+    const duplicate = await withTimeout(again, 2_000, "second send waited on a person");
     expect(kernel.interactions.listPending()).toEqual([]);
     expect(duplicate.effect.type).toBe("duplicate");
 
@@ -132,9 +133,9 @@ describe("print bench", () => {
       tool: usePersonaToolId,
       personaId: designerPersonaId,
     });
-    await expect(
-      kernel.bus.invoke(printBenchAct, { tool: startMachineToolId }),
-    ).rejects.toThrow(/not allowed/);
+    await expect(kernel.bus.invoke(printBenchAct, { tool: startMachineToolId })).rejects.toThrow(
+      /not allowed/,
+    );
   }, 60_000);
 });
 
@@ -145,9 +146,7 @@ async function waitForKind(
 ): Promise<PendingInteraction> {
   const started = Date.now();
   while (Date.now() - started < 10_000) {
-    const match = runningKernel.interactions
-      .listPending()
-      .find((item) => item.kind === kind);
+    const match = runningKernel.interactions.listPending().find((item) => item.kind === kind);
     if (match) {
       return match;
     }

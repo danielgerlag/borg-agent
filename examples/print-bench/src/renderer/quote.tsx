@@ -23,7 +23,7 @@ export function QuoteView(props: BenchControl) {
             fallback={
               <Panel>
                 <p class="text-sm text-[var(--text-muted)]">
-                  No price until the bracket passes inspection.
+                  No price until the model passes inspection.
                 </p>
               </Panel>
             }

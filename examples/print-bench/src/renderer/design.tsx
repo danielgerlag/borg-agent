@@ -1,38 +1,86 @@
-import { Button, Panel, TextField } from "@borg/ui-kit";
-import { For, Show } from "solid-js";
-import { acceptToolId, askToolId, reviseToolId } from "../contract.js";
+import { Button, TextField } from "@borg/ui-kit";
+import { For, Show, createSignal } from "solid-js";
+import {
+  addToolId,
+  deleteToolId,
+  promptToolId,
+  selectToolId,
+  transformToolId,
+  type Primitive,
+} from "../contract.js";
+import type { Body } from "../domain.js";
 import type { BenchControl } from "./control.js";
 import { Viewport } from "./viewport.js";
 
-type Parameters = BenchControl["snapshot"]["parameters"];
-type Finding = Extract<
-  BenchControl["snapshot"]["inspection"],
-  { kind: "fail" }
->["findings"][number];
+type Mode = "translate" | "rotate" | "scale";
+type Finding = Extract<BenchControl["snapshot"]["inspection"], { kind: "fail" }>["findings"][number];
+
+const palette: readonly { label: string; testid: string; solid: Primitive }[] = [
+  { label: "Box", testid: "print-bench-tool-box", solid: { kind: "box", widthMm: 40, depthMm: 30, heightMm: 20 } },
+  { label: "Cylinder", testid: "print-bench-tool-cylinder", solid: { kind: "cylinder", radiusMm: 12, heightMm: 30 } },
+  { label: "Sphere", testid: "print-bench-tool-sphere", solid: { kind: "sphere", radiusMm: 15 } },
+  { label: "Cone", testid: "print-bench-tool-cone", solid: { kind: "cone", radiusMm: 16, heightMm: 28 } },
+];
 
 export function DesignView(props: BenchControl) {
-  const allowed = (toolId: string): boolean =>
-    props.snapshot.persona.allowedTools.includes(toolId);
-  const commit = (parameters: Parameters): void => {
-    if (sameParameters(props.snapshot.parameters, parameters) || !allowed(reviseToolId)) {
+  const [mode, setMode] = createSignal<Mode>("translate");
+  const [prompt, setPrompt] = createSignal("");
+  const allowed = (toolId: string): boolean => props.snapshot.persona.allowedTools.includes(toolId);
+  const selected = (): Body | undefined =>
+    props.snapshot.scene.bodies.find((body) => body.id === props.snapshot.scene.selectedId);
+  const replace = (body: Body): void => {
+    if (!allowed(transformToolId)) {
       return;
     }
-    props.run({ tool: reviseToolId, parameters });
+    props.run({ tool: transformToolId, body });
   };
   return (
-    <section class="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <div class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-        <header class="border-b border-[var(--border)] px-5 py-4">
-          <h1 class="text-xl font-semibold">Fan bracket</h1>
+    <section class="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)_18rem]">
+      <aside class="flex flex-col gap-2 border-b border-[var(--border)] p-3 lg:border-r lg:border-b-0" data-testid="print-bench-palette">
+        <p class="px-1 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-subtle)]">Palette</p>
+        <ModeButton label="Move" mode="translate" current={mode()} onPick={setMode} />
+        <ModeButton label="Rotate" mode="rotate" current={mode()} onPick={setMode} />
+        <ModeButton label="Scale" mode="scale" current={mode()} onPick={setMode} />
+        <For each={palette}>
+          {(item) => (
+            <Button
+              variant="secondary"
+              data-testid={item.testid}
+              disabled={props.busy || !allowed(addToolId)}
+              onClick={() => props.run({ tool: addToolId, solid: item.solid })}
+            >
+              {item.label}
+            </Button>
+          )}
+        </For>
+        <Button
+          variant="danger"
+          data-testid="print-bench-tool-delete"
+          disabled={props.busy || !allowed(deleteToolId) || selected() === undefined}
+          onClick={() => {
+            const body = selected();
+            if (body) {
+              props.run({ tool: deleteToolId, id: body.id });
+            }
+          }}
+        >
+          Delete
+        </Button>
+      </aside>
+      <div class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
+        <header class="border-b border-[var(--border)] px-5 py-3">
+          <h1 class="text-xl font-semibold">Model</h1>
           <p class="mt-1 text-sm text-[var(--text-muted)]">
-            {props.snapshot.inspection.kind === "fail"
-              ? "It will not print in PETG on this MK4."
-              : "It passes the MK4 PETG rules."}
+            {props.snapshot.scene.bodies.length === 0
+              ? "The bed is empty. Add a solid, or describe one."
+              : props.snapshot.inspection.kind === "fail"
+                ? "This mesh will not print on the MK4 in PETG."
+                : "This mesh passes the MK4 PETG rules."}
           </p>
-          <ul data-testid="print-bench-findings" class="mt-3 grid gap-1 text-sm">
+          <ul data-testid="print-bench-findings" class="mt-2 grid gap-1 text-sm">
             <Show
               when={props.snapshot.inspection.findings.length > 0}
-              fallback={<li class="text-[var(--success)]">Wall, hole, footprint, and overhang all pass.</li>}
+              fallback={<li class="text-[var(--success)]">On the bed, and the overhang is printable.</li>}
             >
               <For each={props.snapshot.inspection.findings}>
                 {(finding) => <li class="text-[var(--danger)]">{findingSentence(finding)}</li>}
@@ -40,167 +88,139 @@ export function DesignView(props: BenchControl) {
             </Show>
           </ul>
         </header>
-        <div class="min-h-0 p-4">
-          <div class="h-full overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--sidebar)]">
-            <Viewport
-              positions={props.snapshot.inspection.solid.mesh.positions}
-              indices={props.snapshot.inspection.solid.mesh.indices}
-              failed={props.snapshot.inspection.kind === "fail"}
-            />
-          </div>
+        <div class="min-h-0">
+          <Viewport
+            bodies={props.snapshot.scene.bodies}
+            selectedId={props.snapshot.scene.selectedId}
+            failed={props.snapshot.inspection.kind === "fail"}
+            mode={mode()}
+            onSelect={(id) => {
+              if (id !== props.snapshot.scene.selectedId && allowed(selectToolId)) {
+                props.run({ tool: selectToolId, id });
+              }
+            }}
+            onTransform={replace}
+          />
         </div>
-      </div>
-      <aside class="flex min-h-0 flex-col border-t border-[var(--border)] lg:border-t-0 lg:border-l">
-        <div class="min-h-0 flex-1 overflow-y-auto p-4">
-          <h2 class="text-sm font-semibold">Dimensions</h2>
-          <p class="mt-1 text-sm text-[var(--text-muted)]">
-            Drag to orbit the bed. These fields edit the solid.
-          </p>
-          <div class="mt-4 grid gap-3">
-            <Dimension
-              label="Wall thickness"
-              testid="print-bench-wall"
-              value={props.snapshot.parameters.wallMm}
-              min={0.4}
-              max={4}
-              step={0.1}
-              unit="mm"
-              disabled={props.busy || !allowed(reviseToolId)}
-              onCommit={(wallMm) => commit({ ...props.snapshot.parameters, wallMm })}
-            />
-            <Dimension
-              label="Mounting hole"
-              testid="print-bench-hole"
-              value={props.snapshot.parameters.holeMm}
-              min={1}
-              max={20}
-              step={0.5}
-              unit="mm"
-              disabled={props.busy || !allowed(reviseToolId)}
-              onCommit={(holeMm) => commit({ ...props.snapshot.parameters, holeMm })}
-            />
-            <Dimension
-              label="Width"
-              testid="print-bench-width"
-              value={props.snapshot.parameters.footprint.widthMm}
-              min={10}
-              max={250}
-              step={1}
-              unit="mm"
-              disabled={props.busy || !allowed(reviseToolId)}
-              onCommit={(widthMm) =>
-                commit({
-                  ...props.snapshot.parameters,
-                  footprint: { ...props.snapshot.parameters.footprint, widthMm },
-                })
+        <div class="border-t border-[var(--border)] p-3">
+          <form
+            class="flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const text = prompt().trim();
+              if (text.length === 0 || props.busy || !allowed(promptToolId)) {
+                return;
               }
+              props.run({ tool: promptToolId, text });
+            }}
+          >
+            <TextField
+              class="min-w-0 flex-1"
+              value={prompt()}
+              onChange={setPrompt}
+              placeholder="A box 80 by 40 by 20, a cylinder, a sphere…"
+              aria-label="Prompt"
+              data-testid="print-bench-prompt"
+              disabled={props.busy || !allowed(promptToolId)}
             />
-            <Dimension
-              label="Depth"
-              testid="print-bench-depth"
-              value={props.snapshot.parameters.footprint.depthMm}
-              min={10}
-              max={210}
-              step={1}
-              unit="mm"
-              disabled={props.busy || !allowed(reviseToolId)}
-              onCommit={(depthMm) =>
-                commit({
-                  ...props.snapshot.parameters,
-                  footprint: { ...props.snapshot.parameters.footprint, depthMm },
-                })
-              }
-            />
-            <Dimension
-              label="Chamfer"
-              testid="print-bench-chamfer"
-              value={props.snapshot.parameters.chamferDeg}
-              min={0}
-              max={90}
-              step={1}
-              unit="°"
-              disabled={props.busy || !allowed(reviseToolId)}
-              onCommit={(chamferDeg) => commit({ ...props.snapshot.parameters, chamferDeg })}
-            />
-          </div>
-          <Show when={props.snapshot.proposal}>
-            {(proposal) => (
-              <Panel data-testid="print-bench-proposal" class="mt-4 grid gap-3">
-                <h2 class="text-sm font-semibold">Proposal</h2>
-                <p class="text-sm text-[var(--text-muted)]">
-                  Staged wall {proposal().parameters.wallMm} mm, chamfer {proposal().parameters.chamferDeg}°.
-                  This is not the part yet.
-                </p>
-                <Button
-                  data-testid="print-bench-accept"
-                  disabled={props.busy || !allowed(acceptToolId)}
-                  onClick={() => props.run({ tool: acceptToolId })}
-                >
-                  Accept
-                </Button>
-              </Panel>
-            )}
+            <Button type="submit" data-testid="print-bench-build" disabled={props.busy || !allowed(promptToolId)}>
+              Build
+            </Button>
+          </form>
+          <Show when={props.snapshot.reply.length > 0}>
+            <p class="pt-2 text-sm text-[var(--text-muted)]" data-testid="print-bench-reply">
+              {props.snapshot.reply}
+            </p>
           </Show>
         </div>
-        <div class="border-t border-[var(--border)] p-4">
-          <Button
-            class="w-full"
-            data-testid="print-bench-ask"
-            disabled={props.busy || !allowed(askToolId)}
-            onClick={() => props.run({ tool: askToolId })}
-          >
-            Propose a revision
-          </Button>
-        </div>
+      </div>
+      <aside class="min-h-0 overflow-y-auto border-t border-[var(--border)] p-4 lg:border-t-0 lg:border-l">
+        <h2 class="text-sm font-semibold">Selected</h2>
+        <Show
+          when={selected()}
+          fallback={<p class="mt-2 text-sm text-[var(--text-muted)]">Click a solid, or add one from the palette.</p>}
+        >
+          {(body) => <Inspector body={body()} disabled={props.busy || !allowed(transformToolId)} onChange={replace} />}
+        </Show>
       </aside>
     </section>
   );
 }
 
-function Dimension(props: {
+function ModeButton(props: { label: string; mode: Mode; current: Mode; onPick: (mode: Mode) => void }) {
+  const active = () => props.current === props.mode;
+  return (
+    <Button
+      variant={active() ? "primary" : "secondary"}
+      aria-pressed={active()}
+      data-testid={`print-bench-mode-${props.mode}`}
+      onClick={() => props.onPick(props.mode)}
+    >
+      {props.label}
+    </Button>
+  );
+}
+
+function Inspector(props: { body: Body; disabled: boolean; onChange: (body: Body) => void }) {
+  return (
+    <div class="mt-3 grid gap-3">
+      <p class="text-sm capitalize text-[var(--text-muted)]">{props.body.kind}</p>
+      <Show when={props.body.kind === "box" ? props.body : undefined}>
+        {(body) => (
+          <>
+            <NumberField label="Width" testid="print-bench-width" value={body().widthMm} disabled={props.disabled} onCommit={(widthMm) => props.onChange({ ...body(), widthMm })} />
+            <NumberField label="Depth" testid="print-bench-depth" value={body().depthMm} disabled={props.disabled} onCommit={(depthMm) => props.onChange({ ...body(), depthMm })} />
+            <NumberField label="Height" testid="print-bench-height" value={body().heightMm} disabled={props.disabled} onCommit={(heightMm) => props.onChange({ ...body(), heightMm })} />
+          </>
+        )}
+      </Show>
+      <Show when={props.body.kind === "cylinder" || props.body.kind === "cone" ? props.body : undefined}>
+        {(body) => (
+          <>
+            <NumberField label="Radius" testid="print-bench-radius" value={body().radiusMm} disabled={props.disabled} onCommit={(radiusMm) => props.onChange({ ...body(), radiusMm })} />
+            <NumberField label="Height" testid="print-bench-height" value={body().heightMm} disabled={props.disabled} onCommit={(heightMm) => props.onChange({ ...body(), heightMm })} />
+          </>
+        )}
+      </Show>
+      <Show when={props.body.kind === "sphere" ? props.body : undefined}>
+        {(body) => (
+          <NumberField label="Radius" testid="print-bench-radius" value={body().radiusMm} disabled={props.disabled} onCommit={(radiusMm) => props.onChange({ ...body(), radiusMm })} />
+        )}
+      </Show>
+      <NumberField label="X" testid="print-bench-x" value={props.body.position.x} allowZero disabled={props.disabled} onCommit={(x) => props.onChange({ ...props.body, position: { ...props.body.position, x } })} />
+      <NumberField label="Y" testid="print-bench-y" value={props.body.position.y} allowZero disabled={props.disabled} onCommit={(y) => props.onChange({ ...props.body, position: { ...props.body.position, y } })} />
+      <NumberField label="Z" testid="print-bench-z" value={props.body.position.z} allowZero disabled={props.disabled} onCommit={(z) => props.onChange({ ...props.body, position: { ...props.body.position, z } })} />
+    </div>
+  );
+}
+
+function NumberField(props: {
   label: string;
   testid: string;
   value: number;
-  min: number;
-  max: number;
-  step: number;
-  unit: string;
   disabled: boolean;
+  allowZero?: boolean;
   onCommit: (value: number) => void;
 }) {
-  function publish(raw: string): void {
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value < props.min || value > props.max) {
-      return;
-    }
-    props.onCommit(value);
-  }
   return (
     <label class="grid gap-1 text-sm">
       <span class="text-[var(--text-muted)]">
         {props.label} {props.value}
-        {props.unit}
       </span>
-      <input
-        type="range"
-        min={props.min}
-        max={props.max}
-        step={props.step}
-        value={props.value}
-        disabled={props.disabled}
-        onInput={(event) => publish(event.currentTarget.value)}
-      />
       <TextField
         size="sm"
         type="number"
         value={String(props.value)}
-        min={props.min}
-        max={props.max}
-        step={props.step}
         disabled={props.disabled}
         data-testid={props.testid}
         aria-label={props.label}
-        onChange={publish}
+        onChange={(raw) => {
+          const value = Number(raw);
+          if (!Number.isFinite(value) || value < 0 || (!props.allowZero && value === 0) || value === props.value) {
+            return;
+          }
+          props.onCommit(value);
+        }}
       />
     </label>
   );
@@ -209,23 +229,11 @@ function Dimension(props: {
 function findingSentence(finding: Finding): string {
   const measured = finding.measured.toFixed(2);
   switch (finding.code) {
-    case "wall":
-      return `Wall is ${measured} mm thick. PETG on this machine needs at least ${finding.limit} mm.`;
-    case "hole":
-      return `Hole is ${measured} mm. The limit on this profile is ${finding.limit} mm.`;
+    case "empty":
+      return "Nothing is on the bed.";
     case "footprint":
-      return `Footprint is ${measured} mm. The bed allows ${finding.limit} mm.`;
+      return `The solid extends ${measured} mm past the bed.`;
     case "overhang":
       return `Overhang is ${measured}°. This printer holds up to ${finding.limit}°.`;
   }
-}
-
-function sameParameters(left: Parameters, right: Parameters): boolean {
-  return (
-    left.wallMm === right.wallMm &&
-    left.holeMm === right.holeMm &&
-    left.chamferDeg === right.chamferDeg &&
-    left.footprint.widthMm === right.footprint.widthMm &&
-    left.footprint.depthMm === right.footprint.depthMm
-  );
 }

@@ -1,25 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "@borg-agent/plugin-sdk";
 import { z } from "@borg-agent/plugin-sdk";
-import { OPENING_PARAMETERS } from "./domain.js";
-import { designerPersonaId, parametersSchema } from "./contract.js";
-
-type Parameters = z.output<typeof parametersSchema>;
+import type { Body } from "./domain.js";
+import { designerPersonaId, sceneSchema } from "./contract.js";
 
 const storedJobSchema = z
   .object({
     revision: z.number().int().positive(),
     personaId: z.string().min(1),
     sessionId: z.string().uuid(),
-    parameters: parametersSchema,
-    proposal: z
-      .object({
-        id: z.string().uuid(),
-        parameters: parametersSchema,
-      })
-      .strict()
-      .nullable(),
-    acceptedProposalId: z.string().uuid().nullable(),
+    scene: sceneSchema,
+    reply: z.string(),
     machine: z.discriminatedUnion("status", [
       z.object({ status: z.literal("idle") }).strict(),
       z
@@ -120,33 +111,30 @@ export function seed(): Job {
     revision: 1,
     personaId: designerPersonaId,
     sessionId: randomUUID(),
-    parameters: OPENING_PARAMETERS,
-    proposal: null,
-    acceptedProposalId: null,
+    scene: { bodies: [], selectedId: null },
+    reply: "",
     machine: { status: "idle" },
     quoteSent: null,
   };
 }
 
-export function sameParameters(left: Parameters, right: Parameters): boolean {
-  return (
-    left.wallMm === right.wallMm &&
-    left.holeMm === right.holeMm &&
-    left.chamferDeg === right.chamferDeg &&
-    left.footprint.widthMm === right.footprint.widthMm &&
-    left.footprint.depthMm === right.footprint.depthMm
-  );
-}
-
-export function withParameters(job: Job, parameters: Parameters): Job {
-  if (sameParameters(job.parameters, parameters)) {
-    return job;
+export function withScene(job: Job, scene: Job["scene"], reply = job.reply): Job {
+  if (sameBodies(job.scene.bodies, scene.bodies)) {
+    if (job.scene.selectedId === scene.selectedId && job.reply === reply) {
+      return job;
+    }
+    return { ...job, scene, reply };
   }
   return {
     ...job,
     revision: job.revision + 1,
-    parameters,
+    scene,
+    reply,
     quoteSent: null,
     machine: { status: "idle" },
   };
+}
+
+function sameBodies(left: readonly Body[], right: readonly Body[]): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }

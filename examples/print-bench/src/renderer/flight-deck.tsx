@@ -27,7 +27,7 @@ export function FlightDeck(props: FlightDeckProps) {
           <Panel>
             <h2 class="text-sm font-semibold">Designer</h2>
             <p class="mt-2 text-sm" data-testid="flightdeck-designer">
-              {props.busy ? "Proposing a revision" : "Idle"}
+              {props.busy ? "Building" : "Idle"}
             </p>
             <p class="mt-1 text-sm text-[var(--text-muted)]">Seat {props.snapshot.persona.name}</p>
           </Panel>

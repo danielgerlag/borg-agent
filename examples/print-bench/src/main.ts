@@ -1,43 +1,38 @@
 import { randomUUID } from "node:crypto";
 import { modelOperationPrefixSchema } from "@borg-agent/contracts";
+import { definePlugin, defineTool, z, type PluginContext } from "@borg-agent/plugin-sdk";
+import { SHOP, evaluate, placeOnBed, type Body, type Inspection } from "./domain.js";
 import {
-  definePlugin,
-  defineTool,
-  z,
-  type PluginContext,
-} from "@borg-agent/plugin-sdk";
-import { SHOP, evaluate, type Inspection } from "./domain.js";
-import {
-  acceptToolId,
   actInputSchema,
-  askToolId,
+  addToolId,
+  bodySchema,
+  deleteToolId,
   designerPersonaId,
   effectSchema,
-  parametersSchema,
+  primitiveSchema,
   printBenchAct,
   printBenchSnapshot,
-  proposeToolId,
-  reviseToolId,
+  promptToolId,
+  selectToolId,
   sendQuoteToolId,
   snapshotSchema,
   startMachineToolId,
+  transformToolId,
   usePersonaToolId,
+  type Primitive,
 } from "./contract.js";
-import {
-  createJobWriter,
-  withParameters,
-  type Job,
-  type JobWriter,
-} from "./job.js";
+import { createJobWriter, withScene, type Job, type JobWriter } from "./job.js";
 import { benchPersonas } from "./personas.js";
 import { registerScriptedModel } from "./provider.js";
 
 type Effect = z.output<typeof effectSchema>;
 
 const emptyInput = z.object({}).strict();
-const parametersInput = z.object({ parameters: parametersSchema }).strict();
 const personaInput = z.object({ personaId: z.string().min(1) }).strict();
 const startInput = z.object({ revision: z.number().int() }).strict();
+const idInput = z.object({ id: z.string().uuid() }).strict();
+const selectInput = z.object({ id: z.string().uuid().nullable() }).strict();
+const promptInput = z.object({ text: z.string().min(1) }).strict();
 
 const pluginId = "example.print-bench";
 
@@ -62,10 +57,11 @@ export default definePlugin({
   async activate(context) {
     const jobs = createJobWriter(context.store);
     const tools = [
-      reviseTool(jobs),
-      acceptTool(jobs),
-      proposeTool(jobs),
-      askTool(context, jobs),
+      addTool(jobs),
+      transformTool(jobs),
+      deleteTool(jobs),
+      selectTool(jobs),
+      promptTool(context, jobs),
       sendTool(context, jobs),
       startTool(jobs),
       personaTool(context, jobs),
@@ -108,95 +104,136 @@ export default definePlugin({
   },
 });
 
-function reviseTool(jobs: JobWriter) {
+function addTool(jobs: JobWriter) {
   return defineTool({
-    id: reviseToolId,
-    description: "Replace the current bracket parameters and recompile.",
-    input: parametersInput,
+    id: addToolId,
+    description: "Add a box, cylinder, sphere, or cone to the bed.",
+    input: primitiveSchema,
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
     async execute(input): Promise<Effect> {
       await jobs.run(async (session) => {
-        session.commit(withParameters(session.job, input.parameters));
+        const body = placeOnBed(materialize(input, randomUUID()), session.job.scene.bodies.length);
+        session.commit(
+          withScene(session.job, {
+            bodies: [...session.job.scene.bodies, body],
+            selectedId: body.id,
+          }, ""),
+        );
       });
       return { type: "revised" };
     },
   });
 }
 
-function acceptTool(jobs: JobWriter) {
+function transformTool(jobs: JobWriter) {
   return defineTool({
-    id: acceptToolId,
-    description: "Accept the pending parameter proposal.",
-    input: emptyInput,
-    output: effectSchema,
-    approval: "auto",
-    sideEffect: true,
-    async execute(): Promise<Effect> {
-      await jobs.run(async (session) => {
-        const proposal = session.job.proposal;
-        if (!proposal) {
-          return;
-        }
-        const revised = withParameters(session.job, proposal.parameters);
-        session.commit({
-          ...revised,
-          proposal: null,
-          acceptedProposalId: proposal.id,
-        });
-      });
-      return { type: "accepted" };
-    },
-  });
-}
-
-function proposeTool(jobs: JobWriter) {
-  return defineTool({
-    id: proposeToolId,
-    description: "Stage a parameter proposal without changing the current part.",
-    input: parametersInput,
+    id: transformToolId,
+    description: "Move, rotate, or resize one solid.",
+    input: bodySchema,
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
     async execute(input): Promise<Effect> {
       await jobs.run(async (session) => {
-        session.commit({
-          ...session.job,
-          proposal: { id: randomUUID(), parameters: input.parameters },
-        });
+        if (!session.job.scene.bodies.some((body) => body.id === input.id)) {
+          return;
+        }
+        session.commit(
+          withScene(
+            session.job,
+            {
+              bodies: session.job.scene.bodies.map((body) => (body.id === input.id ? input : body)),
+              selectedId: input.id,
+            },
+            "",
+          ),
+        );
       });
-      return { type: "asked" };
+      return { type: "revised" };
     },
   });
 }
 
-function askTool(context: PluginContext, jobs: JobWriter) {
+function deleteTool(jobs: JobWriter) {
   return defineTool({
-    id: askToolId,
-    description: "Ask the designer persona to propose a printable revision.",
-    input: emptyInput,
+    id: deleteToolId,
+    description: "Remove one solid from the bed.",
+    input: idInput,
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
-    async execute(_input, toolContext): Promise<Effect> {
+    async execute(input): Promise<Effect> {
+      await jobs.run(async (session) => {
+        const bodies = session.job.scene.bodies.filter((body) => body.id !== input.id);
+        session.commit(
+          withScene(session.job, {
+            bodies,
+            selectedId: bodies.at(-1)?.id ?? null,
+          }, ""),
+        );
+      });
+      return { type: "revised" };
+    },
+  });
+}
+
+function selectTool(jobs: JobWriter) {
+  return defineTool({
+    id: selectToolId,
+    description: "Choose the solid the palette and the prompt edit.",
+    input: selectInput,
+    output: effectSchema,
+    approval: "auto",
+    sideEffect: true,
+    async execute(input): Promise<Effect> {
+      await jobs.run(async (session) => {
+        const selectedId =
+          input.id !== null && session.job.scene.bodies.some((body) => body.id === input.id)
+            ? input.id
+            : null;
+        session.commit(withScene(session.job, { ...session.job.scene, selectedId }));
+      });
+      return { type: "revised" };
+    },
+  });
+}
+
+function promptTool(context: PluginContext, jobs: JobWriter) {
+  return defineTool({
+    id: promptToolId,
+    description: "Build or edit solids from a description.",
+    input: promptInput,
+    output: effectSchema,
+    approval: "auto",
+    sideEffect: true,
+    async execute(input, toolContext): Promise<Effect> {
       const job = await jobs.read();
-      // The loop calls propose, which writes this same job. Do not hold the writer here.
+      // The loop calls add and transform, which write this same job. Do not hold the writer here.
       const started = await context.loops.start({
-        prompt: `Revise the fan bracket for PETG on the MK4. Current parameters: ${JSON.stringify(job.parameters)}`,
+        prompt: [
+          input.text,
+          `Selection: ${job.scene.selectedId ?? "none"}`,
+          `Scene: ${JSON.stringify(job.scene.bodies)}`,
+        ].join("\n"),
         personaId: designerPersonaId,
-        allowedTools: [proposeToolId],
+        allowedTools: [addToolId, transformToolId, deleteToolId, selectToolId],
         providerId: "example.print-bench",
         modelId: "scripted",
         security: {
           kind: "root",
-          subject: { kind: "print-bench", id: "fan-bracket" },
+          subject: { kind: "print-bench", id: "model" },
           classification: "confidential",
           provenance: { kind: "user", id: "bench" },
           operationPrefix: modelOperationPrefixSchema.parse("example.print-bench"),
         },
       });
       await waitForLoop(context, started.id, toolContext.signal);
+      const reply = context.loops.get(started.id)?.output ?? "";
+      await jobs.run(async (session) => {
+        session.commit({ ...session.job, reply });
+      });
       return { type: "asked" };
     },
   });
@@ -212,15 +249,12 @@ function sendTool(context: PluginContext, jobs: JobWriter) {
     sideEffect: true,
     async execute(_input, toolContext): Promise<Effect> {
       return jobs.run(async (session) => {
-        const inspection = evaluate(session.job.parameters);
+        const inspection = evaluate(session.job.scene);
         if (inspection.kind !== "pass") {
           return { type: "unquotable" };
         }
         if (session.job.quoteSent?.revision === session.job.revision) {
-          return {
-            type: "duplicate",
-            messageId: session.job.quoteSent.messageId,
-          };
+          return { type: "duplicate", messageId: session.job.quoteSent.messageId };
         }
         const receipt = await context.channels.send({
           adapterId: "borg.channel.mock",
@@ -261,11 +295,8 @@ function startTool(jobs: JobWriter) {
     sideEffect: true,
     async execute(input): Promise<Effect> {
       return jobs.run(async (session) => {
-        const inspection = evaluate(session.job.parameters);
-        if (
-          inspection.kind !== "pass" ||
-          session.job.revision !== input.revision
-        ) {
+        const inspection = evaluate(session.job.scene);
+        if (inspection.kind !== "pass" || session.job.revision !== input.revision) {
           return { type: "not-printable" };
         }
         session.commit({
@@ -305,14 +336,26 @@ function personaTool(context: PluginContext, jobs: JobWriter) {
   });
 }
 
+function materialize(input: Primitive, id: string): Body {
+  const position = { x: 0, y: 0, z: 0 };
+  const rotationDeg = { x: 0, y: 0, z: 0 };
+  if (input.kind === "box") {
+    return { id, ...input, position, rotationDeg };
+  }
+  if (input.kind === "sphere") {
+    return { id, ...input, position, rotationDeg };
+  }
+  return { id, ...input, position, rotationDeg };
+}
+
 async function apply(
   context: PluginContext,
   jobs: JobWriter,
-  action: import("@borg-agent/plugin-sdk").z.output<typeof actInputSchema>,
+  action: z.output<typeof actInputSchema>,
 ): Promise<Effect> {
   if (action.tool === startMachineToolId) {
     const job = await jobs.read();
-    if (evaluate(job.parameters).kind !== "pass") {
+    if (evaluate(job.scene).kind !== "pass") {
       return { type: "not-printable" };
     }
     return effectSchema.parse(
@@ -320,11 +363,20 @@ async function apply(
     );
   }
   const job = await jobs.read();
-  const input = action.tool === reviseToolId || action.tool === proposeToolId
-    ? { parameters: action.parameters }
-    : action.tool === usePersonaToolId
-      ? { personaId: action.personaId }
-      : {};
+  const input =
+    action.tool === addToolId
+      ? action.solid
+      : action.tool === transformToolId
+        ? action.body
+        : action.tool === deleteToolId
+          ? { id: action.id }
+          : action.tool === selectToolId
+            ? { id: action.id }
+            : action.tool === promptToolId
+              ? { text: action.text }
+              : action.tool === usePersonaToolId
+                ? { personaId: action.personaId }
+                : {};
   return effectSchema.parse(await scopedInvoke(context, job, action.tool, input));
 }
 
@@ -353,7 +405,7 @@ async function project(context: PluginContext, job: Job) {
   if (!persona) {
     throw new Error(`Persona ${job.personaId} is unavailable`);
   }
-  const inspection = wire(evaluate(job.parameters));
+  const inspection = wire(evaluate(job.scene));
   return snapshotSchema.parse({
     revision: job.revision,
     persona: {
@@ -365,15 +417,9 @@ async function project(context: PluginContext, job: Job) {
       .list()
       .filter((seat) => seat.id.startsWith("print-bench/"))
       .map((seat) => ({ id: seat.id, name: seat.name })),
-    parameters: job.parameters,
+    scene: job.scene,
+    reply: job.reply,
     inspection,
-    proposal: job.proposal
-      ? {
-          id: job.proposal.id,
-          parameters: job.proposal.parameters,
-          inspection: wire(evaluate(job.proposal.parameters)),
-        }
-      : null,
     machine: job.machine,
     quoteSent: job.quoteSent
       ? { revision: job.quoteSent.revision, messageId: job.quoteSent.messageId }
@@ -384,11 +430,9 @@ async function project(context: PluginContext, job: Job) {
 
 function wire(inspection: Inspection) {
   const solid = {
-    wallMm: inspection.solid.wallMm,
-    holeMm: inspection.solid.holeMm,
-    facetAngleDeg: inspection.solid.facetAngleDeg,
     boundsMm: inspection.solid.boundsMm,
     volumeCm3: inspection.solid.volumeCm3,
+    overhangDeg: inspection.solid.overhangDeg,
     mesh: {
       positions: [...inspection.solid.mesh.positions],
       indices: [...inspection.solid.mesh.indices],

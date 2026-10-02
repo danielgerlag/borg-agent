@@ -18,7 +18,13 @@ const sections: readonly { id: Section; label: string }[] = [
 ];
 
 const seatTools: Record<string, readonly string[]> = {
-  [designerPersonaId]: ["Edit the part", "Propose a revision", "Accept a proposal", "Change seat"],
+  [designerPersonaId]: [
+    "Add a box, cylinder, sphere, or cone",
+    "Move, rotate, and scale the selection",
+    "Delete the selection",
+    "Build from a prompt",
+    "Change seat",
+  ],
   [frontDeskPersonaId]: ["Send the quote", "Change seat"],
   [operatorPersonaId]: ["Start the printer", "Change seat"],
 };
@@ -115,7 +121,7 @@ export function SettingsView(
           <Show when={props.section === "model"}>
             <h2 class="mb-2 text-2xl font-semibold">Model</h2>
             <p class="mb-5 text-sm text-[var(--text-muted)]">
-              Propose a revision on Design starts this model. It may only stage a change. Accept is what makes that change the part.
+              Build on Design sends the prompt to this model. It adds, moves, or deletes solids. The palette calls those same tools without the model.
             </p>
             <Panel>
               <dl class="grid gap-3 text-sm">

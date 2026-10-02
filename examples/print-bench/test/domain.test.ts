@@ -1,70 +1,112 @@
 import { describe, expect, it } from "vitest";
+import * as THREE from "three";
 import {
-  OPENING_PARAMETERS,
-  evaluate,
-  inspect,
-  solidFromGeometry,
+  EMPTY_SCENE,
   SHOP,
-  type BracketGeometry,
+  evaluate,
+  inspectMesh,
+  placeOnBed,
+  rotateEulerXYZ,
+  type Body,
 } from "../src/domain.js";
 
+const boxId = "00000000-0000-4000-8000-000000000001";
+
+function onBed(body: Body, index = 0): Body {
+  return placeOnBed(body, index);
+}
+
 describe("print bench domain", () => {
-  it("opens on a bracket the shop will not price", () => {
-    const inspection = evaluate(OPENING_PARAMETERS);
+  it("opens on an empty bed with no price", () => {
+    const inspection = evaluate(EMPTY_SCENE);
     expect(inspection.kind).toBe("fail");
-    expect(inspection.findings.map((finding) => finding.code)).toEqual([
-      "wall",
-      "overhang",
-    ]);
-    expect(inspection.solid.wallMm).toBeCloseTo(0.8, 6);
-    expect(inspection.solid.facetAngleDeg).toBeCloseTo(70, 6);
+    expect(inspection.findings.map((finding) => finding.code)).toEqual(["empty"]);
     expect("quote" in inspection).toBe(false);
   });
 
-  it("prices a revision whose measured wall and overhang are inside the profile", () => {
-    const inspection = evaluate({
-      ...OPENING_PARAMETERS,
-      wallMm: 1.6,
-      chamferDeg: 30,
+  it("prices a box that sits on the bed", () => {
+    const body = onBed({
+      id: boxId,
+      kind: "box",
+      widthMm: 10,
+      depthMm: 10,
+      heightMm: 10,
+      position: { x: 0, y: 0, z: 0 },
+      rotationDeg: { x: 0, y: 0, z: 0 },
     });
+    const inspection = evaluate({ bodies: [body], selectedId: body.id });
     expect(inspection.kind).toBe("pass");
     if (inspection.kind !== "pass") {
       return;
     }
     expect(inspection.findings).toEqual([]);
+    expect(inspection.solid.volumeCm3).toBeCloseTo(1, 5);
+    expect(inspection.solid.overhangDeg).toBeCloseTo(0, 5);
     expect(inspection.quote.grams).toBeGreaterThan(0);
     expect(inspection.quote.hours).toBeGreaterThan(0);
     expect(inspection.quote.price.amount).toBeGreaterThan(0);
     expect(inspection.quote.price.currency).toBe("USD");
   });
 
-  it("rejects a measured solid that never had a parameter record", () => {
-    const rise = Math.cos((70 * Math.PI) / 180) * 12;
-    const run = Math.sin((70 * Math.PI) / 180) * 12;
-    const geometry: BracketGeometry = {
-      outer: {
-        min: { x: 0, y: 0, z: 0 },
-        max: { x: 80, y: 40, z: 28 },
+  it("rejects a sphere for overhang and a box that leaves the bed", () => {
+    const sphere = onBed({
+      id: "00000000-0000-4000-8000-000000000002",
+      kind: "sphere",
+      radiusMm: 15,
+      position: { x: 0, y: 0, z: 0 },
+      rotationDeg: { x: 0, y: 0, z: 0 },
+    });
+    const overhang = evaluate({ bodies: [sphere], selectedId: sphere.id });
+    expect(overhang.kind).toBe("fail");
+    expect(overhang.findings.map((finding) => finding.code)).toContain("overhang");
+    expect("quote" in overhang).toBe(false);
+
+    const parked = onBed({
+      id: boxId,
+      kind: "box",
+      widthMm: 10,
+      depthMm: 10,
+      heightMm: 10,
+      position: { x: 0, y: 0, z: 0 },
+      rotationDeg: { x: 0, y: 0, z: 0 },
+    });
+    const footprint = evaluate({
+      bodies: [{ ...parked, position: { x: 300, y: parked.position.y, z: parked.position.z } }],
+      selectedId: parked.id,
+    });
+    expect(footprint.kind).toBe("fail");
+    expect(footprint.findings.map((finding) => finding.code)).toContain("footprint");
+    expect("quote" in footprint).toBe(false);
+  });
+
+  it("measures a downward face that never had a body record", () => {
+    const inspection = inspectMesh(
+      {
+        positions: [0, 0, 10, 0, 10, 10, 10, 0, 10],
+        indices: [0, 1, 2],
       },
-      inner: {
-        min: { x: 0.8, y: 0.8, z: 0.8 },
-        max: { x: 79.2, y: 39.2, z: 28 },
-      },
-      hole: {
-        min: { x: 37.5, y: 17.5, z: 0 },
-        max: { x: 42.5, y: 22.5, z: 28 },
-      },
-      wedge: [
-        { x: 0, y: 40 - run, z: 28 },
-        { x: 80, y: 40 - run, z: 28 },
-        { x: 80, y: 40, z: 28 - rise },
-        { x: 0, y: 40, z: 28 - rise },
-      ],
-    };
-    const inspection = inspect(solidFromGeometry(geometry), SHOP);
+      SHOP,
+    );
     expect(inspection.kind).toBe("fail");
-    expect(inspection.solid.wallMm).toBeCloseTo(0.8, 6);
-    expect(inspection.solid.facetAngleDeg).toBeCloseTo(70, 5);
+    expect(inspection.findings.map((finding) => finding.code)).toEqual(["overhang"]);
+    expect(inspection.solid.overhangDeg).toBeGreaterThan(45);
     expect("quote" in inspection).toBe(false);
+  });
+
+  it("rotates a vertex the same way the viewport does", () => {
+    const degrees = { x: 20, y: -35, z: 50 };
+    const source = { x: 4, y: -2, z: 7 };
+    const rotated = rotateEulerXYZ(source, degrees);
+    const vector = new THREE.Vector3(source.x, source.y, source.z).applyEuler(
+      new THREE.Euler(
+        THREE.MathUtils.degToRad(degrees.x),
+        THREE.MathUtils.degToRad(degrees.y),
+        THREE.MathUtils.degToRad(degrees.z),
+        "XYZ",
+      ),
+    );
+    expect(rotated.x).toBeCloseTo(vector.x, 5);
+    expect(rotated.y).toBeCloseTo(vector.y, 5);
+    expect(rotated.z).toBeCloseTo(vector.z, 5);
   });
 });

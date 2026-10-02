@@ -127,7 +127,7 @@ corepack pnpm test:e2e
 
 **Desktop app** (`apps/desktop`). The Electron host that runs `borg.desktop`. `tests/e2e` holds its Playwright specs.
 
-**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above. `examples/print-bench` opens the fan-bracket bench. From that folder, `npm start` builds it and opens the window.
+**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above. `examples/print-bench` opens a print design bench. From that folder, `npm start` builds it and opens the window.
 
 ## Boundaries
 

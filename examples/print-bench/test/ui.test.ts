@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 describe("print bench window", () => {
-  it("repairs the bracket from the bench and gates quote and print", async () => {
+  it("builds any solid from the palette or a prompt, then gates quote and print", async () => {
     application = await electron.launch({
       executablePath: electronPath,
       cwd: exampleDirectory,
@@ -41,24 +41,27 @@ describe("print bench window", () => {
     await page.getByTestId("workspace-view-tab-print-bench.design").click();
 
     const findings = page.getByTestId("print-bench-findings");
-    await expect(findings).toContainText("Wall");
-    await expect(findings).toContainText("Overhang");
+    await expect(findings).toContainText("Nothing");
+    await expect(page.getByTestId("print-bench-palette")).toBeVisible();
+    await expect(page.getByTestId("print-bench-prompt")).toBeVisible();
     await page.getByTestId("workspace-view-tab-print-bench.quote").click();
     await expect(page.getByTestId("print-bench-quote")).not.toContainText("USD");
     await page.getByTestId("workspace-view-tab-print-bench.design").click();
     const box = await page.getByTestId("print-bench-viewport").boundingBox();
     expect(box?.width ?? 0).toBeGreaterThan(100);
 
-    await page.getByTestId("print-bench-wall").fill("1.6");
-    await expect(findings).not.toContainText("Wall");
-    await expect(findings).toContainText("Overhang");
+    await page.getByTestId("print-bench-tool-box").click();
+    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
+    await expect(page.getByTestId("print-bench-quote")).toContainText("USD");
+    await page.getByTestId("workspace-view-tab-print-bench.design").click();
+
+    await page.getByTestId("print-bench-prompt").fill("add a sphere radius 15");
+    await page.getByTestId("print-bench-build").click();
+    await expect(findings).toContainText("Overhang", { timeout: 20_000 });
     await page.getByTestId("workspace-view-tab-print-bench.quote").click();
     await expect(page.getByTestId("print-bench-quote")).not.toContainText("USD");
     await page.getByTestId("workspace-view-tab-print-bench.design").click();
-
-    await page.getByTestId("print-bench-ask").click();
-    await expect(page.getByTestId("print-bench-proposal")).toContainText("chamfer 30");
-    await page.getByTestId("print-bench-accept").click();
+    await page.getByTestId("print-bench-tool-delete").click();
     await page.getByTestId("workspace-view-tab-print-bench.quote").click();
     await expect(page.getByTestId("print-bench-quote")).toContainText("USD");
 
