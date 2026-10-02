@@ -41,7 +41,7 @@ import type {
   WorkspacePreview,
   DynamicToolDefinition,
   ToolApproval,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { z } from "zod";
 
 export { z } from "zod";
@@ -72,7 +72,7 @@ export type {
   ToolSecurityMetadata,
   WorkspaceImportResult,
   WorkspacePreview,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 
 export interface Disposable {
   dispose(): void | Promise<void>;
@@ -985,7 +985,7 @@ export interface WizardStepContribution<TComponent = unknown> {
 
 export interface InteractionRendererProps {
   readonly interaction: PendingInteraction;
-  respond(response: import("@borg/contracts").InteractionResponse): Promise<void>;
+  respond(response: import("@borg-agent/contracts").InteractionResponse): Promise<void>;
 }
 
 export interface InteractionRendererContribution<TComponent = unknown> {

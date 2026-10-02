@@ -1,4 +1,4 @@
-import type { CommandErrorCode, CommandErrorShape } from "@borg/contracts";
+import type { CommandErrorCode, CommandErrorShape } from "@borg-agent/contracts";
 
 export class CommandInvocationError extends Error implements CommandErrorShape {
   readonly code: CommandErrorCode;

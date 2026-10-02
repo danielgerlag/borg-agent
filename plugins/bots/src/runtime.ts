@@ -3,7 +3,7 @@ import {
   modelOperationPrefixSchema,
   type ExecutionId,
   type LoopEvent,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   botCompleted,
   botFailed,
@@ -20,8 +20,8 @@ import type {
   JsonValue,
   ParentExecutionGrant,
   PluginContext,
-} from "@borg/plugin-sdk";
-import { z } from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
+import { z } from "@borg-agent/plugin-sdk";
 
 const BOT_PREFIX = "bots/current/";
 const LOG_PREFIX = "bots/logs/";

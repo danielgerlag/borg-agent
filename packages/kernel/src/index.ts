@@ -52,7 +52,7 @@ export {
   type ExecutionBinding,
   type ParentExecutionGrant,
 } from "./execution-security";
-export type { CostSummary } from "@borg/contracts";
+export type { CostSummary } from "@borg-agent/contracts";
 export { GraphContributionRegistry } from "./graph-contribution-registry";
 export { satisfiesBorgEngine } from "./engine-range";
 export { CommandInvocationError, PluginLoadError } from "./errors";
@@ -201,4 +201,4 @@ export {
 export type {
   WorkspaceImportResult,
   WorkspacePreview,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";

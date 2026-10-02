@@ -5,7 +5,7 @@ import {
   feedbackAnswerSchema,
   interactionSourceSchema,
   modelOperationKeySchema,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   definePlugin,
   defineTool,
@@ -21,7 +21,7 @@ import {
   type StoreEntry,
   type StoreTransactionOperation,
   z,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   CommandEventBus,

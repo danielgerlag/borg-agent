@@ -1,4 +1,4 @@
-import type { ChannelInboundDraft } from "@borg/plugin-sdk";
+import type { ChannelInboundDraft } from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import type { GatewayPolicy, GatewaySessionRecord } from "../src/gateway";
 import { DiscordRestClient } from "../src/rest";

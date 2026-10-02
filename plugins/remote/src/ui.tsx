@@ -7,8 +7,8 @@ import {
   remoteSubmitRun,
   type RemoteRunStatusDocument,
   type RemoteWorker,
-} from "@borg/contracts";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Dialog, Panel, Select, TextField } from "@borg/ui-kit";
 import { Server } from "lucide-solid";
 import {

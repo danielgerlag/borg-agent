@@ -1,4 +1,4 @@
-import { oauthGrantKey } from "@borg/contracts";
+import { oauthGrantKey } from "@borg-agent/contracts";
 import type {
   ChannelAdapter,
   ChannelInboundDraft,
@@ -13,7 +13,7 @@ import type {
   StoreEntry,
   StoreTransactionOperation,
   ToolContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { m365ChannelConfigSchema } from "../src/config";
 
 const PLUGIN_ID = "borg.channel.m365";

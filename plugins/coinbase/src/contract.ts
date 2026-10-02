@@ -1,11 +1,11 @@
 import {
   connectorAccountIdSchema,
   defineCommand,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   connectorAccountNameSchema,
   connectorCommandInputSchema,
-} from "@borg/contracts/connector-accounts";
+} from "@borg-agent/contracts/connector-accounts";
 import { z } from "zod";
 
 export const COINBASE_ACCOUNT_ID_PATTERN =

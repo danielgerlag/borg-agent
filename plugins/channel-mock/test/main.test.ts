@@ -1,4 +1,4 @@
-import { type CommandDefinition } from "@borg/contracts";
+import { type CommandDefinition } from "@borg-agent/contracts";
 import { mockChannelInject, mockChannelSend } from "../src/contract";
 import type {
   ChannelAdapter,
@@ -6,8 +6,8 @@ import type {
   ChannelSendRequest,
   PluginBus,
   PluginContext,
-} from "@borg/plugin-sdk";
-import { createTestHarness } from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
+import { createTestHarness } from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import plugin, {
   MOCK_CHANNEL_ADAPTER_ID,

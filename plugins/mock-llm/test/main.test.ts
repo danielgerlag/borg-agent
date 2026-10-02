@@ -1,7 +1,7 @@
 import type {
   LlmProviderContribution,
   ProviderDispatchPermit,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import mockLlm from "../src/main";
 import {

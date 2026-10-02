@@ -3,7 +3,7 @@ import {
   type JsonValue,
   type StoreEntry,
   type StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PERSONA_ID,

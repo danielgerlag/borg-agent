@@ -20,7 +20,7 @@ This is `examples/headless/src/main.ts`. It defines a four-plugin distribution, 
 ```ts
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createKernel, defineDistribution } from "@borg/kernel";
+import { createKernel, defineDistribution } from "@borg-agent/kernel";
 import configSqliteManifest from "@borg/plugin-config-sqlite/borg.plugin.json";
 import configSqlite from "@borg/plugin-config-sqlite/main";
 import helloManifest from "@borg/plugin-hello/borg.plugin.json";
@@ -115,11 +115,11 @@ corepack pnpm test:e2e
 
 ## Architecture
 
-**Kernel** (`packages/kernel`, `@borg/kernel`). Agent loops, tool dispatch, the model gateway, the command and event bus, plugin lifecycle, and the classification, scanning, and approval services. `createKernel()` builds a kernel inside any Node process. The package does not import Electron. Depth on the services and the locked design decisions is in [docs/architecture.md](docs/architecture.md).
+**Kernel** (`packages/kernel`, `@borg-agent/kernel`). Agent loops, tool dispatch, the model gateway, the command and event bus, plugin lifecycle, and the classification, scanning, and approval services. `createKernel()` builds a kernel inside any Node process. The package does not import Electron. Depth on the services and the locked design decisions is in [docs/architecture.md](docs/architecture.md).
 
-**Plugin SDK** (`packages/plugin-sdk`, `@borg/plugin-sdk`). What plugin code imports: `definePlugin`, `defineTool`, `defineUiPlugin`, the `PluginContext` type, the manifest schema, and `createTestHarness`.
+**Plugin SDK** (`packages/plugin-sdk`, `@borg-agent/plugin-sdk`). What plugin code imports: `definePlugin`, `defineTool`, `defineUiPlugin`, the `PluginContext` type, the manifest schema, and `createTestHarness`.
 
-**Contracts** (`packages/contracts`, `@borg/contracts`). The root export holds `defineCommand`, `defineEvent`, and the schemas the kernel uses, including the MCP server config that personas embed. It defines no plugin commands, and its only event is the kernel-guarded `borg.channel.inboundMessage`. Five subpaths hold schemas that several plugins share: `@borg/contracts/calendar`, `/connector-accounts`, `/contacts`, `/drive`, and `/web-search`. Commands, events, and schemas that belong to one plugin ship from that plugin's `@borg/plugin-<name>/contract` export.
+**Contracts** (`packages/contracts`, `@borg-agent/contracts`). The root export holds `defineCommand`, `defineEvent`, and the schemas the kernel uses, including the MCP server config that personas embed. It defines no plugin commands, and its only event is the kernel-guarded `borg.channel.inboundMessage`. Five subpaths hold schemas that several plugins share: `@borg-agent/contracts/calendar`, `/connector-accounts`, `/contacts`, `/drive`, and `/web-search`. Commands, events, and schemas that belong to one plugin ship from that plugin's `@borg/plugin-<name>/contract` export.
 
 **Plugins** (`plugins/*`). One package per plugin, 35 in total: model providers, message channels, tools, search, MCP, storage, security scanning, and UI features.
 

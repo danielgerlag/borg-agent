@@ -139,13 +139,13 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@borg/distribution-desktop':
         specifier: workspace:*
         version: link:../../distributions/desktop
-      '@borg/kernel':
+      '@borg-agent/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
       '@borg/plugin-a2a':
@@ -226,7 +226,7 @@ importers:
       '@borg/plugin-remote':
         specifier: workspace:*
         version: link:../../plugins/remote
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/plugin-search-brave':
@@ -287,13 +287,13 @@ importers:
 
   distributions/desktop:
     dependencies:
-      '@borg/kernel':
+      '@borg-agent/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
 
   examples/headless:
     dependencies:
-      '@borg/kernel':
+      '@borg-agent/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
       '@borg/plugin-config-sqlite':
@@ -317,16 +317,16 @@ importers:
 
   packages/kernel:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
 
   packages/plugin-sdk:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../contracts
       zod:
@@ -335,13 +335,13 @@ importers:
 
   packages/remote-runtime:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@borg/kernel':
+      '@borg-agent/kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
 
@@ -362,10 +362,10 @@ importers:
 
   plugins/a2a:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -383,10 +383,10 @@ importers:
 
   plugins/anthropic:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -404,10 +404,10 @@ importers:
 
   plugins/azure:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -425,10 +425,10 @@ importers:
 
   plugins/bots:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -446,10 +446,10 @@ importers:
 
   plugins/channel-discord:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -467,10 +467,10 @@ importers:
 
   plugins/channel-google:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -488,10 +488,10 @@ importers:
 
   plugins/channel-imap:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -509,10 +509,10 @@ importers:
 
   plugins/channel-m365:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -530,10 +530,10 @@ importers:
 
   plugins/channel-mock:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       zod:
@@ -542,10 +542,10 @@ importers:
 
   plugins/channel-slack:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -563,13 +563,13 @@ importers:
 
   plugins/chat:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@borg/plugin-feedback':
         specifier: workspace:*
         version: link:../feedback
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -587,10 +587,10 @@ importers:
 
   plugins/coinbase:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -608,25 +608,25 @@ importers:
 
   plugins/config-sqlite:
     dependencies:
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
   plugins/context-map:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
   plugins/copilot:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -644,10 +644,10 @@ importers:
 
   plugins/feedback:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -665,7 +665,7 @@ importers:
 
   plugins/graphs:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@borg/plugin-chat':
@@ -674,7 +674,7 @@ importers:
       '@borg/plugin-feedback':
         specifier: workspace:*
         version: link:../feedback
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -695,10 +695,10 @@ importers:
 
   plugins/hello:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -716,10 +716,10 @@ importers:
 
   plugins/mcp:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -737,7 +737,7 @@ importers:
 
   plugins/mcp-apps:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@borg/plugin-chat':
@@ -746,7 +746,7 @@ importers:
       '@borg/plugin-mcp':
         specifier: workspace:*
         version: link:../mcp
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       solid-js:
@@ -758,16 +758,16 @@ importers:
 
   plugins/memory-knowledge:
     dependencies:
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
   plugins/mock-llm:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -782,10 +782,10 @@ importers:
 
   plugins/ollama:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -803,10 +803,10 @@ importers:
 
   plugins/openai:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -824,10 +824,10 @@ importers:
 
   plugins/openrouter:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -845,10 +845,10 @@ importers:
 
   plugins/remote:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/remote-runtime':
@@ -866,10 +866,10 @@ importers:
 
   plugins/search-brave:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -887,10 +887,10 @@ importers:
 
   plugins/search-tavily:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -908,7 +908,7 @@ importers:
 
   plugins/secrets-dev:
     dependencies:
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -923,7 +923,7 @@ importers:
 
   plugins/secrets-os:
     dependencies:
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -941,13 +941,13 @@ importers:
 
   plugins/security-prompt-injection:
     dependencies:
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
   plugins/themes:
     dependencies:
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':
@@ -962,22 +962,22 @@ importers:
 
   plugins/tools-core:
     dependencies:
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
   plugins/tools-echo:
     dependencies:
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
   plugins/usage:
     dependencies:
-      '@borg/contracts':
+      '@borg-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@borg/plugin-sdk':
+      '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@borg/ui-kit':

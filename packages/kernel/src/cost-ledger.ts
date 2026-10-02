@@ -3,9 +3,9 @@ import {
   usageRecordSchema,
   type CostSummary,
   type UsageRecord,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { randomUUID } from "node:crypto";
-import type { Disposable } from "@borg/plugin-sdk";
+import type { Disposable } from "@borg-agent/plugin-sdk";
 
 export interface CostRecord extends UsageRecord {
   readonly id: string;

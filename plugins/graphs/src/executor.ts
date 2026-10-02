@@ -5,7 +5,7 @@ import {
   type ExecutionId,
   type LoopRunSnapshot,
   type ProvenanceSeed,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { feedbackAsk } from "@borg/plugin-feedback/contract";
 import { chatAppend } from "@borg/plugin-chat/contract";
 import {
@@ -31,7 +31,7 @@ import {
   type PluginContext,
   type ParentExecutionGrant,
   z,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { createHash, randomUUID } from "node:crypto";
 
 import { GRAPH_ENGINE_ID, resolveGraphEngineId } from "./engine-id";

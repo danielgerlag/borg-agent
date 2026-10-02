@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProviderDispatchPermit } from "@borg/plugin-sdk";
+import type { ProviderDispatchPermit } from "@borg-agent/plugin-sdk";
 import {
   AZURE_IMDS_TOKEN_URL,
   AzureProvider,

@@ -8,7 +8,7 @@ import {
   type ModelToolCall,
   type ProviderDispatchPermit,
   type ProviderEgress,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 export const COPILOT_PROVIDER_ID = "borg.copilot";
 export const COPILOT_SECRET_KEY = "githubOauthToken";

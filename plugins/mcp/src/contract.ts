@@ -3,7 +3,7 @@ import {
   defineEvent,
   mcpServerIdSchema,
   personaIdSchema,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { z } from "zod";
 
 export const MCP_APP_MAX_MESSAGE_BYTES = 256 * 1024;

@@ -1,12 +1,12 @@
 import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
   connectorAccountIdSchema,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   MAX_CONNECTOR_ACCOUNTS,
   connectorAccountNameSchema,
-} from "@borg/contracts/connector-accounts";
-import { z } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts/connector-accounts";
+import { z } from "@borg-agent/plugin-sdk";
 import {
   EMAIL_PATTERN,
   FALLBACK_DESTINATION,

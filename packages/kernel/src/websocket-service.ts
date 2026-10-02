@@ -2,7 +2,7 @@ import type {
   Disposable,
   PluginWebSocketConnectOptions,
   PluginWebSocketConnection,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 const MAX_MESSAGE_BYTES = 1_048_576;
 const MAX_QUEUED_MESSAGES = 256;

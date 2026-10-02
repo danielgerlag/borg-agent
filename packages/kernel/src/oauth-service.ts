@@ -1,4 +1,4 @@
-import { oauthGrantKey } from "@borg/contracts";
+import { oauthGrantKey } from "@borg-agent/contracts";
 import { createHash, randomBytes as nodeRandomBytes } from "node:crypto";
 import {
   createServer,
@@ -11,7 +11,7 @@ import type {
   OAuthLoopbackHost,
   OAuthSessionSnapshot,
   PluginOAuthConnectRequest,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import type { SecretFacade } from "./persistence";
 
 export const OAUTH_VAULT_NAMESPACE = "system.oauth";

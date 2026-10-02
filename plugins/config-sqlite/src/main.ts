@@ -4,7 +4,7 @@ import {
   type JsonValue,
   type StoreEntry,
   type StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";

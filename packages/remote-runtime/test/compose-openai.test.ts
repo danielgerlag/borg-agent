@@ -3,7 +3,7 @@ import {
   chatCompletionsBody,
   completionFromChatResponse,
 } from "../src/compose";
-import type { ModelCompletionRequest } from "@borg/plugin-sdk";
+import type { ModelCompletionRequest } from "@borg-agent/plugin-sdk";
 
 const usage = {
   inputTokens: 1,

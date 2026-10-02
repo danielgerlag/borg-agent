@@ -7,7 +7,7 @@ import {
 import {
   definePlugin,
   type Disposable,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   OPENAI_SECRET_KEY,
   OpenAIProvider,

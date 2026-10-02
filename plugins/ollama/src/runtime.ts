@@ -8,7 +8,7 @@ import {
   type ModelToolCall,
   type ProviderDispatchPermit,
   type ProviderEgress,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { DEFAULT_OLLAMA_BASE_URL } from "./config";
 
 export const OLLAMA_PROVIDER_ID = "borg.ollama";

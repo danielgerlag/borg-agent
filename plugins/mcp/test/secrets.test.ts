@@ -1,5 +1,5 @@
-import { personaSchema } from "@borg/contracts";
-import { createTestHarness } from "@borg/plugin-sdk";
+import { personaSchema } from "@borg-agent/contracts";
+import { createTestHarness } from "@borg-agent/plugin-sdk";
 import { afterEach, describe, expect, it } from "vitest";
 import mcpPlugin from "../src/main";
 import { createMcpHarness } from "./harness";

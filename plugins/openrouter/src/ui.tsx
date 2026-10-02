@@ -3,7 +3,7 @@ import {
   openrouterDisconnect,
   openrouterGetStatus,
 } from "./contract";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Panel, TextField } from "@borg/ui-kit";
 import { Globe, KeyRound } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";

@@ -1,4 +1,4 @@
-import { definePlugin, defineTool, z } from "@borg/plugin-sdk";
+import { definePlugin, defineTool, z } from "@borg-agent/plugin-sdk";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";

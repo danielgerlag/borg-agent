@@ -2,8 +2,8 @@ import {
   personaIdSchema,
   personaSchema,
   type Persona,
-} from "@borg/contracts";
-import { z, type JsonValue } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import { z, type JsonValue } from "@borg-agent/plugin-sdk";
 import type { StoreFacade } from "./persistence";
 
 const PERSONA_NAMESPACE = "system.personas";

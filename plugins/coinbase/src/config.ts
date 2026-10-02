@@ -1,12 +1,12 @@
 import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
   connectorAccountIdSchema,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   MAX_CONNECTOR_ACCOUNTS,
   connectorAccountNameSchema,
-} from "@borg/contracts/connector-accounts";
-import { z } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts/connector-accounts";
+import { z } from "@borg-agent/plugin-sdk";
 import { KEY_NAME_PATTERN, MAX_KEY_NAME_LENGTH, isKeyName } from "./protocol";
 
 const keyNameSchema = z

@@ -1,4 +1,4 @@
-import { z, type PluginLogger, type PluginStore } from "@borg/plugin-sdk";
+import { z, type PluginLogger, type PluginStore } from "@borg-agent/plugin-sdk";
 import { MAX_RESUME_URL_LENGTH, MAX_SESSION_ID_LENGTH, normalizeGatewayUrl } from "./protocol";
 import type { GatewaySessionRecord } from "./gateway";
 

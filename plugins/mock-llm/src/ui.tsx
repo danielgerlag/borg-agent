@@ -1,5 +1,5 @@
-import type { LoopRunSnapshot } from "@borg/contracts";
-import { defineUiPlugin, type Disposable } from "@borg/plugin-sdk";
+import type { LoopRunSnapshot } from "@borg-agent/contracts";
+import { defineUiPlugin, type Disposable } from "@borg-agent/plugin-sdk";
 import { Panel } from "@borg/ui-kit";
 import { Bot, CircleDollarSign, MessageCircleQuestion, Play } from "lucide-solid";
 import {

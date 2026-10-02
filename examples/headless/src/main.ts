@@ -1,6 +1,6 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createKernel, defineDistribution } from "@borg/kernel";
+import { createKernel, defineDistribution } from "@borg-agent/kernel";
 import configSqliteManifest from "@borg/plugin-config-sqlite/borg.plugin.json";
 import configSqlite from "@borg/plugin-config-sqlite/main";
 import helloManifest from "@borg/plugin-hello/borg.plugin.json";

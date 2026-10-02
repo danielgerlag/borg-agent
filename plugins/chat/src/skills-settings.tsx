@@ -2,7 +2,7 @@ import {
   type DiscoveredSkill,
   type Skill,
   type SkillSource,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   chatSkillsDiscover,
   chatSkillsInstall,
@@ -10,7 +10,7 @@ import {
   chatSkillsPreview,
   chatSkillsSetSources,
 } from "./contract";
-import type { PluginUiContext } from "@borg/plugin-sdk";
+import type { PluginUiContext } from "@borg-agent/plugin-sdk";
 import { Button, Checkbox, Dialog, Panel, TextField } from "@borg/ui-kit";
 import { LoaderCircle, Plus, Trash2 } from "lucide-solid";
 import {

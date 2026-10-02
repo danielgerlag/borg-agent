@@ -5,11 +5,11 @@ import type {
   SettingsPageContribution,
   WizardStepContribution,
   WorkspaceViewContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import type {
   InteractionResponse,
   PendingInteraction,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { Button, Panel } from "@borg/ui-kit";
 import {
   Activity,

@@ -9,7 +9,7 @@ import type {
   SettingsPageContribution,
   WizardStepContribution,
   WorkspaceViewContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import type { Component } from "solid-js";
 
 export class UiContributionRegistry implements PluginUiHost<Component> {

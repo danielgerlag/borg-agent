@@ -1,7 +1,7 @@
 import {
   modelOperationKeySchema,
   type LoopStartInput,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   defineTool,
   z,
@@ -9,7 +9,7 @@ import {
   type MemoryProviderContribution,
   type MemoryRecord,
   type ProviderEgress,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

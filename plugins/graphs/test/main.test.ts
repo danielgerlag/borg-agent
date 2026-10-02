@@ -1,4 +1,4 @@
-import { channelInboundMessage } from "@borg/contracts";
+import { channelInboundMessage } from "@borg-agent/contracts";
 import {
   graphsAssist,
   graphsListCatalog,
@@ -7,7 +7,7 @@ import {
   type GraphDefinition,
   type GraphInstance,
 } from "../src/contract";
-import { createTestHarness } from "@borg/plugin-sdk";
+import { createTestHarness } from "@borg-agent/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import graphsPlugin from "../src/main";

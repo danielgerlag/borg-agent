@@ -2,9 +2,9 @@ import {
   a2aConfigSchema,
   type A2AConfig,
   type A2AStatus,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { a2aGetStatus } from "./contract";
-import { definePlugin } from "@borg/plugin-sdk";
+import { definePlugin } from "@borg-agent/plugin-sdk";
 
 function asStatus(
   config: A2AConfig,

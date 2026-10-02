@@ -1,9 +1,9 @@
-import type { WorkspaceFile, WorkspacePreview } from "@borg/contracts";
+import type { WorkspaceFile, WorkspacePreview } from "@borg-agent/contracts";
 import type {
   Disposable,
   MemoryRecord,
   PromptSlotContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import type { MemoryFacade } from "./memory-facade";
 import type { PersonaService } from "./persona-service";
 import type { SkillService } from "./skill-service";

@@ -1,4 +1,4 @@
-import { z } from "@borg/plugin-sdk";
+import { z } from "@borg-agent/plugin-sdk";
 
 export const openrouterConfigSchema = z
   .object({

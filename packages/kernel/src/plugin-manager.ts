@@ -4,7 +4,7 @@ import {
   type ExecutionResultFlow,
   type ExecutionSubject,
   type ParentExecutionGrant,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   pluginManifestSchema,
   type BorgPluginManifest,
@@ -13,7 +13,7 @@ import {
   type PluginContext,
   type PluginDefinition,
   type PluginLogger,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { CommandEventBus } from "./command-event-bus";

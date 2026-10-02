@@ -2,13 +2,13 @@ import {
   dataClassificationSchema,
   defineCommand,
   executionIdSchema,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   definePlugin,
   defineTool,
   z,
   type BorgPluginManifest,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import { CommandEventBus, PluginManager } from "../src";
 import { createSecurityRuntime } from "./security-runtime";

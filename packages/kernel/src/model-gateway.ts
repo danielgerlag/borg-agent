@@ -20,7 +20,7 @@ import {
   type Persona,
   type ProviderEgress,
   type ReleasedModelCompletion,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   IndeterminateModelCallError,
   z,
@@ -28,7 +28,7 @@ import {
   type JsonValue,
   type LlmProviderContribution,
   type ProviderDispatchPermit,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { createHash, randomUUID } from "node:crypto";
 import { CostLedger } from "./cost-ledger";
 import { StoreFacade } from "./persistence";
@@ -41,8 +41,8 @@ export {
 export type {
   LlmProviderContribution,
   ProviderDispatchPermit,
-} from "@borg/plugin-sdk";
-export { IndeterminateModelCallError } from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
+export { IndeterminateModelCallError } from "@borg-agent/plugin-sdk";
 
 const STORE_NAMESPACE = "kernel.execution-security";
 const MODEL_CALL_PREFIX = "model-calls/";

@@ -2,7 +2,7 @@ import {
   executionIdSchema,
   executionSecurityContextSchema,
   modelOperationPrefixSchema,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   botSchema,
   botsCreate,
@@ -16,7 +16,7 @@ import {
   pluginManifestSchema,
   z,
   type JsonValue,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import botsPlugin from "../src/main";

@@ -1,11 +1,11 @@
-import { personaSchema } from "@borg/contracts";
+import { personaSchema } from "@borg-agent/contracts";
 import {
   mcpAppDiscovered,
   mcpGetStatus,
   mcpListServers,
   mcpRefresh,
 } from "../src/contract";
-import { createTestHarness } from "@borg/plugin-sdk";
+import { createTestHarness } from "@borg-agent/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

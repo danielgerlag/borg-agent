@@ -1,5 +1,5 @@
-import type { McpServerConfig } from "@borg/contracts";
-import type { PluginSecrets } from "@borg/plugin-sdk";
+import type { McpServerConfig } from "@borg-agent/contracts";
+import type { PluginSecrets } from "@borg-agent/plugin-sdk";
 
 export interface ResolvedSecrets {
   readonly env: Readonly<Record<string, string>>;

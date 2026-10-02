@@ -3,7 +3,7 @@ import {
   connectorAdapterId,
   connectorSecretKey,
   connectorStoreKey,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   discordChannelDisconnect,
   discordChannelGetStatus,
@@ -17,7 +17,7 @@ import {
   type ChannelSendRequest,
   type Disposable,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   defaultDiscordChannelConfig,
   parseDiscordChannelConfig,

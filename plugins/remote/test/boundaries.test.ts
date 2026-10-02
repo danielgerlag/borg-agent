@@ -20,10 +20,10 @@ async function sourceFiles(directory: string): Promise<string[]> {
 
 function isForbidden(specifier: string): boolean {
   return (
-    specifier === "@borg/kernel" ||
-    specifier.startsWith("@borg/kernel/") ||
+    specifier === "@borg-agent/kernel" ||
+    specifier.startsWith("@borg-agent/kernel/") ||
     specifier === "@borg/remote-runtime" ||
-    (specifier.startsWith("@borg/plugin-") && specifier !== "@borg/plugin-sdk")
+    (specifier.startsWith("@borg/plugin-") && specifier !== "@borg-agent/plugin-sdk")
   );
 }
 
@@ -58,9 +58,9 @@ describe("remote package boundaries", () => {
     expect(
       dependencies.filter(
         (name) =>
-          name === "@borg/kernel" ||
-          name.startsWith("@borg/kernel/") ||
-          (name.startsWith("@borg/plugin-") && name !== "@borg/plugin-sdk"),
+          name === "@borg-agent/kernel" ||
+          name.startsWith("@borg-agent/kernel/") ||
+          (name.startsWith("@borg/plugin-") && name !== "@borg-agent/plugin-sdk"),
       ),
     ).toEqual([]);
     expect(imports.filter(isForbidden)).toEqual([]);

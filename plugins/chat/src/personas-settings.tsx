@@ -1,6 +1,6 @@
-import type { ModelDescriptor, Persona, Skill } from "@borg/contracts";
+import type { ModelDescriptor, Persona, Skill } from "@borg-agent/contracts";
 import { Button, Checkbox, Dialog, Select, TextField } from "@borg/ui-kit";
-import type { PluginUiContext } from "@borg/plugin-sdk";
+import type { PluginUiContext } from "@borg-agent/plugin-sdk";
 import { Plus, Star, Trash2 } from "lucide-solid";
 import {
   For,

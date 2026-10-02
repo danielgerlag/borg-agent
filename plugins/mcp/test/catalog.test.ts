@@ -1,4 +1,4 @@
-import { personaSchema, type McpServerConfig } from "@borg/contracts";
+import { personaSchema, type McpServerConfig } from "@borg-agent/contracts";
 import { describe, expect, it, vi } from "vitest";
 import {
   McpCatalogManager,

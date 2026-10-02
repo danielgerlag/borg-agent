@@ -4,7 +4,7 @@ import {
   m365ChannelGetStatus,
   m365ChannelInject,
 } from "./contract";
-import { definePlugin } from "@borg/plugin-sdk";
+import { definePlugin } from "@borg-agent/plugin-sdk";
 import { m365ChannelConfigSchema } from "./config";
 import { M365ChannelController } from "./runtime";
 

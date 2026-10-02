@@ -7,7 +7,7 @@ import {
 import {
   definePlugin,
   type Disposable,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   ANTHROPIC_SECRET_KEY,
   AnthropicProvider,

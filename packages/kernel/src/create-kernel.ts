@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { pluginManifestSchema, type Disposable } from "@borg/plugin-sdk";
+import { pluginManifestSchema, type Disposable } from "@borg-agent/plugin-sdk";
 import { A2AService, A2A_OWNER_PLUGIN_ID } from "./a2a-service";
 import { ClassificationService } from "./classification-service";
 import { CommandEventBus } from "./command-event-bus";

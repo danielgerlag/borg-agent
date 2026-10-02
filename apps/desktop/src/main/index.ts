@@ -3,8 +3,8 @@ import {
   KERNEL_VERSION,
   createKernel,
   type Kernel,
-} from "@borg/kernel";
-import { z, type Disposable } from "@borg/plugin-sdk";
+} from "@borg-agent/kernel";
+import { z, type Disposable } from "@borg-agent/plugin-sdk";
 import {
   app,
   BrowserWindow,

@@ -14,7 +14,7 @@ import {
   botsStart,
   botsStop,
 } from "./contract";
-import { definePlugin, defineTool, z } from "@borg/plugin-sdk";
+import { definePlugin, defineTool, z } from "@borg-agent/plugin-sdk";
 import { BotRuntime } from "./runtime";
 
 export default definePlugin({

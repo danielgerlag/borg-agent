@@ -7,8 +7,8 @@ import {
   type EventDefinition,
   type EventPayload,
   type ParentExecutionGrant,
-} from "@borg/contracts";
-import type { Disposable } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import type { Disposable } from "@borg-agent/plugin-sdk";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { CommandInvocationError } from "./errors";

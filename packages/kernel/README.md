@@ -1,6 +1,6 @@
-# @borg/kernel
+# @borg-agent/kernel
 
-Borg's kernel is a small core that can be embedded. The desktop app is one host of it. Any plain Node process can build the same services, supply its own host adapters, activate plugins, and run agent loops. `@borg/kernel` never imports Electron, and `scripts/check-plugin-boundaries.mjs` enforces that during `pnpm typecheck`.
+Borg's kernel is a small core that can be embedded. The desktop app is one host of it. Any plain Node process can build the same services, supply its own host adapters, activate plugins, and run agent loops. `@borg-agent/kernel` never imports Electron, and `scripts/check-plugin-boundaries.mjs` enforces that during `pnpm typecheck`.
 
 ## Embedding
 
@@ -41,7 +41,7 @@ A kernel requires exactly one compatible `configStore` plugin and the `secretSto
 
 ## Distributions
 
-A distribution names the plugins, defaults, and policy a host runs on the kernel. The desktop app is the `borg.desktop` distribution. `@borg/kernel` checks the distribution against `KERNEL_API_VERSION` and activates only the listed plugins. `@borg/plugin-sdk` stays the contract for plugin authors.
+A distribution names the plugins, defaults, and policy a host runs on the kernel. The desktop app is the `borg.desktop` distribution. `@borg-agent/kernel` checks the distribution against `KERNEL_API_VERSION` and activates only the listed plugins. `@borg-agent/plugin-sdk` stays the contract for plugin authors.
 
 ```ts
 export interface DistributionPluginEntry {
@@ -91,7 +91,7 @@ A plugin with `enabled: false` starts disabled when `system.plugins` has no stor
 When `defaults.models` is present, it replaces the built-in model fallback `borg.mock-llm:mock:scripted`, which the gateway uses for requests that name no provider or model. Loops still pick models from the persona. When `policy.detachedResults` is present, a subject is detached when an entry names its plugin and includes its kind. Every other subject merges into the parent execution. Omitted fields keep the built-in values. Removing those built-ins is tracked by issue #39.
 
 ```ts
-import { defineDistribution } from "@borg/kernel";
+import { defineDistribution } from "@borg-agent/kernel";
 
 export const minimalDistribution = defineDistribution({
   id: "example.minimal",

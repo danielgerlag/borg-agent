@@ -5,7 +5,7 @@ import {
   type ProviderEgress,
   type StoreEntry,
   type StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_PERSONA_ID,

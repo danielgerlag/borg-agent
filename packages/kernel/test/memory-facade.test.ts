@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   MemoryProviderContribution,
   MemoryRecord,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { MemoryFacade } from "../src";
 
 function createProvider(): MemoryProviderContribution & {

@@ -1,7 +1,7 @@
 import {
   remoteRunStatusDocumentSchema,
   type RemoteRunStatusDocument,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 

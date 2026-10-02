@@ -5,7 +5,7 @@ import type {
   PluginLogger,
   PluginWebSocketConnection,
   PluginWebSockets,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   initialSocketState,
   reduceSocket,

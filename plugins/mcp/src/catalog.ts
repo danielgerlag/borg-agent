@@ -2,7 +2,7 @@ import {
   mcpServerConfigSchema,
   type McpServerConfig,
   type Persona,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { mcpAppDiscovered, type McpServerSnapshot } from "./contract";
 import type {
   DynamicToolDefinition,
@@ -12,7 +12,7 @@ import type {
   PreparedToolCatalog,
   ToolExecutionContext,
   ToolProviderScope,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { createAppInstanceId, validateAppResource } from "./apps";
 import { McpClient, clientName, type McpResourceContents } from "./client";
 import {

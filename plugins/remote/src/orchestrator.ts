@@ -11,8 +11,8 @@ import {
   type RemoteRunSpec,
   type RemoteRunStatusDocument,
   type RemoteWorker,
-} from "@borg/contracts";
-import type { JsonValue, PluginStore } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import type { JsonValue, PluginStore } from "@borg-agent/plugin-sdk";
 
 export type RemoteRuntimeId = "local" | "azure-vm" | "kubernetes";
 

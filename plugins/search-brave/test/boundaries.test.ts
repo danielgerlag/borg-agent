@@ -20,7 +20,7 @@ async function sourceFiles(directory: string): Promise<string[]> {
 
 function isPluginPackage(specifier: string): boolean {
   return (
-    specifier.startsWith("@borg/plugin-") && specifier !== "@borg/plugin-sdk"
+    specifier.startsWith("@borg/plugin-") && specifier !== "@borg-agent/plugin-sdk"
   );
 }
 

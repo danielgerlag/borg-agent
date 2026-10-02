@@ -2,7 +2,7 @@ import type {
   PromptScanContext,
   PromptScanFinding,
   PromptScanStage,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 export const PROMPT_INJECTION_SCANNER_ID = "borg.security.prompt-injection";
 

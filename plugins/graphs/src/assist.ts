@@ -1,4 +1,4 @@
-import { type ModelMessage } from "@borg/contracts";
+import { type ModelMessage } from "@borg-agent/contracts";
 import {
   assistQuestionSchema,
   graphDefinitionSchema,

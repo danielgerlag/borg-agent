@@ -1,4 +1,4 @@
-import { defineCommand, defineEvent } from "@borg/contracts";
+import { defineCommand, defineEvent } from "@borg-agent/contracts";
 import { z } from "zod";
 
 export const graphValueMapSchema = z.record(z.string(), z.json());

@@ -20,7 +20,7 @@ async function sourceFiles(directory: string): Promise<string[]> {
 
 function isHostRuntime(specifier: string): boolean {
   return (
-    specifier === "@borg/kernel" ||
+    specifier === "@borg-agent/kernel" ||
     specifier === "electron" ||
     specifier.startsWith("node:")
   );
@@ -68,7 +68,7 @@ describe("MCP Apps package boundaries", () => {
         (dependency) =>
           isHostRuntime(dependency) ||
           (dependency.startsWith("@borg/plugin-") &&
-            dependency !== "@borg/plugin-sdk" &&
+            dependency !== "@borg-agent/plugin-sdk" &&
             !contractPackages.has(dependency)),
       ),
     ).toEqual([]);
@@ -77,7 +77,7 @@ describe("MCP Apps package boundaries", () => {
         (specifier) =>
           isHostRuntime(specifier) ||
           (specifier.startsWith("@borg/plugin-") &&
-            specifier !== "@borg/plugin-sdk" &&
+            specifier !== "@borg-agent/plugin-sdk" &&
             !isPluginContract(specifier)),
       ),
     ).toEqual([]);

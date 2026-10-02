@@ -1,5 +1,5 @@
-import type { WorkspaceFile } from "@borg/contracts";
-import { definePlugin } from "@borg/plugin-sdk";
+import type { WorkspaceFile } from "@borg-agent/contracts";
+import { definePlugin } from "@borg-agent/plugin-sdk";
 
 export const CONTEXT_MAP_SLOT_ID = "borg.context-map.workspace";
 

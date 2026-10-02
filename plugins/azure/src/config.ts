@@ -1,4 +1,4 @@
-import { z } from "@borg/plugin-sdk";
+import { z } from "@borg-agent/plugin-sdk";
 
 export const AZURE_DEFAULT_API_VERSION = "2024-10-21";
 

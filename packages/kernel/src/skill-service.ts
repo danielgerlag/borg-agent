@@ -2,8 +2,8 @@ import {
   skillIdSchema,
   skillSchema,
   type Skill,
-} from "@borg/contracts";
-import { z, type JsonValue } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import { z, type JsonValue } from "@borg-agent/plugin-sdk";
 import type { StoreFacade } from "./persistence";
 
 const SKILL_NAMESPACE = "system.skills";

@@ -1,5 +1,5 @@
-import type { ModelDescriptor, Persona } from "@borg/contracts";
-import type { PluginUiContext } from "@borg/plugin-sdk";
+import type { ModelDescriptor, Persona } from "@borg-agent/contracts";
+import type { PluginUiContext } from "@borg-agent/plugin-sdk";
 import { Select } from "@borg/ui-kit";
 import { UserRoundCog } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";

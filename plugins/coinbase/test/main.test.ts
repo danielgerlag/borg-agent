@@ -4,7 +4,7 @@ import {
   coinbaseVerify,
   type CoinbaseStatus,
 } from "../src/contract";
-import { createTestHarness, type ToolExecutionContext } from "@borg/plugin-sdk";
+import { createTestHarness, type ToolExecutionContext } from "@borg-agent/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import coinbasePlugin from "../src/main";

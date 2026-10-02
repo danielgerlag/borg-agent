@@ -1,4 +1,4 @@
-import { personaSchema, type Persona } from "@borg/contracts";
+import { personaSchema, type Persona } from "@borg-agent/contracts";
 import type {
   Disposable,
   JsonValue,
@@ -6,7 +6,7 @@ import type {
   PluginContext,
   PreparedToolCatalog,
   ToolProviderContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { ProcessSupervisor } from "../../../packages/kernel/src/process-supervisor";
 import { NetworkService } from "../../../packages/kernel/src/network-service";
 

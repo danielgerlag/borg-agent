@@ -1,5 +1,5 @@
-import type { CostSummary } from "@borg/contracts";
-import { defineUiPlugin, type Disposable } from "@borg/plugin-sdk";
+import type { CostSummary } from "@borg-agent/contracts";
+import { defineUiPlugin, type Disposable } from "@borg-agent/plugin-sdk";
 import { Panel } from "@borg/ui-kit";
 import { CircleDollarSign } from "lucide-solid";
 import { createSignal, onCleanup, onMount, type Component } from "solid-js";

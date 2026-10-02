@@ -1,4 +1,4 @@
-import type { BusEnvelope } from "@borg/contracts";
+import type { BusEnvelope } from "@borg-agent/contracts";
 import {
   contextBridge,
   ipcRenderer,

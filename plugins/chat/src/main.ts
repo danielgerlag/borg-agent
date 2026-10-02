@@ -5,7 +5,7 @@ import {
   type ExecutionId,
   type LoopEvent,
   type LoopRunSnapshot,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   feedbackRequested,
   feedbackResolved,
@@ -46,7 +46,7 @@ import {
   type Disposable,
   type JsonValue,
   z,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import { createSkillRegistry } from "./skill-registry";
 

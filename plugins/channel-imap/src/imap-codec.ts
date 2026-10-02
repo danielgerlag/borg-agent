@@ -1,7 +1,7 @@
 import type {
   ChannelInboundDraft,
   PluginTlsSocket,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 const CRLF = "\r\n";
 const MAX_LITERAL_BYTES = 1_048_576;

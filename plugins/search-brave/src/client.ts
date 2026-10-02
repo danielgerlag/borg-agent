@@ -1,7 +1,7 @@
 import {
   webSearchOutputSchema,
   type WebSearchOutput,
-} from "@borg/contracts/web-search";
+} from "@borg-agent/contracts/web-search";
 
 export const BRAVE_PRODUCTION_ENDPOINT =
   "https://api.search.brave.com/res/v1/web/search";

@@ -9,7 +9,7 @@ import {
   type PluginBus,
   type PluginContext,
   type ToolContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import tavilyPlugin from "../src/main";
 
 type CommandHandler = (

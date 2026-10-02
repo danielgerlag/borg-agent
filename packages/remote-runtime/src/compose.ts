@@ -2,7 +2,7 @@ import {
   assertUnattendedAllowlist,
   contractJsonValueSchema,
   type RemoteRunSpec,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   ClassificationService,
   CostLedger,
@@ -19,7 +19,7 @@ import {
   ToolService,
   TrustAuthorizer,
   WorkspaceService,
-} from "@borg/kernel";
+} from "@borg-agent/kernel";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -33,7 +33,7 @@ import {
   type ModelCompletionResult,
   type StoreEntry,
   type StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 class MemoryConfigStore implements ConfigStoreProvider {
   readonly configs = new Map<string, JsonValue>();

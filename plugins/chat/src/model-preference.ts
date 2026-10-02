@@ -1,4 +1,4 @@
-import type { ModelDescriptor } from "@borg/contracts";
+import type { ModelDescriptor } from "@borg-agent/contracts";
 
 const PROVIDER_LABELS: Readonly<Record<string, string>> = {
   "borg.anthropic": "Anthropic",

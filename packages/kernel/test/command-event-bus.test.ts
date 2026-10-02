@@ -3,8 +3,8 @@ import {
   defineCommand,
   defineEvent,
   type BusEnvelope,
-} from "@borg/contracts";
-import { z } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import { z } from "@borg-agent/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { CommandEventBus } from "../src";
 

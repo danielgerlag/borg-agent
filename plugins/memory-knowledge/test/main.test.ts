@@ -5,7 +5,7 @@ import {
   type MemoryRecord,
   type PluginContext,
   type StoreEntry,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import { MemoryFacade } from "../../../packages/kernel/src/memory-facade";
 import manifest from "../borg.plugin.json";

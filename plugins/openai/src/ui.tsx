@@ -3,7 +3,7 @@ import {
   openaiDisconnect,
   openaiGetStatus,
 } from "./contract";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Panel, TextField } from "@borg/ui-kit";
 import { KeyRound, Sparkles } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";

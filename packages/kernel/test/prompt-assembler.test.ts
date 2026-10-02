@@ -5,7 +5,7 @@ import type {
   MemoryRecord,
   StoreEntry,
   StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PERSONA_ID,

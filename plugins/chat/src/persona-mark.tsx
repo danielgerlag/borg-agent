@@ -1,4 +1,4 @@
-import type { Persona } from "@borg/contracts";
+import type { Persona } from "@borg-agent/contracts";
 import { cn } from "@borg/ui-kit";
 import type { Component } from "solid-js";
 

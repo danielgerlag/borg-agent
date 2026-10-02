@@ -6,7 +6,7 @@ import {
   remoteRunSpecSchema,
   remoteSubmitRun,
   type RemoteRunSpec,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   createTestHarness,
   type JsonValue,
@@ -16,7 +16,7 @@ import {
   type PluginStore,
   type StoreEntry,
   type StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";

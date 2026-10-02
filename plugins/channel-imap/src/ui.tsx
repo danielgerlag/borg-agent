@@ -1,13 +1,13 @@
 import {
   connectorAdapterId,
   connectorSecretKey,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   CONNECTOR_ACCOUNT_NAME_MAX,
   MAX_CONNECTOR_ACCOUNTS,
   allocateConnectorAccountId,
-} from "@borg/contracts/connector-accounts";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts/connector-accounts";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { KeyRound, Mail, Plus, Save, Trash2 } from "lucide-solid";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";

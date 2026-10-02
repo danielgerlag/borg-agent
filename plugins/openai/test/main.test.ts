@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProviderDispatchPermit } from "@borg/plugin-sdk";
+import type { ProviderDispatchPermit } from "@borg-agent/plugin-sdk";
 import {
   OPENAI_DEFAULT_MODEL,
   OPENAI_MAX_COMPLETION_TOKENS,

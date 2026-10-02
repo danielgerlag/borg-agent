@@ -5,7 +5,7 @@ import {
   type StoreEntry,
   type StoreTransactionOperation,
   z,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   ConfigFacade,

@@ -1,10 +1,10 @@
-import type { SearchProviderStatus } from "@borg/contracts/web-search";
+import type { SearchProviderStatus } from "@borg-agent/contracts/web-search";
 import {
   tavilyConnect,
   tavilyDisconnect,
   tavilyGetStatus,
 } from "./contract";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Panel, TextField } from "@borg/ui-kit";
 import { KeyRound, Search } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";

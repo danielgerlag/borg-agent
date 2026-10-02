@@ -2,9 +2,9 @@ import {
   a2aConfigSchema,
   type A2AStatus,
   type Persona,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { a2aGetStatus } from "./contract";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Checkbox, Panel, Select, TextField } from "@borg/ui-kit";
 import { Radio } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";

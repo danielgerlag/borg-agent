@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { type CommandDefinition } from "@borg/contracts";
+import { type CommandDefinition } from "@borg-agent/contracts";
 import { imapChannelInject } from "../src/contract";
 import type {
   ChannelAdapter,
@@ -9,8 +9,8 @@ import type {
   PluginLogger,
   PluginRuntime,
   PluginTls,
-} from "@borg/plugin-sdk";
-import { createTestHarness } from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
+import { createTestHarness } from "@borg-agent/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   describeImapConfigError,

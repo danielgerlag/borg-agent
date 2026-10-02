@@ -4,8 +4,8 @@ import type {
   PromptScanContext,
   PromptScannerContribution,
   PromptScanStage,
-} from "@borg/plugin-sdk";
-import { createTestHarness } from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
+import { createTestHarness } from "@borg-agent/plugin-sdk";
 import plugin, {
   PROMPT_INJECTION_FINDING_CODES,
   PROMPT_INJECTION_SCANNER_ID,

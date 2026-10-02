@@ -4,7 +4,7 @@ import {
   type Persona,
   type WorkspaceFile,
   type WorkspacePreview,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   chatCreateSession,
   chatDeleteSession,
@@ -31,7 +31,7 @@ import {
   type Disposable,
   type EmbeddedContentRendererProps,
   z,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { Button, Collapsible, Panel, TextField } from "@borg/ui-kit";
 import {
   Bot,

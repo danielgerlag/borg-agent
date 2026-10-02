@@ -10,7 +10,7 @@ import {
   type ModelToolCall,
   type ProviderDispatchPermit,
   type ProviderEgress,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   AZURE_DEFAULT_API_VERSION,
   type AzureAuthMode,

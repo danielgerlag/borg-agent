@@ -2,7 +2,7 @@ import type {
   PluginProcess,
   PluginProcessExit,
   PluginProcessSpawnOptions,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { spawn, type ChildProcess } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 

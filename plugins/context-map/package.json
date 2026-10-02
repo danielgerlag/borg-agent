@@ -14,8 +14,8 @@
     "main": "/main"
   },
   "dependencies": {
-    "@borg/contracts": "workspace:*",
-    "@borg/plugin-sdk": "workspace:*"
+    "@borg-agent/contracts": "workspace:*",
+    "@borg-agent/plugin-sdk": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

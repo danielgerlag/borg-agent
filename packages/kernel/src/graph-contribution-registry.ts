@@ -2,7 +2,7 @@ import type {
   Disposable,
   GraphStepContribution,
   GraphTriggerContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 interface OwnedContribution<T> {
   readonly ownerPluginId: string;

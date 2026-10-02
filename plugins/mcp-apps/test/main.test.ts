@@ -14,7 +14,7 @@ import {
   type PluginBus,
   type PluginContext,
   type StoreEntry,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import mcpAppsPlugin from "../src/main";
 

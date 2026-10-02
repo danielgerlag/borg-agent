@@ -1,7 +1,7 @@
 import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
   connectorSecretKey,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   coinbaseDisconnect,
   coinbaseGetStatus,
@@ -12,7 +12,7 @@ import {
   definePlugin,
   type Disposable,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { CoinbaseClient } from "./client";
 import {
   defaultCoinbaseConfig,

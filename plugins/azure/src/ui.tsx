@@ -3,7 +3,7 @@ import {
   azureDisconnect,
   azureGetStatus,
 } from "./contract";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Panel, Select, TextField } from "@borg/ui-kit";
 import { Cloud, KeyRound } from "lucide-solid";
 import { Show, createSignal, onMount, type Component } from "solid-js";

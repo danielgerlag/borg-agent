@@ -8,7 +8,7 @@ import {
   type DataClassification,
   type EventDefinition,
   type EventPayload,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   z,
   type ChannelAdapter,
@@ -21,7 +21,7 @@ import {
   type JsonValue,
   type StoreEntry,
   type StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { createHash } from "node:crypto";
 import {
   maxClassification,

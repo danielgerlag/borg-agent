@@ -9,7 +9,7 @@ import {
   type LlmProviderContribution,
   type PluginBus,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { parseAzureConfig } from "../src/config";
 import azurePlugin from "../src/main";
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ToolApproval } from "@borg/contracts";
+import type { ToolApproval } from "@borg-agent/contracts";
 
 const SLUG_SEGMENT = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DYNAMIC_TOOL_ID = /^[a-z0-9]+(?:[.-][a-z0-9-]+)+$/;

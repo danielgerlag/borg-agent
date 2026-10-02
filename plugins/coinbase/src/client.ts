@@ -21,7 +21,7 @@ import {
   type CoinbaseSendCryptoInput,
   type CoinbaseTransaction,
 } from "./contract";
-import type { PluginHttp } from "@borg/plugin-sdk";
+import type { PluginHttp } from "@borg-agent/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import { signCdpJwt, randomNonce } from "./jwt";
 import {

@@ -1,5 +1,5 @@
-import { createTestHarness } from "@borg/plugin-sdk";
-import { personaSchema } from "@borg/contracts";
+import { createTestHarness } from "@borg-agent/plugin-sdk";
+import { personaSchema } from "@borg-agent/contracts";
 import { mcpAppDiscovered, mcpAppSnapshotSchema } from "../src/contract";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

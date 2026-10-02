@@ -1,4 +1,4 @@
-import { definePlugin, defineTool, z } from "@borg/plugin-sdk";
+import { definePlugin, defineTool, z } from "@borg-agent/plugin-sdk";
 
 export default definePlugin({
   id: "borg.tools.echo",

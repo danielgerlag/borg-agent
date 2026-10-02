@@ -3,8 +3,8 @@ import {
   dataClassificationSchema,
   type ChannelCapacity,
   type DataClassification,
-} from "@borg/contracts";
-import type { Disposable } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import type { Disposable } from "@borg-agent/plugin-sdk";
 
 export const CLASSIFICATION_ORDER: readonly DataClassification[] = Object.freeze(
   ["public", "internal", "confidential", "restricted"],

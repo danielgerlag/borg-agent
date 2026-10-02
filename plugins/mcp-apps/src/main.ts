@@ -1,4 +1,4 @@
-import type { CommandErrorCode } from "@borg/contracts";
+import type { CommandErrorCode } from "@borg-agent/contracts";
 import {
   mcpAppDiscovered,
   mcpAppSnapshotSchema,
@@ -17,7 +17,7 @@ import {
 import {
   definePlugin,
   type Disposable,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 interface ActiveInvocation {
   readonly appInstanceId: string;

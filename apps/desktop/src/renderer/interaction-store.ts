@@ -1,7 +1,7 @@
 import type {
   InteractionResponse,
   PendingInteraction,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { createSignal, type Accessor, type Setter } from "solid-js";
 
 export class InteractionStore {

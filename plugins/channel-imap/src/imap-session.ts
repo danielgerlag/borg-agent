@@ -2,7 +2,7 @@ import type {
   ChannelInboundDraft,
   PluginTls,
   PluginTlsSocket,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { ImapCodec } from "./imap-codec";
 
 export class ImapSession {

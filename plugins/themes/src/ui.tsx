@@ -1,4 +1,4 @@
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Panel, Select } from "@borg/ui-kit";
 import { SunMoon } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";

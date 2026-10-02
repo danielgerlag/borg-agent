@@ -2,7 +2,7 @@ import type {
   ChannelCapacity,
   DataClassification,
   ToolApproval,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   ApprovalGrantStore,
   type ApprovalGrantKey,

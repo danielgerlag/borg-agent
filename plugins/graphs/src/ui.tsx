@@ -1,4 +1,4 @@
-import { type CommandOutput, type Persona } from "@borg/contracts";
+import { type CommandOutput, type Persona } from "@borg-agent/contracts";
 import {
   graphDefinitionDeleted,
   graphDefinitionSaved,
@@ -22,7 +22,7 @@ import {
   type GraphInstance,
   type GraphNode,
 } from "./contract";
-import { defineUiPlugin, type Disposable } from "@borg/plugin-sdk";
+import { defineUiPlugin, type Disposable } from "@borg-agent/plugin-sdk";
 import {
   Button,
   Collapsible,

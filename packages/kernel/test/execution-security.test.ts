@@ -4,7 +4,7 @@ import {
   type StoreEntry,
   type StoreTransactionOperation,
   z,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import { PersistenceRegistry, StoreFacade } from "../src";
 import {

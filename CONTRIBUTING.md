@@ -71,9 +71,7 @@ Rules for contributors:
 2. `@borg-agent/plugin-sdk` (`@borg-agent/contracts` is a dependency)
 3. `@borg-agent/kernel` (both of the others are dependencies)
 
-The npm org `borg` is already registered to someone else. These packages publish under the org `borg-agent`. Inside the repository the same three packages are still named `@borg/contracts`, `@borg/plugin-sdk`, and `@borg/kernel`. That is what the rest of the workspace imports.
-
-`scripts/publish-npm.mjs` packs each package and rewrites each `workspace:*` dependency to the version in that package's `package.json`. It then rewrites the package name, the dependency names, and those three import specifiers in the tarball, including subpaths such as `@borg/contracts/calendar`. It publishes that tarball to `https://registry.npmjs.org`. The root package, the desktop app, and every plugin stay private. A consumer can install `@borg-agent/kernel` after all three versions are on npm.
+The npm org `borg` is already registered to someone else, so these packages are named under the org `borg-agent`. That is the name in source, in imports, and on npm. `scripts/publish-npm.mjs` publishes them to `https://registry.npmjs.org`. pnpm replaces each `workspace:*` dependency with the version committed in that package's `package.json`. The root package, the desktop app, and every plugin stay private. A consumer can install `@borg-agent/kernel` after all three versions are on npm.
 
 Run **Publish npm packages** from the Actions tab, on `main`, after CI is green. The workflow publishes the versions already committed in those three files. It skips a package whose version is already on npm. Bump the version in git before you publish again. The workflow does not change versions.
 

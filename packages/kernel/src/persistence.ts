@@ -6,7 +6,7 @@ import type {
   SecretStoreProvider,
   StoreEntry,
   StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 type ConfigSchema = NonNullable<PluginDefinition["configSchema"]>;
 type ConfigDocument = Readonly<Record<string, unknown>>;

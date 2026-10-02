@@ -12,7 +12,7 @@ import {
   type LoopEvent,
   type LoopRunSnapshot,
   type LoopStartInput,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   chatCreateSession,
   chatDeleteSession,
@@ -37,7 +37,7 @@ import {
   type PluginExecutions,
   type StoreEntry,
   type StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { ExecutionSecurityService } from "../../../packages/kernel/src/execution-security";
 import { MemoryFacade } from "../../../packages/kernel/src/memory-facade";

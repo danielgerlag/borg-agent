@@ -3,7 +3,7 @@ import type {
   JsonValue,
   StoreEntry,
   StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   CostLedger,
   ClassificationService,

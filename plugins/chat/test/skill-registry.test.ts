@@ -1,4 +1,4 @@
-import { skillSchema, type Skill } from "@borg/contracts";
+import { skillSchema, type Skill } from "@borg-agent/contracts";
 import type {
   JsonValue,
   PluginHttp,
@@ -6,7 +6,7 @@ import type {
   PluginStore,
   StoreEntry,
   StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import { createSkillRegistry } from "../src/skill-registry";
 

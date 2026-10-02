@@ -1,4 +1,4 @@
-import { definePlugin, z } from "@borg/plugin-sdk";
+import { definePlugin, z } from "@borg-agent/plugin-sdk";
 
 export const themeConfigSchema = z
   .object({

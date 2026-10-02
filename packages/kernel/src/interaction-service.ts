@@ -5,11 +5,11 @@ import {
   type FeedbackAnswer,
   type InteractionResponse,
   type PendingInteraction,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import type {
   Disposable,
   HumanInputRequest,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { randomUUID } from "node:crypto";
 
 export class InteractionCancelledError extends Error {

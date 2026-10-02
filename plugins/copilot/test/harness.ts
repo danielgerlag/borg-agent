@@ -11,7 +11,7 @@ import {
   type LlmProviderContribution,
   type PluginBus,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { parseCopilotConfig } from "../src/config";
 import copilotPlugin from "../src/main";
 

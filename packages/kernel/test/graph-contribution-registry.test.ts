@@ -1,4 +1,4 @@
-import { z } from "@borg/plugin-sdk";
+import { z } from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import { GraphContributionRegistry } from "../src";
 

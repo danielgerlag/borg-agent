@@ -1,4 +1,4 @@
-import { z } from "@borg/plugin-sdk";
+import { z } from "@borg-agent/plugin-sdk";
 import { isSemanticVersion, isValidBorgEngineRange } from "./engine-range";
 import { pluginIdPattern } from "./plugin-enablement";
 

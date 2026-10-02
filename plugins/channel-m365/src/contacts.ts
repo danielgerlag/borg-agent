@@ -3,7 +3,7 @@ import {
   type Contact,
   type ContactsSearchInput,
   type ContactsSearchOutput,
-} from "@borg/contracts/contacts";
+} from "@borg-agent/contracts/contacts";
 import {
   GraphError,
   graphRequest,

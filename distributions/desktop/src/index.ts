@@ -1,4 +1,4 @@
-import { defineDistribution } from "@borg/kernel";
+import { defineDistribution } from "@borg-agent/kernel";
 
 export const desktopDistribution = defineDistribution({
   id: "borg.desktop",

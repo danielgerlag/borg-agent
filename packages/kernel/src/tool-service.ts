@@ -10,7 +10,7 @@ import {
   type ToolExecutionContext,
   type ToolProviderContribution,
   type ToolProviderScope,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   channelCapacitySchema,
   dataClassificationSchema,
@@ -19,7 +19,7 @@ import {
   type OutputProvenance,
   type Persona,
   type ToolSecurityMetadata,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { createHash, randomUUID } from "node:crypto";
 import type { ClassificationService } from "./classification-service";
 import type { ExecutionSecurityService } from "./execution-security";

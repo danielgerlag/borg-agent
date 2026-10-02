@@ -1,4 +1,4 @@
-import type { LoopEvent, LoopRunSnapshot, LoopStartInput } from "@borg/contracts";
+import type { LoopEvent, LoopRunSnapshot, LoopStartInput } from "@borg-agent/contracts";
 import type { GraphDefinition } from "../src/contract";
 import {
   z,
@@ -12,7 +12,7 @@ import {
   type StoreEntry,
   type StoreTransactionOperation,
   type ToolContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { vi } from "vitest";
 import { createSecurityRuntime } from "../../../packages/kernel/test/security-runtime";
 import { GRAPH_ENGINE_ID } from "../src/executor";

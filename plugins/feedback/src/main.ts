@@ -4,7 +4,7 @@ import {
   feedbackRequested,
   feedbackResolved,
 } from "./contract";
-import { definePlugin, defineTool, z } from "@borg/plugin-sdk";
+import { definePlugin, defineTool, z } from "@borg-agent/plugin-sdk";
 
 const feedbackConfigSchema = z.object({
   defaultTimeoutMs: z.number().int().min(1_000).max(86_400_000).default(300_000),

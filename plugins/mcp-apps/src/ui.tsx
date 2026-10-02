@@ -11,7 +11,7 @@ import {
 import {
   defineUiPlugin,
   type EmbeddedContentRendererProps,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   Show,
   createMemo,

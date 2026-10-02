@@ -6,14 +6,14 @@ import {
   type DiscoveredSkill,
   type Skill,
   type SkillSource,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   z,
   type JsonValue,
   type PluginHttp,
   type PluginSkills,
   type PluginStore,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   githubSourceId,
   isBlockedSkillPath,

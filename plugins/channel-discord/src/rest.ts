@@ -1,4 +1,4 @@
-import type { PluginHttp } from "@borg/plugin-sdk";
+import type { PluginHttp } from "@borg-agent/plugin-sdk";
 import {
   DISCORD_API_BASE,
   MAX_OUTBOUND_CONTENT_LENGTH,

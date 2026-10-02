@@ -8,7 +8,7 @@ import {
   type ModelToolCall,
   type ProviderDispatchPermit,
   type ProviderEgress,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 export const ANTHROPIC_PROVIDER_ID = "borg.anthropic";
 export const ANTHROPIC_SECRET_KEY = "apiKey";

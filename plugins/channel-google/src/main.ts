@@ -4,7 +4,7 @@ import {
   googleChannelGetStatus,
   googleChannelInject,
 } from "./contract";
-import { definePlugin } from "@borg/plugin-sdk";
+import { definePlugin } from "@borg-agent/plugin-sdk";
 import { googleChannelConfigSchema } from "./config";
 import { GoogleChannelController } from "./runtime";
 

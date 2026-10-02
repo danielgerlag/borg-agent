@@ -8,7 +8,7 @@ import type {
   PluginLogger,
   PluginRuntime,
   PluginTls,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { ImapSession } from "./imap-session";
 
 export const IMAP_CHANNEL_ADAPTER_ID = "borg.channel.imap";

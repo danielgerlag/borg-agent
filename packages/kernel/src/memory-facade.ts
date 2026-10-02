@@ -2,7 +2,7 @@ import {
   dataClassificationSchema,
   personaIdSchema,
   type DataClassification,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   z,
   type Disposable,
@@ -10,7 +10,7 @@ import {
   type MemoryQuery,
   type MemoryRecord,
   type MemoryWriteInput,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { randomUUID } from "node:crypto";
 
 const DEFAULT_RECALL_LIMIT = 8;

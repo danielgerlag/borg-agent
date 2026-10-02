@@ -1,4 +1,4 @@
-import type { Disposable, NotificationRequest } from "@borg/plugin-sdk";
+import type { Disposable, NotificationRequest } from "@borg-agent/plugin-sdk";
 import { randomUUID } from "node:crypto";
 
 export interface KernelNotification {

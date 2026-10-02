@@ -41,7 +41,7 @@ Do not re-litigate these. If a later idea conflicts, stop and ask.
 | UI stack | Match HiveMind desktop so UX can be copied: **SolidJS + Vite + Tailwind + Kobalte + lucide-solid + CodeMirror + Cytoscape**. Electron instead of Tauri. Playwright for UI e2e. |
 | Language | TypeScript throughout. No Rust daemon. No separate client/server tier. |
 | Inter-plugin | No plugin may import another plugin’s package. Kernel **contributions + typed commands/events** only. Host APIs are for kernel services; the bus is not a dumping ground. |
-| Bus | One command/event bus in **main**. Commands: one handler, Zod in/out, request/response. Events: 0–N subscribers, Zod payload, no return. Schemas live in `@borg/contracts`, not inside a plugin implementation. Duplicate command ids fail load. |
+| Bus | One command/event bus in **main**. Commands: one handler, Zod in/out, request/response. Events: 0–N subscribers, Zod payload, no return. Schemas live in `@borg-agent/contracts`, not inside a plugin implementation. Duplicate command ids fail load. |
 | Human feedback | Tool approvals and classification violations are kernel protocol + kernel default UI. The **ask-user tool** and **feedback gates** (graphs, loops, bots) are bundled plugin `borg.feedback`. Pending interactions live in the kernel queue so they survive window hide. |
 | Security enforcement | Classification, permission, and approval **enforcement** stay in the kernel on every tool call and outbound channel. Scanners (prompt injection) may be plugins; they cannot be the only gate. |
 | Persistence | Kernel owns **facades**. Backends (sqlite config, OS keychain, dev secret store) are plugins. Callers never select a backend. |
@@ -93,7 +93,7 @@ Quality bar: every slice is extensively verified (contract + unit + UI e2e where
 | Shell | Electron, `contextIsolation: true`, sandboxed renderer, preload as the only IPC bridge |
 | Kernel | Electron main, TypeScript strict |
 | UI | SolidJS, Vite, Tailwind, Kobalte, lucide-solid, CodeMirror, Cytoscape, class-variance-authority / tailwind-merge (same family as HiveMind desktop) |
-| Plugin SDK | TypeScript package `@borg/plugin-sdk` |
+| Plugin SDK | TypeScript package `@borg-agent/plugin-sdk` |
 | Agentic loops | Kernel strategy API (`ReAct`, `CodeAct`, …). LangGraph JS **may** implement these. |
 | Graphs | Custom engine in the graphs plugin, inspired by HiveMind `hive-workflow`. **No LangGraph.** |
 | Tests | Vitest (unit/contract), Playwright against the Electron app (UI e2e) |
@@ -204,14 +204,14 @@ Same contribution types, same in-proc loader, declared permissions. v1 may only 
 
 ### 9.1 SDK
 
-Package: `@borg/plugin-sdk`.
+Package: `@borg-agent/plugin-sdk`.
 
-Every plugin is built on it, plus `@borg/contracts` when it declares or invokes bus commands/events. HiveMind’s `@hivemind-os/plugin-sdk` is the starting *shape* (`definePlugin`, Zod `configSchema`, tools, background loop, `createTestHarness`) — then expand far beyond connector-only contributions.
+Every plugin is built on it, plus `@borg-agent/contracts` when it declares or invokes bus commands/events. HiveMind’s `@hivemind-os/plugin-sdk` is the starting *shape* (`definePlugin`, Zod `configSchema`, tools, background loop, `createTestHarness`) — then expand far beyond connector-only contributions.
 
 Sketch (illustrative, not frozen API):
 
 ```ts
-import { definePlugin, z } from '@borg/plugin-sdk';
+import { definePlugin, z } from '@borg-agent/plugin-sdk';
 
 export default definePlugin({
   id: 'borg.chat',
@@ -300,14 +300,14 @@ The bus is **commands + events only**. Tool execution, LLM calls, secrets, confi
 
 **Forbidden:** `import from '@borg/plugin-graphs'` (or any other plugin package) inside another plugin.
 
-**Required:** plugins depend on `@borg/plugin-sdk` and `@borg/contracts`. Contracts hold `defineCommand` / `defineEvent` + Zod schemas. They contain **no implementation**. Chat may import `graphsLaunch` from contracts; it may not import the graphs plugin.
+**Required:** plugins depend on `@borg-agent/plugin-sdk` and `@borg-agent/contracts`. Contracts hold `defineCommand` / `defineEvent` + Zod schemas. They contain **no implementation**. Chat may import `graphsLaunch` from contracts; it may not import the graphs plugin.
 
 There is **one bus, in main**. Renderer `invoke`/`on` is IPC onto that bus. Same-plugin main ↔ UI uses the bus too (no ad hoc `ipcRenderer`). Do not create a second bus in the renderer.
 
 #### Commands
 
 ```ts
-import { defineCommand } from '@borg/contracts';
+import { defineCommand } from '@borg-agent/contracts';
 import { z } from 'zod';
 
 export const graphsLaunch = defineCommand({
@@ -541,8 +541,8 @@ Testing is how a coding agent is allowed to keep going. A slice without its test
 borg-agent/
   apps/desktop/              Electron main + preload + renderer shell
   packages/kernel/           Kernel libraries loaded by main (and types for preload)
-  packages/plugin-sdk/       @borg/plugin-sdk
-  packages/contracts/        @borg/contracts — command/event Zod schemas, no implementations
+  packages/plugin-sdk/       @borg-agent/plugin-sdk
+  packages/contracts/        @borg-agent/contracts — command/event Zod schemas, no implementations
   packages/ui-kit/           Shared SolidJS kit used by shell and plugin UIs
   plugins/                   Bundled plugins (one folder each, same SDK)
   tests/e2e/                 Playwright
@@ -856,7 +856,7 @@ Ask the human; do not guess:
 ## 18. Coding standards (short)
 
 - TypeScript strict. No `any` on SDK boundaries.
-- Public command/event schemas live in `packages/contracts` (`@borg/contracts`). Host/plugin types live in the SDK. Do not duplicate either inside a plugin.
+- Public command/event schemas live in `packages/contracts` (`@borg-agent/contracts`). Host/plugin types live in the SDK. Do not duplicate either inside a plugin.
 - Tool IDs: HiveMind style, dot-separated (`filesystem.read`, `mcp.<server>.<tool>`, `plugin.<id>.<tool>`).
 - Persona IDs: slash-delimited (`system/general`).
 - Plugin IDs: reverse-dns (`borg.chat`).
@@ -868,4 +868,4 @@ Ask the human; do not guess:
 
 ## 19. Definition of done (whole v1)
 
-Borg is a tray-resident Electron app. Kernel in main. Plugins in-process via `@borg/plugin-sdk`. Personas in kernel. Chat, graphs, bots, **human feedback**, models, MCP, connectors, memory implementation, search, and scanners are plugins. Cross-plugin wiring is the §9.5 bus + `@borg/contracts`. Graphs are a HiveMind-inspired engine **without** LangGraph. Loops may use LangGraph. Ask-user and feedback gates go through `borg.feedback` and the kernel interaction queue, including with the window hidden. Closing the window does not kill work. Mock LLM drives extensive UI e2e. A new contribution type is how you extend the product, not a kernel patch.
+Borg is a tray-resident Electron app. Kernel in main. Plugins in-process via `@borg-agent/plugin-sdk`. Personas in kernel. Chat, graphs, bots, **human feedback**, models, MCP, connectors, memory implementation, search, and scanners are plugins. Cross-plugin wiring is the §9.5 bus + `@borg-agent/contracts`. Graphs are a HiveMind-inspired engine **without** LangGraph. Loops may use LangGraph. Ask-user and feedback gates go through `borg.feedback` and the kernel interaction queue, including with the window hidden. Closing the window does not kill work. Mock LLM drives extensive UI e2e. A new contribution type is how you extend the product, not a kernel patch.

@@ -10,7 +10,7 @@ import {
   type LoopRunSnapshot,
   type LoopStartInput,
   type ParentExecutionGrant,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   CommandEventBus,
   ExecutionSecurityService,
@@ -28,7 +28,7 @@ import type {
   StoreEntry,
   StoreTransactionOperation,
   ToolContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { vi } from "vitest";
 
 function unavailable(capability: string): never {

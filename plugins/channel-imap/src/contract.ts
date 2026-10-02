@@ -2,7 +2,7 @@ import {
   connectorAccountIdSchema,
   dataClassificationSchema,
   defineCommand,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { z } from "zod";
 
 export const imapChannelInject = defineCommand({

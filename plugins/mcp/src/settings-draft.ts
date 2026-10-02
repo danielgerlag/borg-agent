@@ -1,4 +1,4 @@
-import { mcpServerConfigSchema, type McpServerConfig } from "@borg/contracts";
+import { mcpServerConfigSchema, type McpServerConfig } from "@borg-agent/contracts";
 
 export type McpTransportKind = "stdio" | "sse" | "streamable-http";
 

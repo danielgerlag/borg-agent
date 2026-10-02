@@ -4,12 +4,12 @@ import {
   type PromptScanAction,
   type PromptScanFinding,
   type PromptScanStage,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import type {
   Disposable,
   PromptScanContext,
   PromptScannerContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 const SCANNER_ID = /^[a-z0-9]+(?:[.-][a-z0-9-]+)*$/;
 const MAX_SCANNER_ID_LENGTH = 200;

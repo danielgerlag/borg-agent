@@ -3,7 +3,7 @@ import { Duplex } from "node:stream";
 import type {
   PluginTlsConnectOptions,
   PluginTlsSocket,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 const MAX_SOCKETS_PER_PLUGIN = 4;
 const HANDSHAKE_TIMEOUT_MS = 15_000;

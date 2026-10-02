@@ -1,4 +1,4 @@
-import { defineCommand } from "@borg/contracts";
+import { defineCommand } from "@borg-agent/contracts";
 import { z } from "zod";
 
 export const copilotStatusSchema = z

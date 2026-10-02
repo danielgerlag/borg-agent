@@ -12,7 +12,7 @@ import {
   type PluginManager,
   type SecretFacade,
   type WorkspaceService,
-} from "@borg/kernel";
+} from "@borg-agent/kernel";
 import {
   BrowserWindow,
   ClipboardItem,
@@ -33,7 +33,7 @@ import {
   loopStartInputSchema,
   personaIdSchema,
   skillIdSchema,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   GNOME_COPIED_FILES_TYPE,
   URI_LIST_TYPE,

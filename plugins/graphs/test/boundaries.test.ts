@@ -27,7 +27,7 @@ function isLangGraph(specifier: string): boolean {
 
 function isPluginPackage(specifier: string): boolean {
   return (
-    specifier.startsWith("@borg/plugin-") && specifier !== "@borg/plugin-sdk"
+    specifier.startsWith("@borg/plugin-") && specifier !== "@borg-agent/plugin-sdk"
   );
 }
 

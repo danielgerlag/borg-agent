@@ -1,4 +1,4 @@
-import { z } from "@borg/plugin-sdk";
+import { z } from "@borg-agent/plugin-sdk";
 
 export const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
 

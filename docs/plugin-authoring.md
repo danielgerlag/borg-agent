@@ -207,7 +207,7 @@ export const helloGetStatus = defineCommand({
 });
 ```
 
-`defineCommand` and `defineEvent` are exported from `@borg/contracts` (`packages/contracts/src/index.ts`). A command has `id`, `input`, `output`, and an optional `timeoutMs`. An event has `id` and `payload`. Both helpers freeze the object.
+`defineCommand` and `defineEvent` are exported from `@borg-agent/contracts` (`packages/contracts/src/index.ts`). A command has `id`, `input`, `output`, and an optional `timeoutMs`. An event has `id` and `payload`. Both helpers freeze the object.
 
 `plugins/bots/src/contract.ts` defines an event:
 
@@ -224,7 +224,7 @@ export const botUpdated = defineEvent({
 - `src/contract.ts` must exist.
 - The tsconfig named by the package's `build` script (`tsconfig.main.json` for hello) must list `src/contract.ts`, `src/*.ts`, or `src/**/*.ts` in `include`.
 - If `src/contract.ts` exists, `package.json` must export `./contract`.
-- `src/contract.ts` may import `zod`, `@borg/contracts`, `@borg/contracts/<subpath>` matching `[a-z0-9-]+`, or `@borg/plugin-<name>/contract`.
+- `src/contract.ts` may import `zod`, `@borg-agent/contracts`, `@borg-agent/contracts/<subpath>` matching `[a-z0-9-]+`, or `@borg/plugin-<name>/contract`.
 
 `defineCommand(` and `defineEvent(` outside `packages/contracts/src` and `plugins/*/src/contract.ts` fail that script, except three kernel tests named in the allowlist. The full rule list is in [boundaries.md](boundaries.md).
 
@@ -242,13 +242,13 @@ import { chatAppend } from "@borg/plugin-chat/contract";
 
 `scripts/check-plugin-boundaries.mjs` is the check `pnpm check:boundaries` runs. For a plugin it requires all of the following.
 
-- Import `@borg/plugin-sdk` for the plugin API. Import `@borg/contracts` for kernel schemas, and a capability subpath (`@borg/contracts/calendar`, `/connector-accounts`, `/contacts`, `/drive`, `/web-search`) for schemas shared across plugins. For example, `plugins/channel-google/src/tools.ts` imports `@borg/contracts/calendar`. `src/contract.ts` has the stricter import list above. Hello's UI also imports `@borg/ui-kit`. The boundary script does not restrict `@borg/ui-kit`.
+- Import `@borg-agent/plugin-sdk` for the plugin API. Import `@borg-agent/contracts` for kernel schemas, and a capability subpath (`@borg-agent/contracts/calendar`, `/connector-accounts`, `/contacts`, `/drive`, `/web-search`) for schemas shared across plugins. For example, `plugins/channel-google/src/tools.ts` imports `@borg-agent/contracts/calendar`. `src/contract.ts` has the stricter import list above. Hello's UI also imports `@borg/ui-kit`. The boundary script does not restrict `@borg/ui-kit`.
 - Import another plugin only as `@borg/plugin-<name>/contract`, and list that package in `dependencies`.
 - Keep relative imports inside this plugin's directory.
 - Keep plugin-to-plugin contract dependencies acyclic.
 - Keep `plugins/graphs` off `langgraph` and `@langchain/langgraph`, both as imports and as dependencies.
 
-Locked decision 10 in `docs/architecture.md` states the same rule for authors. A plugin uses host APIs, contributions, kernel schemas from `@borg/contracts`, and another plugin's commands, events, and schemas through that plugin's `@borg/plugin-<name>/contract` subpath, declared as a package dependency.
+Locked decision 10 in `docs/architecture.md` states the same rule for authors. A plugin uses host APIs, contributions, kernel schemas from `@borg-agent/contracts`, and another plugin's commands, events, and schemas through that plugin's `@borg/plugin-<name>/contract` subpath, declared as a package dependency.
 
 ## UI
 
@@ -315,7 +315,7 @@ export async function createTestHarness(
 }
 ```
 
-`plugins/a2a/test/harness.ts` builds a `PluginContext` and returns `activate: () => createTestHarness(a2aPlugin, context)`. `plugins/context-map/test/main.test.ts` calls `createTestHarness` directly and asserts the prompt the plugin registers. `plugins/usage/test/boundaries.test.ts` reads that package's `package.json` and `src` imports and expects no `@borg/plugin-*` package other than `@borg/plugin-sdk`.
+`plugins/a2a/test/harness.ts` builds a `PluginContext` and returns `activate: () => createTestHarness(a2aPlugin, context)`. `plugins/context-map/test/main.test.ts` calls `createTestHarness` directly and asserts the prompt the plugin registers. `plugins/usage/test/boundaries.test.ts` reads that package's `package.json` and `src` imports and expects no `@borg/plugin-*` package other than `@borg-agent/plugin-sdk`.
 
 Hello has no tests. To run one plugin's tests after a build:
 

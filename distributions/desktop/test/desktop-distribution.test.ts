@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KERNEL_API_VERSION, satisfiesBorgEngine } from "@borg/kernel";
+import { KERNEL_API_VERSION, satisfiesBorgEngine } from "@borg-agent/kernel";
 import { desktopDistribution } from "../src";
 
 const baselinePluginIds = [

@@ -3,7 +3,7 @@ import {
   createTestHarness,
   type PluginBus,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import a2aPlugin from "../src/main";
 
 type CommandHandler = (

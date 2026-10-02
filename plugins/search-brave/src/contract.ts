@@ -1,5 +1,5 @@
-import { defineCommand } from "@borg/contracts";
-import { searchProviderStatusSchema } from "@borg/contracts/web-search";
+import { defineCommand } from "@borg-agent/contracts";
+import { searchProviderStatusSchema } from "@borg-agent/contracts/web-search";
 import { z } from "zod";
 
 export const braveGetStatus = defineCommand({

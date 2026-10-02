@@ -1,8 +1,8 @@
 import type {
   WorkspaceImportResult,
   WorkspacePreview,
-} from "@borg/contracts";
-import { z } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import { z } from "@borg-agent/plugin-sdk";
 import { constants, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import {
   copyFile,

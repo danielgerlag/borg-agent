@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProviderDispatchPermit } from "@borg/plugin-sdk";
+import type { ProviderDispatchPermit } from "@borg-agent/plugin-sdk";
 import { DEFAULT_OLLAMA_BASE_URL } from "../src/config";
 import {
   OLLAMA_EGRESS,

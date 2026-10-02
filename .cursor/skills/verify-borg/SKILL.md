@@ -18,7 +18,7 @@ Requirements.
 
 The primary surface is the Electron desktop app in `apps/desktop`. It boots `createKernel` with `desktopDistribution` from `@borg/distribution-desktop` (`borg.desktop`).
 
-The headless kernel is the secondary API. `createKernel` and `defineDistribution` live in `@borg/kernel`. `packages/kernel/README.md` and `packages/kernel/test/create-kernel.test.ts` show a Node process that starts the kernel without Electron. Do not point that process at a profile this skill created.
+The headless kernel is the secondary API. `createKernel` and `defineDistribution` live in `@borg-agent/kernel`. `packages/kernel/README.md` and `packages/kernel/test/create-kernel.test.ts` show a Node process that starts the kernel without Electron. Do not point that process at a profile this skill created.
 
 Repo scripts, named so they are not mistaken for this skill.
 

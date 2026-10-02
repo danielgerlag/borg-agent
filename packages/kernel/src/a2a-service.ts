@@ -5,7 +5,7 @@ import {
   type A2AStatus,
   type LoopRunSnapshot,
   type LoopRunStatus,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import type { LoopManager } from "./loop-manager";

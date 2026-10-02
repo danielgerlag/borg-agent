@@ -54,17 +54,17 @@ function isPluginContractSpecifier(specifier) {
   const name = dependencyName(specifier);
   return (
     name.startsWith("@borg/plugin-") &&
-    name !== "@borg/plugin-sdk" &&
+    name !== "@borg-agent/plugin-sdk" &&
     specifier === `${name}/contract`
   );
 }
 
 function isAllowedContractFileImport(specifier) {
-  if (specifier === "zod" || specifier === "@borg/contracts") {
+  if (specifier === "zod" || specifier === "@borg-agent/contracts") {
     return true;
   }
   return (
-    /^@borg\/contracts\/[a-z0-9-]+$/.test(specifier) ||
+    /^@borg-agent\/contracts\/[a-z0-9-]+$/.test(specifier) ||
     isPluginContractSpecifier(specifier)
   );
 }
@@ -204,7 +204,7 @@ for (const filename of await sourceFiles(contractsSourceDirectory)) {
   }
 }
 
-// The kernel surface (kernel and plugin-sdk) sees only the @borg/contracts
+// The kernel surface (kernel and plugin-sdk) sees only the @borg-agent/contracts
 // root: no capability subpaths, no plugins, and no relative path out of its src.
 for (const packageName of ["kernel", "plugin-sdk"]) {
   const sourceDirectory = path.join(projectRoot, "packages", packageName, "src");
@@ -221,14 +221,14 @@ for (const packageName of ["kernel", "plugin-sdk"]) {
         continue;
       }
       const name = dependencyName(specifier);
-      if (name === "@borg/contracts" && specifier !== "@borg/contracts") {
+      if (name === "@borg-agent/contracts" && specifier !== "@borg-agent/contracts") {
         failures.push(
-          `${relative} imports ${specifier}; packages/${packageName} may import @borg/contracts only as @borg/contracts`,
+          `${relative} imports ${specifier}; packages/${packageName} may import @borg-agent/contracts only as @borg-agent/contracts`,
         );
       }
-      if (name.startsWith("@borg/plugin-") && name !== "@borg/plugin-sdk") {
+      if (name.startsWith("@borg/plugin-") && name !== "@borg-agent/plugin-sdk") {
         failures.push(
-          `${relative} imports ${specifier}; packages/${packageName} may import no @borg/plugin-* package other than @borg/plugin-sdk`,
+          `${relative} imports ${specifier}; packages/${packageName} may import no @borg/plugin-* package other than @borg-agent/plugin-sdk`,
         );
       }
     }
@@ -262,7 +262,7 @@ for (const packageName of ["kernel", "plugin-sdk", "contracts"]) {
 }
 
 // A distribution declares plugins by id and runs on the kernel. Its sources
-// may import only @borg/kernel and zod, and relative files inside its own src.
+// may import only @borg-agent/kernel and zod, and relative files inside its own src.
 for (const distributionDirectory of distributionDirectories) {
   const sourceDirectory = path.join(distributionDirectory, "src");
   const label = path.relative(projectRoot, sourceDirectory).split(path.sep).join("/");
@@ -275,16 +275,16 @@ for (const distributionDirectory of distributionDirectories) {
         }
         continue;
       }
-      if (specifier !== "@borg/kernel" && specifier !== "zod") {
+      if (specifier !== "@borg-agent/kernel" && specifier !== "zod") {
         failures.push(
-          `${relative} imports ${specifier}; ${label} may import only @borg/kernel, zod, and relative files inside that directory`,
+          `${relative} imports ${specifier}; ${label} may import only @borg-agent/kernel, zod, and relative files inside that directory`,
         );
       }
     }
   }
 }
 
-// The @borg/contracts root export is the kernel surface. It must not reach any
+// The @borg-agent/contracts root export is the kernel surface. It must not reach any
 // file that backs a capability subpath export (e.g. ./web-search).
 const contractsPackage = JSON.parse(
   await readFile(path.join(projectRoot, "packages/contracts/package.json"), "utf8"),
@@ -393,7 +393,7 @@ for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {
           `${relative} imports forbidden graph engine ${specifier}`,
         );
       }
-      if (specifier.startsWith("@borg/plugin-") && specifier !== "@borg/plugin-sdk") {
+      if (specifier.startsWith("@borg/plugin-") && specifier !== "@borg-agent/plugin-sdk") {
         const name = dependencyName(specifier);
         if (isPluginContractSpecifier(specifier)) {
           contractImports.add(name);
@@ -424,7 +424,7 @@ for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {
       for (const specifier of importSpecifiers(source)) {
         if (!isAllowedContractFileImport(specifier)) {
           failures.push(
-            `${relative} imports ${specifier}; src/contract.ts may import only zod, @borg/contracts, @borg/contracts/<subpath>, or @borg/plugin-<name>/contract`,
+            `${relative} imports ${specifier}; src/contract.ts may import only zod, @borg-agent/contracts, @borg-agent/contracts/<subpath>, or @borg/plugin-<name>/contract`,
           );
         }
       }
@@ -441,7 +441,7 @@ for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {
           `${packageJson.name} declares forbidden graph engine dependency ${dependency}`,
         );
       }
-      if (dependency.startsWith("@borg/plugin-") && dependency !== "@borg/plugin-sdk") {
+      if (dependency.startsWith("@borg/plugin-") && dependency !== "@borg-agent/plugin-sdk") {
         if (!contractImports.has(dependency)) {
           failures.push(
             `${packageJson.name} lists ${dependency} in ${field}, but no source file imports ${dependency}/contract`,
@@ -456,7 +456,7 @@ for (const entry of await readdir(pluginsDirectory, { withFileTypes: true })) {
     dependencyFields.flatMap((field) =>
       Object.keys(packageJson[field] ?? {}).filter(
         (dependency) =>
-          dependency.startsWith("@borg/plugin-") && dependency !== "@borg/plugin-sdk",
+          dependency.startsWith("@borg/plugin-") && dependency !== "@borg-agent/plugin-sdk",
       ),
     ),
   );

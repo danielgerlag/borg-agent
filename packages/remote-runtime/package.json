@@ -15,9 +15,9 @@
     "dist"
   ],
   "dependencies": {
-    "@borg/contracts": "workspace:*",
-    "@borg/kernel": "workspace:*",
-    "@borg/plugin-sdk": "workspace:*"
+    "@borg-agent/contracts": "workspace:*",
+    "@borg-agent/kernel": "workspace:*",
+    "@borg-agent/plugin-sdk": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

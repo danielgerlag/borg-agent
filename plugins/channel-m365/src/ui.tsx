@@ -1,16 +1,16 @@
-import { connectorAdapterId } from "@borg/contracts";
+import { connectorAdapterId } from "@borg-agent/contracts";
 import {
   CONNECTOR_ACCOUNT_NAME_MAX,
   MAX_CONNECTOR_ACCOUNTS,
   allocateConnectorAccountId,
-} from "@borg/contracts/connector-accounts";
+} from "@borg-agent/contracts/connector-accounts";
 import {
   m365ChannelConnect,
   m365ChannelDisconnect,
   m365ChannelGetStatus,
   type M365ChannelStatus,
 } from "./contract";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Checkbox, Panel, TextField } from "@borg/ui-kit";
 import { Mail, Plus, Save, Trash2 } from "lucide-solid";
 import { For, Show, createSignal, onMount, type Component } from "solid-js";

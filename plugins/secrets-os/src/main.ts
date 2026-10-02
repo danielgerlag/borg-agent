@@ -1,4 +1,4 @@
-import { definePlugin, type SecretStoreProvider } from "@borg/plugin-sdk";
+import { definePlugin, type SecretStoreProvider } from "@borg-agent/plugin-sdk";
 import { safeStorage } from "electron";
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";

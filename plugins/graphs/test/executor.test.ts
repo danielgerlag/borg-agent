@@ -3,7 +3,7 @@ import {
   modelOperationKeySchema,
   type ExecutionId,
   type ModelCompletionResult,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { feedbackAsk } from "@borg/plugin-feedback/contract";
 import {
   graphDefinitionSaved,
@@ -24,7 +24,7 @@ import {
   type PluginExecutions,
   type PluginModels,
   type ProviderEgress,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSecurityRuntime } from "../../../packages/kernel/test/security-runtime";

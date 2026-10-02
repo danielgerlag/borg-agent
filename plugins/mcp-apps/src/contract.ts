@@ -2,7 +2,7 @@ import {
   commandErrorSchema,
   defineCommand,
   defineEvent,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { MCP_APP_MAX_MESSAGE_BYTES } from "@borg/plugin-mcp/contract";
 import { z } from "zod";
 

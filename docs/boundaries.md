@@ -21,9 +21,9 @@ node scripts/check-native-form-controls.mjs
 **Package import closure.**
 
 - `packages/contracts/src` may import `zod` and relative files inside that directory.
-- `packages/kernel/src` and `packages/plugin-sdk/src` may import `@borg/contracts` only as the bare specifier `@borg/contracts`. A capability subpath fails. Those packages may import no `@borg/plugin-*` package other than `@borg/plugin-sdk`. Relative imports must stay inside that package's `src`.
+- `packages/kernel/src` and `packages/plugin-sdk/src` may import `@borg-agent/contracts` only as the bare specifier `@borg-agent/contracts`. A capability subpath fails. Those packages may import no `@borg/plugin-*` package other than `@borg-agent/plugin-sdk`. Relative imports must stay inside that package's `src`.
 - `packages/kernel`, `packages/plugin-sdk`, and `packages/contracts` must not list or import an `@borg/distribution-*` package. The dependency check covers `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`.
-- A distribution's `src` may import `@borg/kernel`, `zod`, and relative files inside that directory.
+- A distribution's `src` may import `@borg-agent/kernel`, `zod`, and relative files inside that directory.
 
 **Contracts root.** Every `packages/contracts` export other than `.` must point at `./dist/<name>.js`. The import graph from `packages/contracts/src/index.ts` must not reach `packages/contracts/src/<name>.ts` for any of those subpaths. The subpaths are `./calendar`, `./connector-accounts`, `./contacts`, `./drive`, and `./web-search`.
 
@@ -32,9 +32,9 @@ node scripts/check-native-form-controls.mjs
 **Plugin sources.**
 
 - `plugins/graphs` must not import or depend on `langgraph` or `@langchain/langgraph`.
-- A plugin source may import another plugin package, other than `@borg/plugin-sdk`, only as `@borg/plugin-<name>/contract`, and `dependencies` must list that package.
+- A plugin source may import another plugin package, other than `@borg-agent/plugin-sdk`, only as `@borg/plugin-<name>/contract`, and `dependencies` must list that package.
 - A relative import that resolves inside a different directory under `plugins/` fails.
-- `src/contract.ts` may import `zod`, `@borg/contracts`, `@borg/contracts/<subpath>` where the subpath matches `[a-z0-9-]+`, or `@borg/plugin-<name>/contract`.
+- `src/contract.ts` may import `zod`, `@borg-agent/contracts`, `@borg-agent/contracts/<subpath>` where the subpath matches `[a-z0-9-]+`, or `@borg/plugin-<name>/contract`.
 - If `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies` lists another `@borg/plugin-*` package, some file under that plugin's `src` must import `<package>/contract`.
 - A plugin with `src/contract.ts` must export `./contract`. The export target must be `./dist/contract.js`. Exporting `./contract` requires `src/contract.ts`. It also requires the tsconfig named by the package's `build` script (`tsc -p <file>`, or `tsconfig.main.json` if the script names none) to exist and to list `src/contract.ts`, `src/*.ts`, or `src/**/*.ts` in `include`.
 - Those plugin-to-plugin contract dependencies must form a DAG. A cycle fails with `plugin dependency cycle:`.

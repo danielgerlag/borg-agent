@@ -6,8 +6,8 @@ import {
   type LoopEvent,
   type LoopRunSnapshot,
   type LoopStartInput,
-} from "@borg/contracts";
-import type { Disposable, JsonValue, ModelMessage } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import type { Disposable, JsonValue, ModelMessage } from "@borg-agent/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import { CostLedger } from "./cost-ledger";
 import {

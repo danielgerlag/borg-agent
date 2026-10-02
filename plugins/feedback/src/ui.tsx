@@ -1,6 +1,6 @@
-import type { PendingInteraction } from "@borg/contracts";
-import type { InteractionRendererProps } from "@borg/plugin-sdk";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import type { PendingInteraction } from "@borg-agent/contracts";
+import type { InteractionRendererProps } from "@borg-agent/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Checkbox, Panel, Select, TextField } from "@borg/ui-kit";
 import { MessageCircleQuestion } from "lucide-solid";
 import {

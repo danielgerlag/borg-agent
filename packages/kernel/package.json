@@ -1,5 +1,5 @@
 {
-  "name": "@borg/kernel",
+  "name": "@borg-agent/kernel",
   "version": "0.1.0",
   "license": "MIT",
   "repository": {
@@ -19,8 +19,8 @@
     "dist"
   ],
   "dependencies": {
-    "@borg/contracts": "workspace:*",
-    "@borg/plugin-sdk": "workspace:*"
+    "@borg-agent/contracts": "workspace:*",
+    "@borg-agent/plugin-sdk": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

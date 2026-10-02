@@ -4,7 +4,7 @@ import {
   feedbackAnswerSchema,
   interactionChoiceSchema,
   interactionSourceSchema,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { z } from "zod";
 
 export const feedbackAskInputSchema = z

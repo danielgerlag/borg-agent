@@ -10,7 +10,7 @@ import type {
   PluginWebSockets,
   StoreEntry,
   StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { discordChannelConfigSchema } from "../src/config";
 import type { GatewayClock, GatewayTimer } from "../src/runtime";
 

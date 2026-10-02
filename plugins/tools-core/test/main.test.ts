@@ -7,7 +7,7 @@ import {
   type PluginContext,
   type SandboxRunInput,
   type ToolContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { SandboxFactory } from "../../../packages/kernel/src";
 import {
   default as corePlugin,

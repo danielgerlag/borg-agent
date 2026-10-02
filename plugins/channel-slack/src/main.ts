@@ -2,7 +2,7 @@ import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
   connectorAdapterId,
   connectorSecretKey,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   slackChannelDisconnect,
   slackChannelGetStatus,
@@ -16,7 +16,7 @@ import {
   type ChannelSendRequest,
   type Disposable,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   defaultSlackChannelConfig,
   parseSlackChannelConfig,

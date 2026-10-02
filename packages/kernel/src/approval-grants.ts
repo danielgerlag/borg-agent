@@ -1,4 +1,4 @@
-import { z, type JsonValue } from "@borg/plugin-sdk";
+import { z, type JsonValue } from "@borg-agent/plugin-sdk";
 import type { StoreFacade } from "./persistence";
 
 const STORE_NAMESPACE = "kernel.approval-grants";

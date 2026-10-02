@@ -3,12 +3,12 @@ import type {
   CommandInput,
   CommandOutput,
   EventPayload,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import type {
   Disposable,
   PluginUiContext,
   PluginUiHost,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import type { Component } from "solid-js";
 import { bundledUiPlugins } from "./bundled-ui-plugins";
 import { UiContributionRegistry } from "./ui-registry";

@@ -6,7 +6,7 @@ import {
   type SecretStoreProvider,
   type StoreEntry,
   type StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import type { PluginSource } from "../../src";
 
 export class MemoryConfigStore implements ConfigStoreProvider {

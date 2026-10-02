@@ -5,7 +5,7 @@ import type {
   ChannelSendRequest,
   DataClassification,
   Disposable,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 export const MOCK_CHANNEL_ADAPTER_ID = "borg.channel.mock";
 export const MOCK_CHANNEL_DESTINATION = "default";

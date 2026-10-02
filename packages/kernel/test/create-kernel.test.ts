@@ -11,7 +11,7 @@ import {
   type StoreEntry,
   type StoreTransactionOperation,
   z,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   A2AService,

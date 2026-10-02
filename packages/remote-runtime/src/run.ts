@@ -1,8 +1,8 @@
 import {
   remoteRunSpecSchema,
   type RemoteRunStatusDocument,
-} from "@borg/contracts";
-import { LoopManager } from "@borg/kernel";
+} from "@borg-agent/contracts";
+import { LoopManager } from "@borg-agent/kernel";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { composeRuntime } from "./compose";

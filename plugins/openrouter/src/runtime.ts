@@ -8,7 +8,7 @@ import {
   type ModelToolCall,
   type ProviderDispatchPermit,
   type ProviderEgress,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 export const OPENROUTER_PROVIDER_ID = "borg.openrouter";
 export const OPENROUTER_SECRET_KEY = "apiKey";

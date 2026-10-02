@@ -6,8 +6,8 @@ import {
   type RemoteRunSpec,
   type RemoteRunStatusDocument,
   type RemoteWorker,
-} from "@borg/contracts";
-import { z, type PluginStore } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import { z, type PluginStore } from "@borg-agent/plugin-sdk";
 import {
   bindingStoreKey,
   createReadyWorker,

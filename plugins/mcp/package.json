@@ -17,8 +17,8 @@
     "ui": "/ui"
   },
   "dependencies": {
-    "@borg/contracts": "workspace:*",
-    "@borg/plugin-sdk": "workspace:*",
+    "@borg-agent/contracts": "workspace:*",
+    "@borg-agent/plugin-sdk": "workspace:*",
     "@borg/ui-kit": "workspace:*",
     "lucide-solid": "^1.34.0",
     "solid-js": "^1.9.15",

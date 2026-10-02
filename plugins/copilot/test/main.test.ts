@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProviderDispatchPermit } from "@borg/plugin-sdk";
+import type { ProviderDispatchPermit } from "@borg-agent/plugin-sdk";
 import {
   COPILOT_CLIENT_ID,
   COPILOT_COMPLETIONS_URL,

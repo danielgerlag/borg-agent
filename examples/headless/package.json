@@ -5,7 +5,7 @@
   "license": "MIT",
   "main": "dist/main.js",
   "dependencies": {
-    "@borg/kernel": "workspace:*",
+    "@borg-agent/kernel": "workspace:*",
     "@borg/plugin-config-sqlite": "workspace:*",
     "@borg/plugin-hello": "workspace:*",
     "@borg/plugin-mock-llm": "workspace:*",

@@ -1,4 +1,4 @@
-import type { JsonValue, PluginLogger, PluginStore } from "@borg/plugin-sdk";
+import type { JsonValue, PluginLogger, PluginStore } from "@borg-agent/plugin-sdk";
 import { describe, expect, it } from "vitest";
 import {
   GATEWAY_SESSION_KEY,

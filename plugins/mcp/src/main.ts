@@ -4,7 +4,7 @@ import {
   mcpListServers,
   mcpRefresh,
 } from "./contract";
-import { definePlugin, defineToolProvider } from "@borg/plugin-sdk";
+import { definePlugin, defineToolProvider } from "@borg-agent/plugin-sdk";
 import { McpCatalogManager } from "./catalog";
 
 export default definePlugin({

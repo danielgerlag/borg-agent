@@ -1,4 +1,4 @@
-import { definePlugin } from "@borg/plugin-sdk";
+import { definePlugin } from "@borg-agent/plugin-sdk";
 import {
   PROMPT_INJECTION_SCANNER_ID,
   PROMPT_INJECTION_STAGES,

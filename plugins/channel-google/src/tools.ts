@@ -3,22 +3,22 @@ import {
   calendarCreateOutputSchema,
   calendarListInputSchema,
   calendarListOutputSchema,
-} from "@borg/contracts/calendar";
+} from "@borg-agent/contracts/calendar";
 import {
   contactsSearchInputSchema,
   contactsSearchOutputSchema,
-} from "@borg/contracts/contacts";
+} from "@borg-agent/contracts/contacts";
 import {
   driveReadInputSchema,
   driveReadOutputSchema,
   driveSearchInputSchema,
   driveSearchOutputSchema,
-} from "@borg/contracts/drive";
+} from "@borg-agent/contracts/drive";
 import {
   defineTool,
   type Disposable,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import type { GoogleCalendarClient } from "./calendar";
 import type { GoogleContactsClient } from "./contacts";
 import type { GoogleDriveClient } from "./drive";

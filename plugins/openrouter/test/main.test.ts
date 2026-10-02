@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProviderDispatchPermit } from "@borg/plugin-sdk";
+import type { ProviderDispatchPermit } from "@borg-agent/plugin-sdk";
 import {
   OPENROUTER_PRODUCTION_ENDPOINT,
   OPENROUTER_TOOL_NAME_MAX,

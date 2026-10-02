@@ -4,8 +4,8 @@ import {
   remoteListWorkers,
   remoteProvision,
   remoteSubmitRun,
-} from "@borg/contracts";
-import { definePlugin, type PluginContext } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import { definePlugin, type PluginContext } from "@borg-agent/plugin-sdk";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { createAzureVmProvider } from "./azure-vm";

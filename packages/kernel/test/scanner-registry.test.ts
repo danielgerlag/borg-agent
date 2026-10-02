@@ -1,4 +1,4 @@
-import type { PromptScanContext, PromptScanFinding } from "@borg/plugin-sdk";
+import type { PromptScanContext, PromptScanFinding } from "@borg-agent/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_SCANNER_TIMEOUT_MS,

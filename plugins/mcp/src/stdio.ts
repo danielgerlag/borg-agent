@@ -1,4 +1,4 @@
-import type { PluginProcess, PluginProcesses } from "@borg/plugin-sdk";
+import type { PluginProcess, PluginProcesses } from "@borg-agent/plugin-sdk";
 import {
   MAX_JSONRPC_BYTES,
   asJsonRpcMessage,

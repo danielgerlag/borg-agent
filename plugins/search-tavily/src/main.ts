@@ -2,7 +2,7 @@ import {
   webSearchInputSchema,
   webSearchOutputSchema,
   type SearchProviderStatus,
-} from "@borg/contracts/web-search";
+} from "@borg-agent/contracts/web-search";
 import {
   tavilyConnect,
   tavilyDisconnect,
@@ -14,7 +14,7 @@ import {
   z,
   type Disposable,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   SAFE_TAVILY_ERRORS,
   TAVILY_SECRET_KEY,

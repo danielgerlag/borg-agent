@@ -1,5 +1,5 @@
 {
-  "name": "@borg/plugin-sdk",
+  "name": "@borg-agent/plugin-sdk",
   "version": "0.1.0",
   "license": "MIT",
   "repository": {
@@ -19,7 +19,7 @@
     "dist"
   ],
   "dependencies": {
-    "@borg/contracts": "workspace:*",
+    "@borg-agent/contracts": "workspace:*",
     "zod": "4.6.5"
   },
   "scripts": {

@@ -24,12 +24,12 @@ import {
   type ExecutionSubject,
   type ProvenanceSeed,
   type SecurityObservation,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   z,
   type JsonValue,
   type ParentExecutionGrant,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { createHash, randomUUID } from "node:crypto";
 import { compareClassification } from "./classification-service";
 import { StoreFacade } from "./persistence";
@@ -57,7 +57,7 @@ const childBindInputSchema = z
   })
   .strict();
 
-export type { ParentExecutionGrant } from "@borg/plugin-sdk";
+export type { ParentExecutionGrant } from "@borg-agent/plugin-sdk";
 
 export type ExecutionBindIntent =
   | ExecutionRootBindInput

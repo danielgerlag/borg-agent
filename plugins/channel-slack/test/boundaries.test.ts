@@ -20,7 +20,7 @@ async function sourceFiles(directory: string): Promise<string[]> {
 
 function isPluginPackage(specifier: string): boolean {
   return (
-    specifier.startsWith("@borg/plugin-") && specifier !== "@borg/plugin-sdk"
+    specifier.startsWith("@borg/plugin-") && specifier !== "@borg-agent/plugin-sdk"
   );
 }
 
@@ -59,8 +59,8 @@ describe("channel-slack package boundaries", () => {
       await readFile(path.join(pluginRoot, "package.json"), "utf8"),
     ) as { dependencies?: Record<string, string> };
     expect(Object.keys(packageJson.dependencies ?? {})).toEqual([
-      "@borg/contracts",
-      "@borg/plugin-sdk",
+      "@borg-agent/contracts",
+      "@borg-agent/plugin-sdk",
       "@borg/ui-kit",
       "lucide-solid",
       "solid-js",

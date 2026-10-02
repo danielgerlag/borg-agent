@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 // The bus wire surface is every command and event definition that ships in
-// @borg/contracts or in a plugin's `./contract` subpath. This test snapshots
+// @borg-agent/contracts or in a plugin's `./contract` subpath. This test snapshots
 // each id and timeout plus a SHA-256 of the input- and output-side JSON Schema
 // of every payload, and the same digest for every exported schema (tool inputs
 // and outputs included). Moving a definition between packages must leave

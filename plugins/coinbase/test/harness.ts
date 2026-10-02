@@ -10,7 +10,7 @@ import {
   type PluginContext,
   type PluginHttp,
   type ToolContribution,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import coinbasePlugin from "../src/main";
 import { coinbaseConfigSchema } from "../src/config";
 

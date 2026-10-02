@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type LlmProviderContribution,
   type ProviderEgress,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   A2AService,
   A2A_OWNER_PLUGIN_ID,

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   PluginOAuthConnectRequest,
   SecretStoreProvider,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { PersistenceRegistry, SecretFacade } from "../src";
 import {
   OAUTH_ACCESS_TOKEN_SKEW_MS,

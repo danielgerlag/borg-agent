@@ -4,7 +4,7 @@ import {
   slackChannelVerify,
   type SlackChannelStatus,
 } from "../src/contract";
-import { createTestHarness } from "@borg/plugin-sdk";
+import { createTestHarness } from "@borg-agent/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import slackPlugin from "../src/main";

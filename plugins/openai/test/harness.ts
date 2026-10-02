@@ -9,7 +9,7 @@ import {
   type LlmProviderContribution,
   type PluginBus,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import openaiPlugin from "../src/main";
 
 type CommandHandler = (

@@ -1,4 +1,4 @@
-import { definePlugin } from "@borg/plugin-sdk";
+import { definePlugin } from "@borg-agent/plugin-sdk";
 
 export default definePlugin({
   id: "borg.usage",

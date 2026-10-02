@@ -5,7 +5,7 @@ import {
   copilotPollDeviceFlow,
   copilotStartDeviceFlow,
 } from "./contract";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Panel } from "@borg/ui-kit";
 import { Sparkles } from "lucide-solid";
 import { Show, createSignal, onCleanup, onMount, type Component } from "solid-js";

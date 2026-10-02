@@ -2,7 +2,7 @@ import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
   connectorAdapterId,
   connectorStoreKey,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import type { M365ChannelStatus } from "./contract";
 import type {
   ChannelAdapterReceipt,
@@ -12,7 +12,7 @@ import type {
   Disposable,
   JsonValue,
   PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   buildDestinations,
   defaultM365ChannelConfig,

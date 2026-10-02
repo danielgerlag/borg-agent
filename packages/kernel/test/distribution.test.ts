@@ -1,5 +1,5 @@
-import { modelOperationKeySchema } from "@borg/contracts";
-import type { PluginContext } from "@borg/plugin-sdk";
+import { modelOperationKeySchema } from "@borg-agent/contracts";
+import type { PluginContext } from "@borg-agent/plugin-sdk";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -190,7 +190,7 @@ describe("defineDistribution", () => {
       path.join(directory, "fixtures/minimal-distribution.ts"),
       "utf8",
     );
-    expect(block?.replaceAll('from "@borg/kernel"', 'from "../../src"')).toBe(fixture);
+    expect(block?.replaceAll('from "@borg-agent/kernel"', 'from "../../src"')).toBe(fixture);
   });
 });
 

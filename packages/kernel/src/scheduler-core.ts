@@ -1,4 +1,4 @@
-import type { Disposable } from "@borg/plugin-sdk";
+import type { Disposable } from "@borg-agent/plugin-sdk";
 import { nextCronOccurrence } from "./cron";
 
 const MAX_TIMER_DELAY_MS = 2_147_000_000;

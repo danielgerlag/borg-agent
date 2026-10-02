@@ -18,10 +18,10 @@
     "ui": "/ui"
   },
   "dependencies": {
-    "@borg/contracts": "workspace:*",
+    "@borg-agent/contracts": "workspace:*",
     "@borg/plugin-chat": "workspace:*",
     "@borg/plugin-mcp": "workspace:*",
-    "@borg/plugin-sdk": "workspace:*",
+    "@borg-agent/plugin-sdk": "workspace:*",
     "solid-js": "^1.9.15",
     "zod": "4.6.5"
   },

@@ -2,7 +2,7 @@ import {
   channelInboundMessage,
   modelOperationPrefixSchema,
   type LoopEvent,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import {
   graphDefinitionDeleted,
   graphDefinitionSaved,
@@ -33,7 +33,7 @@ import {
   defineTool,
   z,
   type ExecutionBinding,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import {
   AssistAskGate,

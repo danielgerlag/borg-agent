@@ -1,10 +1,10 @@
-import type { DataClassification } from "@borg/contracts";
+import type { DataClassification } from "@borg-agent/contracts";
 import type {
   ConfigStoreProvider,
   JsonValue,
   StoreEntry,
   StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { CostLedger } from "../src/cost-ledger";
 import { executionIdSchema } from "../src/execution-security";

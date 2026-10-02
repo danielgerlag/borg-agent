@@ -8,7 +8,7 @@ import {
   type ModelToolCall,
   type ProviderDispatchPermit,
   type ProviderEgress,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 export const OPENAI_PROVIDER_ID = "borg.openai";
 export const OPENAI_SECRET_KEY = "apiKey";

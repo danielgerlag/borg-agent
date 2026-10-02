@@ -1,4 +1,4 @@
-import { a2aConfigSchema } from "@borg/contracts";
+import { a2aConfigSchema } from "@borg-agent/contracts";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import a2aPlugin from "../src/main";

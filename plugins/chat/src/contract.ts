@@ -11,7 +11,7 @@ import {
   workspaceFileSchema,
   workspaceImportResultSchema,
   workspacePreviewSchema,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { z } from "zod";
 
 export const chatUsageSchema = z

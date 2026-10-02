@@ -10,7 +10,7 @@ import {
 import {
   definePlugin,
   type Disposable,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   copilotConfigSchema,
   parseCopilotConfig,

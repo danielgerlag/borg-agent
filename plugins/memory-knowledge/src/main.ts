@@ -4,7 +4,7 @@ import {
   type JsonValue,
   type MemoryQuery,
   type MemoryRecord,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 const RECORD_PREFIX = "records/";
 

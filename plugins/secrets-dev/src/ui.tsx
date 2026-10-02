@@ -1,4 +1,4 @@
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Panel } from "@borg/ui-kit";
 import { CheckCircle2, FlaskConical } from "lucide-solid";
 import { createSignal, onMount, type Component } from "solid-js";

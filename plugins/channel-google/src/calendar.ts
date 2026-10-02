@@ -6,7 +6,7 @@ import {
   type CalendarEvent,
   type CalendarListInput,
   type CalendarListOutput,
-} from "@borg/contracts/calendar";
+} from "@borg-agent/contracts/calendar";
 import {
   GoogleApisError,
   googleApisRequest,

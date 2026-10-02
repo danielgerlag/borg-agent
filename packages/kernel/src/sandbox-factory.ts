@@ -1,13 +1,13 @@
 import type {
   SandboxRunInput,
   SandboxRunResult,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { spawn, type ChildProcess } from "node:child_process";
 import { lstat, realpath, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-export type { SandboxKind, SandboxRunInput, SandboxRunResult } from "@borg/plugin-sdk";
+export type { SandboxKind, SandboxRunInput, SandboxRunResult } from "@borg-agent/plugin-sdk";
 
 export type SandboxProcessRunner = (
   command: string,

@@ -1,7 +1,7 @@
 import {
   a2aStatusSchema,
   defineCommand,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { z } from "zod";
 
 export const a2aGetStatus = defineCommand({

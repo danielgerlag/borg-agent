@@ -1,4 +1,4 @@
-import type { PluginHttp } from "@borg/plugin-sdk";
+import type { PluginHttp } from "@borg-agent/plugin-sdk";
 import {
   MAX_OUTBOUND_CONTENT_LENGTH,
   MAX_RATE_LIMIT_RETRIES,

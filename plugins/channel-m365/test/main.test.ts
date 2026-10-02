@@ -1,5 +1,5 @@
-import { oauthGrantKey } from "@borg/contracts";
-import { driveReadInputSchema } from "@borg/contracts/drive";
+import { oauthGrantKey } from "@borg-agent/contracts";
+import { driveReadInputSchema } from "@borg-agent/contracts/drive";
 import {
   m365ChannelConnect,
   m365ChannelDisconnect,
@@ -7,7 +7,7 @@ import {
   m365ChannelInject,
   type M365ChannelStatus,
 } from "../src/contract";
-import { createTestHarness, type ToolContribution } from "@borg/plugin-sdk";
+import { createTestHarness, type ToolContribution } from "@borg-agent/plugin-sdk";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin, { GRAPH_API_BASE, M365_ADAPTER_ID } from "../src/main";

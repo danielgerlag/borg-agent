@@ -9,7 +9,7 @@ import type {
   PendingInteraction,
   Persona,
   Skill,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 
 export {};
 

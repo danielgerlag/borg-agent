@@ -2,13 +2,13 @@ import {
   DEFAULT_CONNECTOR_ACCOUNT_ID,
   connectorAdapterId,
   connectorSecretKey,
-} from "@borg/contracts";
+} from "@borg-agent/contracts";
 import { imapChannelInject } from "./contract";
 import {
   definePlugin,
   type Disposable,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import {
   defaultImapChannelConfig,
   imapChannelConfigSchema,

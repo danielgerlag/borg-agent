@@ -1,4 +1,4 @@
-import type { Persona } from "@borg/contracts";
+import type { Persona } from "@borg-agent/contracts";
 import { graphValueMapSchema, type GraphNode } from "./contract";
 import { Select, Switch, TextField } from "@borg/ui-kit";
 import {

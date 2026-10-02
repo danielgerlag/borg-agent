@@ -1,4 +1,4 @@
-import type { PluginHttp } from "@borg/plugin-sdk";
+import type { PluginHttp } from "@borg-agent/plugin-sdk";
 import {
   GMAIL_API_BASE,
   MAX_MESSAGE_ID_LENGTH,

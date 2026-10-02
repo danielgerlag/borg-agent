@@ -18,7 +18,7 @@ import {
   defineTool,
   type Disposable,
   type PluginContext,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import type { CoinbaseClient } from "./client";
 
 const ACCOUNT_SECURITY = {

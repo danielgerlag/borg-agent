@@ -1,6 +1,6 @@
 # Plugin host APIs
 
-The product is plugins. This file is the catalog of host APIs a plugin may call through `@borg/plugin-sdk`.
+The product is plugins. This file is the catalog of host APIs a plugin may call through `@borg-agent/plugin-sdk`.
 
 Types live in `packages/plugin-sdk/src/index.ts`. Main permission and kind checks live in `packages/kernel/src/plugin-manager.ts`. Renderer checks live in `apps/desktop/src/renderer/plugin-ui-manager.ts`. Command and event payloads live in `packages/contracts`.
 
@@ -19,7 +19,7 @@ A plugin has two entry points. They do not share an object.
 
 Main activates first. The renderer loads UI only for plugins whose main activation committed.
 
-A plugin cannot import another plugin package. Collaboration is host APIs, contributions, and typed commands or events from `@borg/contracts`.
+A plugin cannot import another plugin package. Collaboration is host APIs, contributions, and typed commands or events from `@borg-agent/contracts`.
 
 Installed plugin main code is trusted local JavaScript. Host permission checks wrap SDK calls. They do not stop a malicious main module from importing Node APIs directly.
 
@@ -313,7 +313,7 @@ Settings `group` is optional. The shell maps known ids in `apps/desktop/src/rend
 
 ## Command and event bus
 
-One bus, in main. Definitions use `defineCommand` / `defineEvent` in `@borg/contracts`.
+One bus, in main. Definitions use `defineCommand` / `defineEvent` in `@borg-agent/contracts`.
 
 | Call | Who | Rule |
 | --- | --- | --- |

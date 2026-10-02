@@ -2,7 +2,7 @@ import type {
   PluginTls,
   PluginTlsConnectOptions,
   PluginTlsSocket,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

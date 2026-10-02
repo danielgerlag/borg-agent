@@ -6,8 +6,8 @@ import {
   type RemoteRunSpec,
   type RemoteRunStatusDocument,
   type RemoteWorker,
-} from "@borg/contracts";
-import { z, type JsonValue, type PluginStore } from "@borg/plugin-sdk";
+} from "@borg-agent/contracts";
+import { z, type JsonValue, type PluginStore } from "@borg-agent/plugin-sdk";
 import { spawn } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";

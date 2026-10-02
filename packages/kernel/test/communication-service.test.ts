@@ -1,4 +1,4 @@
-import { channelInboundMessage, type BusEnvelope } from "@borg/contracts";
+import { channelInboundMessage, type BusEnvelope } from "@borg-agent/contracts";
 import type {
   ChannelAdapter,
   ChannelAdapterReceipt,
@@ -9,7 +9,7 @@ import type {
   JsonValue,
   StoreEntry,
   StoreTransactionOperation,
-} from "@borg/plugin-sdk";
+} from "@borg-agent/plugin-sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CommandEventBus,

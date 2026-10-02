@@ -392,7 +392,7 @@ Tool approvals and classification violations use the same kernel queue but remai
 | MCP and MCP Apps | transports, catalog, session tools, iframe bridge | `borg.mcp` and `borg.mcp-apps` |
 | risk/classification | scans, labels, channel/destination policy | scanner plugin plus kernel enforcement |
 | knowledge/context map | graph/vector recall and workspace maps | memory/context-map plugins plus kernel interfaces |
-| plugin SDK | Zod config, context, lifecycle, harness | expanded in-process `@borg/plugin-sdk` |
+| plugin SDK | Zod config, context, lifecycle, harness | expanded in-process `@borg-agent/plugin-sdk` |
 | Tauri desktop | visual language, tray, Flight Deck, tests | Electron shell and plugin UI contributions |
 
 ## Research conclusions that constrain implementation

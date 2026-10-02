@@ -13,7 +13,7 @@ import {
   type GraphDefinition,
   type GraphInstance,
 } from "./contract";
-import type { Disposable, PluginUiContext } from "@borg/plugin-sdk";
+import type { Disposable, PluginUiContext } from "@borg-agent/plugin-sdk";
 import { Button, EmptyState, Panel } from "@borg/ui-kit";
 import {
   CircleAlert,

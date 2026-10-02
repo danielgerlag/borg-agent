@@ -1,6 +1,6 @@
-import type { Persona } from "@borg/contracts";
+import type { Persona } from "@borg-agent/contracts";
 import { mcpListServers, mcpRefresh, type McpServerSnapshot } from "./contract";
-import { defineUiPlugin } from "@borg/plugin-sdk";
+import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { Button, Checkbox, EmptyState, Panel, Select, TextField } from "@borg/ui-kit";
 import { Plus, RefreshCw, Trash2 } from "lucide-solid";
 import {
