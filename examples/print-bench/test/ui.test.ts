@@ -27,43 +27,69 @@ describe("print bench window", () => {
     page.on("pageerror", (error) => {
       console.error(error);
     });
-    await expect(page.getByTestId("print-bench-tools")).toContainText("example.print-bench.ask");
-    await expect(page.getByTestId("print-bench-tools")).toContainText("Propose a revision");
+    await expect(page.getByTestId("workspace-view-tab-print-bench.design")).toBeVisible({
+      timeout: 20_000,
+    });
+    await page.getByTestId("nav-flight-deck").click();
+    await expect(page.getByTestId("surface-flightDeck")).toContainText("Flight deck");
+    await expect(page.getByTestId("flightdeck-inspection")).toContainText("failed");
+    await page.getByTestId("nav-settings").click();
+    await expect(page.getByTestId("surface-settings")).toContainText("Machine");
+    await expect(page.getByTestId("settings-page")).toContainText("Prusa MK4");
+    await page.getByTestId("settings-section-model").click();
+    await expect(page.getByTestId("settings-page")).toContainText("scripted");
+    await page.getByTestId("workspace-view-tab-print-bench.design").click();
+
     const findings = page.getByTestId("print-bench-findings");
-    await expect(findings).toContainText("Wall", { timeout: 20_000 });
+    await expect(findings).toContainText("Wall");
     await expect(findings).toContainText("Overhang");
+    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
     await expect(page.getByTestId("print-bench-quote")).not.toContainText("USD");
+    await page.getByTestId("workspace-view-tab-print-bench.design").click();
     const box = await page.getByTestId("print-bench-viewport").boundingBox();
     expect(box?.width ?? 0).toBeGreaterThan(100);
 
     await page.getByTestId("print-bench-wall").fill("1.6");
     await expect(findings).not.toContainText("Wall");
     await expect(findings).toContainText("Overhang");
+    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
     await expect(page.getByTestId("print-bench-quote")).not.toContainText("USD");
+    await page.getByTestId("workspace-view-tab-print-bench.design").click();
 
     await page.getByTestId("print-bench-ask").click();
     await expect(page.getByTestId("print-bench-proposal")).toContainText("chamfer 30");
     await page.getByTestId("print-bench-accept").click();
+    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
     await expect(page.getByTestId("print-bench-quote")).toContainText("USD");
 
-    await page.getByRole("button", { name: "Seat" }).click();
+    await page.getByTestId("nav-settings").click();
+    await page.getByTestId("settings-section-seats").click();
+    await page.getByTestId("settings-page").getByRole("button", { name: "Designer" }).click();
     await page.getByRole("option", { name: "Front desk" }).click();
+    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
     await expect(page.getByTestId("print-bench-send")).toBeEnabled();
     await page.getByTestId("print-bench-send").click();
     await expect(page.getByTestId("print-bench-approval")).toContainText("classification");
     await page.getByTestId("print-bench-approval-allow").click();
     await expect(page.getByTestId("print-bench-sent")).toHaveText("Quote sent");
 
-    await page.getByRole("button", { name: "Seat" }).click();
+    await page.getByTestId("nav-settings").click();
+    await page.getByTestId("settings-section-seats").click();
+    await page.getByTestId("settings-page").getByRole("button", { name: "Front desk" }).click();
     await page.getByRole("option", { name: "Operator" }).click();
+    await page.getByTestId("workspace-view-tab-print-bench.printer").click();
     await page.getByTestId("print-bench-start").click();
     await expect(page.getByTestId("print-bench-approval")).toContainText("tool_approval");
     await page.getByTestId("print-bench-approval-allow").click();
     await expect(page.getByTestId("print-bench-running")).toHaveText("Printer is running");
 
-    await page.getByRole("button", { name: "Seat" }).click();
+    await page.getByTestId("nav-settings").click();
+    await page.getByTestId("settings-section-seats").click();
+    await page.getByTestId("settings-page").getByRole("button", { name: "Operator" }).click();
     await page.getByRole("option", { name: "Designer" }).click();
+    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
     await expect(page.getByTestId("print-bench-send")).toBeDisabled();
+    await page.getByTestId("workspace-view-tab-print-bench.printer").click();
     await expect(page.getByTestId("print-bench-start")).toBeDisabled();
   }, 60_000);
 });
