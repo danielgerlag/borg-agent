@@ -35,14 +35,19 @@ describe("field catalog example", () => {
     );
   });
 
-  it("keeps the catalog and model from importing each other", async () => {
+  it("keeps the catalog, model, and ui from importing each other", async () => {
     const sources = await Promise.all([
       readFile(path.join(exampleDirectory, "src/catalog.ts"), "utf8"),
       readFile(path.join(exampleDirectory, "src/model.ts"), "utf8"),
+      readFile(path.join(exampleDirectory, "src/ui.tsx"), "utf8"),
     ]);
     for (const source of sources) {
-      expect(source).not.toContain('from "./');
-      expect(source).not.toContain("from '../");
+      const specifiers = [
+        ...source.matchAll(/from\s+["'](\.[^"']+)["']/g),
+      ].map((match) => match[1]);
+      for (const specifier of specifiers) {
+        expect(specifier).toBe("./contract");
+      }
     }
   });
 });

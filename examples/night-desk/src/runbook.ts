@@ -1,4 +1,12 @@
 import { definePlugin, defineTool, z } from "@borg-agent/plugin-sdk";
+import { nightDeskMitigate } from "./contract";
+
+function mitigate(host: string, symptom: string): { action: string } {
+  if (host !== "pager-1" || symptom !== "disk 98% full") {
+    throw new Error(`No mitigation for host ${host} symptom ${symptom}`);
+  }
+  return { action: "rotated the log and freed the volume" };
+}
 
 export default definePlugin({
   id: "example.night-desk.runbook",
@@ -8,9 +16,13 @@ export default definePlugin({
   },
   permissions: ["tools.register"],
   contributes: {
+    commands: [nightDeskMitigate.id],
     kinds: ["tool"],
   },
   activate(context) {
+    context.bus.handle(nightDeskMitigate, async (input) =>
+      mitigate(input.host, input.symptom),
+    );
     context.tools.register(
       defineTool({
         id: "night-desk.mitigate",
@@ -22,12 +34,7 @@ export default definePlugin({
         approval: "auto",
         sideEffect: true,
         execute(input) {
-          if (input.host !== "pager-1" || input.symptom !== "disk 98% full") {
-            throw new Error(
-              `No mitigation for host ${input.host} symptom ${input.symptom}`,
-            );
-          }
-          return { action: "rotated the log and freed the volume" };
+          return mitigate(input.host, input.symptom);
         },
       }),
     );

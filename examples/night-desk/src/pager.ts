@@ -1,4 +1,12 @@
 import { definePlugin, defineTool, z } from "@borg-agent/plugin-sdk";
+import { nightDeskGetPage } from "./contract";
+
+function lookupPage(pageId: string): { host: string; symptom: string } {
+  if (pageId !== "p-19") {
+    throw new Error(`Unknown page ${pageId}`);
+  }
+  return { host: "pager-1", symptom: "disk 98% full" };
+}
 
 export default definePlugin({
   id: "example.night-desk.pager",
@@ -8,9 +16,11 @@ export default definePlugin({
   },
   permissions: ["tools.register"],
   contributes: {
+    commands: [nightDeskGetPage.id],
     kinds: ["tool"],
   },
   activate(context) {
+    context.bus.handle(nightDeskGetPage, async (input) => lookupPage(input.pageId));
     context.tools.register(
       defineTool({
         id: "night-desk.page",
@@ -22,10 +32,7 @@ export default definePlugin({
         approval: "auto",
         sideEffect: false,
         execute(input) {
-          if (input.pageId !== "p-19") {
-            throw new Error(`Unknown page ${input.pageId}`);
-          }
-          return { host: "pager-1", symptom: "disk 98% full" };
+          return lookupPage(input.pageId);
         },
       }),
     );

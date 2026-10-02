@@ -1,4 +1,5 @@
 import { definePlugin, defineTool, z } from "@borg-agent/plugin-sdk";
+import { fieldObserve, fieldVoucher } from "./contract";
 
 const range = [{ species: "cicindela sexguttata", place: "point pelee" }] as const;
 
@@ -43,10 +44,42 @@ export default definePlugin({
   },
   permissions: ["tools.register"],
   contributes: {
+    commands: [fieldObserve.id, fieldVoucher.id],
     kinds: ["tool"],
   },
   activate(context) {
     let last: Sighting | undefined;
+    const observe = (species: string, place: string): Sighting => {
+      const sighting: Sighting = {
+        species,
+        place,
+        inRange: sightingInRange(species, place),
+      };
+      last = sighting;
+      return sighting;
+    };
+    const fileVoucher = (
+      species: string,
+      place: string,
+    ): z.infer<typeof voucherResult> => {
+      if (
+        last === undefined ||
+        last.species !== species ||
+        last.place !== place
+      ) {
+        return { filed: false, reason: "last sighting does not match" };
+      }
+      if (!last.inRange) {
+        return { filed: false, reason: "out of range" };
+      }
+      return { filed: true, voucher: "FC-1042" };
+    };
+    context.bus.handle(fieldObserve, async (input) =>
+      observe(input.species, input.place),
+    );
+    context.bus.handle(fieldVoucher, async (input) =>
+      fileVoucher(input.species, input.place),
+    );
     context.tools.register(
       defineTool({
         id: "field.observe",
@@ -56,13 +89,7 @@ export default definePlugin({
         approval: "auto",
         sideEffect: true,
         execute(input) {
-          const sighting: Sighting = {
-            species: input.species,
-            place: input.place,
-            inRange: sightingInRange(input.species, input.place),
-          };
-          last = sighting;
-          return sighting;
+          return observe(input.species, input.place);
         },
       }),
     );
@@ -74,18 +101,8 @@ export default definePlugin({
         output: voucherResult,
         approval: "auto",
         sideEffect: true,
-        execute(input): z.infer<typeof voucherResult> {
-          if (
-            last === undefined ||
-            last.species !== input.species ||
-            last.place !== input.place
-          ) {
-            return { filed: false, reason: "last sighting does not match" };
-          }
-          if (!last.inRange) {
-            return { filed: false, reason: "out of range" };
-          }
-          return { filed: true, voucher: "FC-1042" };
+        execute(input) {
+          return fileVoucher(input.species, input.place);
         },
       }),
     );

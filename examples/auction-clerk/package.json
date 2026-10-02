@@ -5,14 +5,20 @@
   "license": "MIT",
   "main": "dist/main.js",
   "dependencies": {
+    "@borg-agent/contracts": "workspace:*",
     "@borg-agent/kernel": "workspace:*",
+    "@borg-agent/plugin-sdk": "workspace:*",
+    "@borg/example-ui-host": "workspace:*",
     "@borg/plugin-config-sqlite": "workspace:*",
     "@borg/plugin-secrets-dev": "workspace:*",
-    "@borg-agent/plugin-sdk": "workspace:*"
+    "@borg/ui-kit": "workspace:*",
+    "electron": "^44.0.0",
+    "solid-js": "^1.9.15"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node dist/main.js"
+    "build": "tsc -p tsconfig.json && borg-example-ui-build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
+    "start": "electron dist/electron-main.js",
+    "start:loop": "node dist/main.js"
   }
 }
