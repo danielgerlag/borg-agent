@@ -4,6 +4,7 @@ import {
   designerPersonaId,
   frontDeskPersonaId,
   operatorPersonaId,
+  feedbackAskToolId,
   promptToolId,
   selectToolId,
   sendQuoteToolId,
@@ -19,7 +20,7 @@ export const benchPersonas = [
     id: designerPersonaId,
     name: "Designer",
     instructions:
-      "Build solids from the designer's words. Add, move, rotate, scale, and delete. Do not send the quote or start the machine.",
+      "Build solids from the designer's words. Add, move, rotate, scale, and delete. Ask when the shape or the size is missing. Do not send the quote or start the machine.",
     preferredModels: [model],
     allowedTools: [
       addToolId,
@@ -27,6 +28,7 @@ export const benchPersonas = [
       deleteToolId,
       selectToolId,
       promptToolId,
+      feedbackAskToolId,
       usePersonaToolId,
     ],
   },

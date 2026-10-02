@@ -11,6 +11,14 @@ const storedJobSchema = z
     sessionId: z.string().uuid(),
     scene: sceneSchema,
     reply: z.string(),
+    turns: z.array(
+      z
+        .object({
+          role: z.enum(["user", "designer"]),
+          text: z.string().min(1),
+        })
+        .strict(),
+    ),
     machine: z.discriminatedUnion("status", [
       z.object({ status: z.literal("idle") }).strict(),
       z
@@ -113,6 +121,7 @@ export function seed(): Job {
     sessionId: randomUUID(),
     scene: { bodies: [], selectedId: null },
     reply: "",
+    turns: [],
     machine: { status: "idle" },
     quoteSent: null,
   };

@@ -8,6 +8,7 @@ import {
   bodySchema,
   deleteToolId,
   designerPersonaId,
+  feedbackAskToolId,
   effectSchema,
   primitiveSchema,
   printBenchAct,
@@ -209,8 +210,14 @@ function promptTool(context: PluginContext, jobs: JobWriter) {
     approval: "auto",
     sideEffect: true,
     async execute(input, toolContext): Promise<Effect> {
+      await jobs.run(async (session) => {
+        session.commit({
+          ...session.job,
+          turns: [...session.job.turns, { role: "user", text: input.text }],
+        });
+      });
       const job = await jobs.read();
-      // The loop calls add and transform, which write this same job. Do not hold the writer here.
+      // The loop calls add, transform, and feedback.ask, which must not wait behind this writer.
       const started = await context.loops.start({
         prompt: [
           input.text,
@@ -218,7 +225,7 @@ function promptTool(context: PluginContext, jobs: JobWriter) {
           `Scene: ${JSON.stringify(job.scene.bodies)}`,
         ].join("\n"),
         personaId: designerPersonaId,
-        allowedTools: [addToolId, transformToolId, deleteToolId, selectToolId],
+        allowedTools: [addToolId, transformToolId, deleteToolId, selectToolId, feedbackAskToolId],
         providerId: "example.print-bench",
         modelId: "scripted",
         security: {
@@ -229,11 +236,21 @@ function promptTool(context: PluginContext, jobs: JobWriter) {
           operationPrefix: modelOperationPrefixSchema.parse("example.print-bench"),
         },
       });
-      await waitForLoop(context, started.id, toolContext.signal);
-      const reply = context.loops.get(started.id)?.output ?? "";
-      await jobs.run(async (session) => {
-        session.commit({ ...session.job, reply });
-      });
+      let reply = "Done.";
+      try {
+        await waitForLoop(context, started.id, toolContext.signal);
+        const output = context.loops.get(started.id)?.output?.trim() ?? "";
+        if (output.length > 0) {
+          reply = output;
+        }
+      } catch (error) {
+        reply = error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : "The designer stopped.";
+        await remember(jobs, reply);
+        throw error;
+      }
+      await remember(jobs, reply);
       return { type: "asked" };
     },
   });
@@ -419,6 +436,7 @@ async function project(context: PluginContext, job: Job) {
       .map((seat) => ({ id: seat.id, name: seat.name })),
     scene: job.scene,
     reply: job.reply,
+    turns: job.turns.map((turn) => ({ role: turn.role, text: turn.text })),
     inspection,
     machine: job.machine,
     quoteSent: job.quoteSent
@@ -453,13 +471,22 @@ function wire(inspection: Inspection) {
   };
 }
 
+async function remember(jobs: JobWriter, reply: string): Promise<void> {
+  await jobs.run(async (session) => {
+    session.commit({
+      ...session.job,
+      reply,
+      turns: [...session.job.turns, { role: "designer", text: reply }],
+    });
+  });
+}
+
 async function waitForLoop(
   context: PluginContext,
   runId: string,
   signal: AbortSignal,
 ): Promise<void> {
-  const started = Date.now();
-  while (Date.now() - started < 10_000) {
+  for (;;) {
     signal.throwIfAborted();
     const snapshot = context.loops.get(runId);
     if (!snapshot) {
@@ -471,7 +498,6 @@ async function waitForLoop(
     if (snapshot.status === "failed" || snapshot.status === "cancelled") {
       throw new Error(snapshot.error ?? `Designer loop ${snapshot.status}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await new Promise((resolve) => setTimeout(resolve, 30));
   }
-  throw new Error(`Designer loop ${runId} did not finish`);
 }

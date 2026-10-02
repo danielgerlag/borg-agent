@@ -16,6 +16,7 @@
     "@borg-agent/plugin-sdk": "workspace:*",
     "@borg/plugin-channel-mock": "workspace:*",
     "@borg/plugin-config-sqlite": "workspace:*",
+    "@borg/plugin-feedback": "workspace:*",
     "@borg/plugin-secrets-dev": "workspace:*",
     "@borg/plugin-security-prompt-injection": "workspace:*",
     "@borg/ui-kit": "workspace:*",

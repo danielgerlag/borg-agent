@@ -8,6 +8,7 @@ import configSqlite from "@borg/plugin-config-sqlite/main";
 import secretsDev from "@borg/plugin-secrets-dev/main";
 import channelMock from "@borg/plugin-channel-mock/main";
 import promptInjection from "@borg/plugin-security-prompt-injection/main";
+import feedback from "@borg/plugin-feedback/main";
 import printBench from "./main.js";
 
 const require = createRequire(import.meta.url);
@@ -37,6 +38,7 @@ export async function startPrintBench(dataDirectory: string): Promise<Kernel> {
       "borg.secrets.dev",
       "borg.channel.mock",
       "borg.security.prompt-injection",
+      "borg.feedback",
       "example.print-bench",
     ],
     defaults: { models: ["example.print-bench:scripted"] },
@@ -59,6 +61,10 @@ export async function startPrintBench(dataDirectory: string): Promise<Kernel> {
       {
         manifest: manifestFromPackage("@borg/plugin-security-prompt-injection"),
         loadMain: async () => promptInjection,
+      },
+      {
+        manifest: manifestFromPackage("@borg/plugin-feedback"),
+        loadMain: async () => feedback,
       },
       { manifest: ownManifest(), loadMain: async () => printBench },
     ],

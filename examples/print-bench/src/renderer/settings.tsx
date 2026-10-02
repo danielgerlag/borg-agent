@@ -22,7 +22,7 @@ const seatTools: Record<string, readonly string[]> = {
     "Add a box, cylinder, sphere, or cone",
     "Move, rotate, and scale the selection",
     "Delete the selection",
-    "Build from a prompt",
+    "Talk to the designer. It edits the model and asks when a shape or a size is missing",
     "Change seat",
   ],
   [frontDeskPersonaId]: ["Send the quote", "Change seat"],
@@ -121,13 +121,13 @@ export function SettingsView(
           <Show when={props.section === "model"}>
             <h2 class="mb-2 text-2xl font-semibold">Model</h2>
             <p class="mb-5 text-sm text-[var(--text-muted)]">
-              Build on Design sends the prompt to this model. It adds, moves, or deletes solids. The palette calls those same tools without the model.
+              Send on Design starts a designer turn on this model. It can add, move, and delete solids, and it asks when it needs a shape or a size. The palette calls the same solid tools without the model.
             </p>
             <Panel>
               <dl class="grid gap-3 text-sm">
                 <Row label="Provider" value="example.print-bench" />
                 <Row label="Model" value="scripted" />
-                <Row label="Tool it may call" value="Propose a change" />
+                <Row label="Tools it may call" value="Add, move, delete, and ask" />
               </dl>
             </Panel>
           </Show>

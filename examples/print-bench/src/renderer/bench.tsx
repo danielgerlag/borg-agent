@@ -36,8 +36,14 @@ export function Bench() {
     void refresh().catch((caught: unknown) => setError(messageOf(caught)));
   });
 
+  let snapshotToken = 0;
+
   async function refresh(): Promise<void> {
-    setSnapshot(snapshotSchema.parse(await benchApi().command.invoke(printBenchSnapshot.id, {})));
+    const token = ++snapshotToken;
+    const next = snapshotSchema.parse(await benchApi().command.invoke(printBenchSnapshot.id, {}));
+    if (token === snapshotToken) {
+      setSnapshot(next);
+    }
   }
 
   async function run(input: ActInput): Promise<void> {
@@ -47,15 +53,22 @@ export function Bench() {
     setBusy(true);
     setError(null);
     const stop = watchApprovals();
+    const timer = setInterval(() => {
+      void refresh().catch(() => undefined);
+    }, 200);
     try {
       const result = printBenchAct.output.parse(
         await benchApi().command.invoke(printBenchAct.id, input),
       );
-      setSnapshot(result.snapshot);
+      const token = ++snapshotToken;
+      if (token === snapshotToken) {
+        setSnapshot(result.snapshot);
+      }
     } catch (caught) {
       setError(messageOf(caught));
       await refresh().catch(() => undefined);
     } finally {
+      clearInterval(timer);
       stop();
       setPending(null);
       setBusy(false);
@@ -127,13 +140,34 @@ export function Bench() {
             />
           </aside>
           <main class="min-h-0 min-w-0 overflow-hidden">
+            <Show when={pending()?.kind === "human_input" && surface() !== "design"}>
+              <button
+                type="button"
+                class="w-full border-b border-[var(--border)] px-5 py-2 text-left text-sm text-[var(--accent)]"
+                onClick={() => setSurface("design")}
+              >
+                The designer asked a question.
+              </button>
+            </Show>
             <Show when={error()}>
               <p class="border-b border-[var(--border)] px-5 py-2 text-sm text-[var(--danger)]">{error()}</p>
             </Show>
             <Show when={surface() === "design" || surface() === "quote" || surface() === "printer"}>
               <div class="h-full min-h-0" data-testid="surface-workspace">
                 <Show when={surface() === "design"}>
-                  <DesignView snapshot={current()} busy={busy()} run={(input) => void run(input)} />
+                  <DesignView
+                    snapshot={current()}
+                    busy={busy()}
+                    pending={pending()}
+                    run={(input) => void run(input)}
+                    onAnswer={(response) => {
+                      const item = pending();
+                      if (!item) {
+                        return;
+                      }
+                      void benchApi().interactions.respond(item.id, response);
+                    }}
+                  />
                 </Show>
                 <Show when={surface() === "quote"}>
                   <QuoteView snapshot={current()} busy={busy()} run={(input) => void run(input)} />
@@ -162,7 +196,7 @@ export function Bench() {
               />
             </Show>
           </main>
-          <Show when={pending()}>
+          <Show when={pending()?.kind !== "human_input" ? pending() : undefined}>
             {(item) => (
               <div class="fixed inset-0 z-20 grid place-items-center bg-black/60 p-6">
                 <Panel data-testid="print-bench-approval" class="grid max-w-md gap-3">

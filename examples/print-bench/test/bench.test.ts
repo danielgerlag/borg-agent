@@ -137,6 +137,26 @@ describe("print bench", () => {
       /not allowed/,
     );
   }, 60_000);
+
+  it("asks for a missing size, then adds the solid", async () => {
+    dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
+    kernel = await startPrintBench(dataDirectory);
+    const asked = kernel.bus.invoke(printBenchAct, {
+      tool: promptToolId,
+      text: "a sphere",
+    });
+    void asked.catch(() => undefined);
+    const question = await waitForKind(kernel, "human_input", asked);
+    expect(question.prompt).toMatch(/radius/i);
+    expect(
+      kernel.interactions.respond(question.id, { kind: "text", text: "15" }),
+    ).toBe(true);
+    const done = await withTimeout(asked, 10_000, "designer did not finish after the answer");
+    expect(done.snapshot.scene.bodies.map((body) => body.kind)).toEqual(["sphere"]);
+    expect(done.snapshot.turns.map((turn) => turn.role)).toEqual(["user", "designer"]);
+    expect(done.snapshot.inspection.kind).toBe("fail");
+    expect(done.snapshot.inspection.findings.map((finding) => finding.code)).toContain("overhang");
+  }, 60_000);
 });
 
 async function waitForKind(

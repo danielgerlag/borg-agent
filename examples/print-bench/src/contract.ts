@@ -6,6 +6,7 @@ export const transformToolId = "example.print-bench.transform";
 export const deleteToolId = "example.print-bench.delete";
 export const selectToolId = "example.print-bench.select";
 export const promptToolId = "example.print-bench.prompt";
+export const feedbackAskToolId = "feedback.ask";
 export const sendQuoteToolId = "example.print-bench.send-quote";
 export const startMachineToolId = "example.print-bench.start-machine";
 export const usePersonaToolId = "example.print-bench.use-persona";
@@ -189,6 +190,14 @@ export const snapshotSchema = z
     ),
     scene: sceneSchema,
     reply: z.string(),
+    turns: z.array(
+      z
+        .object({
+          role: z.enum(["user", "designer"]),
+          text: z.string().min(1),
+        })
+        .strict(),
+    ),
     inspection: inspectionSchema,
     machine: machineSchema,
     quoteSent: z

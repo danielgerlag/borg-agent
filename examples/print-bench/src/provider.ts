@@ -4,6 +4,7 @@ import {
   addToolId,
   bodySchema,
   deleteToolId,
+  feedbackAskToolId,
   transformToolId,
   type Primitive,
   type SceneBody,
@@ -23,6 +24,49 @@ export type PlannedCall =
   | { readonly name: typeof addToolId; readonly input: Primitive }
   | { readonly name: typeof transformToolId; readonly input: SceneBody }
   | { readonly name: typeof deleteToolId; readonly input: { readonly id: string } };
+
+export type DesignerStep =
+  | PlannedCall
+  | {
+      readonly name: typeof feedbackAskToolId;
+      readonly input: {
+        readonly title: string;
+        readonly prompt: string;
+        readonly form: "text";
+      };
+    }
+  | {
+      readonly name: typeof feedbackAskToolId;
+      readonly input: {
+        readonly title: string;
+        readonly prompt: string;
+        readonly form: "choice";
+        readonly choices: readonly { readonly id: string; readonly label: string }[];
+      };
+    }
+  | { readonly content: string };
+
+interface TurnMessage {
+  readonly role: string;
+  readonly content: string;
+  readonly toolCalls?: readonly { readonly name: string; readonly input?: unknown }[] | undefined;
+}
+
+const solidChoices = [
+  { id: "box", label: "Box" },
+  { id: "cylinder", label: "Cylinder" },
+  { id: "sphere", label: "Sphere" },
+  { id: "cone", label: "Cone" },
+] as const;
+
+export function nextDesignerStep(messages: readonly TurnMessage[], canAsk = true): DesignerStep {
+  const done = finished(messages);
+  if (done) {
+    return { content: done };
+  }
+  const user = messages.find((message) => message.role === "user")?.content ?? "";
+  return decide(user, answers(messages), canAsk);
+}
 
 export function planFromPrompt(text: string): PlannedCall | { readonly content: string } {
   const request = text.split("\n")[0]?.trim() ?? "";
@@ -55,23 +99,21 @@ export function registerScriptedModel(context: PluginContext): { dispose(): void
     async complete(request, permit, signal) {
       signal.throwIfAborted();
       await permit.commit();
-      const last = request.messages.at(-1);
-      if (last?.role === "tool") {
-        return { content: "Solid updated.", usage };
-      }
       const editable = [addToolId, transformToolId, deleteToolId].some((id) =>
         request.tools.some((tool) => tool.id === id),
       );
       if (!editable) {
         return { content: "This seat cannot edit the solid.", usage };
       }
-      const text = request.messages.find((message) => message.role === "user")?.content ?? "";
-      const planned = planFromPrompt(text);
-      if ("content" in planned) {
-        return { content: planned.content, usage };
+      const step = nextDesignerStep(
+        request.messages,
+        request.tools.some((tool) => tool.id === feedbackAskToolId),
+      );
+      if ("content" in step) {
+        return { content: step.content, usage };
       }
       return {
-        toolCalls: [{ id: randomUUID(), name: planned.name, input: planned.input }],
+        toolCalls: [{ id: randomUUID(), name: step.name, input: step.input }],
         usage,
       };
     },
@@ -193,4 +235,178 @@ function readSelection(text: string): string | undefined {
 function numbers(text: string, signed: boolean): number[] {
   const pattern = signed ? /-?\d+(?:\.\d+)?/gu : /\d+(?:\.\d+)?/gu;
   return [...text.matchAll(pattern)].map((match) => Number(match[0])).filter((value) => Number.isFinite(value));
+}
+
+function decide(user: string, replies: readonly string[], canAsk: boolean): DesignerStep {
+  const lines = user.split("\n");
+  const brief = lines[0]?.trim() ?? "";
+  const spoken = [brief, ...replies].filter((part) => part.length > 0).join(" ");
+  const sceneText = [spoken, ...lines.slice(1)].join("\n");
+  const lower = spoken.toLowerCase();
+  if (/\b(delete|remove)\b/u.test(lower)) {
+    return planFromPrompt(sceneText);
+  }
+  if (/\b(move|translate|shift|rotate|turn|scale)\b/u.test(lower)) {
+    if (numbers(spoken, true).length === 0) {
+      if (replies.length > 0 || !canAsk) {
+        return replies.length > 0
+          ? { content: "I still need a distance, an angle, or a scale." }
+          : planFromPrompt(sceneText);
+      }
+      return askText(editQuestion(lower));
+    }
+    return planFromPrompt(sceneText);
+  }
+  const shape = mentionedShape(lower);
+  if (!shape) {
+    return canAsk && replies.length < 2
+      ? askChoice("Which solid should I add?", solidChoices)
+      : { content: help };
+  }
+  const dims = numbers(spoken, false).filter((value) => value > 0);
+  if (dims.length === 0) {
+    const last = replies.at(-1)?.toLowerCase() ?? "";
+    if (last.length > 0 && !mentionedShape(last) && numbers(last, false).every((value) => value <= 0)) {
+      return { content: "I still need a size in millimetres." };
+    }
+    return canAsk ? askText(dimensionQuestion(shape)) : planFromPrompt(sceneText);
+  }
+  return planFromPrompt(sceneText);
+}
+
+function finished(messages: readonly TurnMessage[]): string | undefined {
+  if (messages.at(-1)?.role !== "tool") {
+    return undefined;
+  }
+  const call = precedingCall(messages);
+  if (!call || call.name === feedbackAskToolId) {
+    return undefined;
+  }
+  if (call.name === addToolId) {
+    const kind = isRecord(call.input) && typeof call.input.kind === "string" ? call.input.kind : "solid";
+    return `Added a ${kind}.`;
+  }
+  if (call.name === deleteToolId) {
+    return "Removed the solid.";
+  }
+  if (call.name === transformToolId) {
+    return "Updated the solid.";
+  }
+  return "Solid updated.";
+}
+
+function answers(messages: readonly TurnMessage[]): string[] {
+  const found: string[] = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    const call = message?.toolCalls?.[0];
+    if (message?.role !== "assistant" || call?.name !== feedbackAskToolId) {
+      continue;
+    }
+    const follow = messages[index + 1];
+    if (follow?.role !== "tool") {
+      continue;
+    }
+    const text = answerText(follow.content);
+    if (text.length > 0) {
+      found.push(text);
+    }
+  }
+  return found;
+}
+
+function precedingCall(
+  messages: readonly TurnMessage[],
+): { readonly name: string; readonly input?: unknown } | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const call = messages[index]?.toolCalls?.[0];
+    if (call) {
+      return call;
+    }
+  }
+  return undefined;
+}
+
+function answerText(content: string): string {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (!isRecord(parsed) || !isRecord(parsed.answer)) {
+      return content.trim();
+    }
+    const answer = parsed.answer;
+    if (answer.kind === "choice" && typeof answer.choiceId === "string") {
+      return answer.choiceId;
+    }
+    if (answer.kind === "text" && typeof answer.text === "string") {
+      return answer.text.trim();
+    }
+    if (answer.kind === "confirm" && typeof answer.confirmed === "boolean") {
+      return answer.confirmed ? "yes" : "no";
+    }
+  } catch {
+    return content.trim();
+  }
+  return content.trim();
+}
+
+function mentionedShape(text: string): "cube" | "box" | "cylinder" | "sphere" | "cone" | undefined {
+  const mentions: { index: number; kind: "cube" | "box" | "cylinder" | "sphere" | "cone" }[] = [];
+  for (const [word, kind] of [
+    ["cube", "cube"],
+    ["box", "box"],
+    ["block", "box"],
+    ["cylinder", "cylinder"],
+    ["tube", "cylinder"],
+    ["sphere", "sphere"],
+    ["ball", "sphere"],
+    ["cone", "cone"],
+  ] as const) {
+    const index = text.indexOf(word);
+    if (index >= 0) {
+      mentions.push({ index, kind });
+    }
+  }
+  mentions.sort((left, right) => left.index - right.index);
+  return mentions[0]?.kind;
+}
+
+function dimensionQuestion(shape: string): string {
+  if (shape === "sphere") {
+    return "What radius should the sphere have, in millimetres?";
+  }
+  if (shape === "cylinder") {
+    return "What radius and height should the cylinder have, in millimetres?";
+  }
+  if (shape === "cone") {
+    return "What radius and height should the cone have, in millimetres?";
+  }
+  if (shape === "cube") {
+    return "What size should the cube be, in millimetres?";
+  }
+  return "What width, depth, and height should the box have, in millimetres?";
+}
+
+function editQuestion(lower: string): string {
+  if (/\bscale\b/u.test(lower)) {
+    return "What scale factor should I use?";
+  }
+  if (/\b(rotate|turn)\b/u.test(lower)) {
+    return "How many degrees should I rotate it?";
+  }
+  return "How far should I move it, in millimetres? Give x, y, and z.";
+}
+
+function askText(prompt: string): DesignerStep {
+  return { name: feedbackAskToolId, input: { title: "Designer", prompt, form: "text" } };
+}
+
+function askChoice(
+  prompt: string,
+  choices: readonly { readonly id: string; readonly label: string }[],
+): DesignerStep {
+  return { name: feedbackAskToolId, input: { title: "Designer", prompt, form: "choice", choices } };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -9,6 +9,7 @@ import {
   type Primitive,
 } from "../contract.js";
 import type { Body } from "../domain.js";
+import type { BenchAnswer, BenchInteraction } from "./bridge.js";
 import type { BenchControl } from "./control.js";
 import { Viewport } from "./viewport.js";
 
@@ -22,10 +23,25 @@ const palette: readonly { label: string; testid: string; solid: Primitive }[] = 
   { label: "Cone", testid: "print-bench-tool-cone", solid: { kind: "cone", radiusMm: 16, heightMm: 28 } },
 ];
 
-export function DesignView(props: BenchControl) {
+export function DesignView(
+  props: BenchControl & {
+    readonly pending: BenchInteraction | null;
+    onAnswer(response: BenchAnswer): void;
+  },
+) {
   const [mode, setMode] = createSignal<Mode>("translate");
   const [prompt, setPrompt] = createSignal("");
+  const [heldId, setHeldId] = createSignal<string | null>(null);
   const allowed = (toolId: string): boolean => props.snapshot.persona.allowedTools.includes(toolId);
+  const question = (): BenchInteraction | undefined =>
+    props.pending?.kind === "human_input" ? props.pending : undefined;
+  const holding = (): boolean => heldId() !== null && heldId() === question()?.id;
+  const lock = (): boolean => {
+    if (question()?.form === "text" && !holding()) {
+      return false;
+    }
+    return props.busy || !allowed(promptToolId) || holding();
+  };
   const selected = (): Body | undefined =>
     props.snapshot.scene.bodies.find((body) => body.id === props.snapshot.scene.selectedId);
   const replace = (body: Body): void => {
@@ -103,14 +119,96 @@ export function DesignView(props: BenchControl) {
           />
         </div>
         <div class="border-t border-[var(--border)] p-3">
+          <div data-testid="print-bench-transcript" class="mb-2 grid max-h-36 gap-2 overflow-y-auto text-sm">
+            <For each={props.snapshot.turns}>
+              {(turn) => (
+                <p class={turn.role === "user" ? "text-[var(--text-muted)]" : "text-[var(--text)]"}>
+                  <span class="mr-2 text-xs uppercase tracking-[0.14em] text-[var(--text-subtle)]">
+                    {turn.role === "user" ? "You" : "Designer"}
+                  </span>
+                  {turn.text}
+                </p>
+              )}
+            </For>
+            <Show when={question()}>
+              {(item) => (
+                <div data-testid="print-bench-question" class="grid gap-2">
+                  <p>
+                    <span class="mr-2 text-xs uppercase tracking-[0.14em] text-[var(--text-subtle)]">Designer</span>
+                    {item().prompt}
+                  </p>
+                  <Show when={item().form === "choice" ? item().choices : undefined}>
+                    {(choices) => (
+                      <div class="flex flex-wrap gap-2">
+                        <For each={choices()}>
+                          {(choice) => (
+                            <Button
+                              variant="secondary"
+                              data-testid={`print-bench-choice-${choice.id}`}
+                              disabled={holding()}
+                              onClick={() => {
+                                setHeldId(item().id);
+                                props.onAnswer({ kind: "choice", choiceId: choice.id });
+                              }}
+                            >
+                              {choice.label}
+                            </Button>
+                          )}
+                        </For>
+                      </div>
+                    )}
+                  </Show>
+                  <Show when={item().form === "confirm"}>
+                    <div class="flex gap-2">
+                      <Button
+                        data-testid="print-bench-confirm-yes"
+                        disabled={holding()}
+                        onClick={() => {
+                          setHeldId(item().id);
+                          props.onAnswer({ kind: "confirm", confirmed: true });
+                        }}
+                      >
+                        Yes
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        data-testid="print-bench-confirm-no"
+                        disabled={holding()}
+                        onClick={() => {
+                          setHeldId(item().id);
+                          props.onAnswer({ kind: "confirm", confirmed: false });
+                        }}
+                      >
+                        No
+                      </Button>
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </Show>
+            <Show when={props.busy && !question()}>
+              <p data-testid="print-bench-working" class="text-[var(--text-muted)]">Designer is working.</p>
+            </Show>
+          </div>
           <form
             class="flex gap-2"
             onSubmit={(event) => {
               event.preventDefault();
               const text = prompt().trim();
+              const current = question();
+              if (current?.form === "text") {
+                if (text.length === 0 || holding()) {
+                  return;
+                }
+                setHeldId(current.id);
+                setPrompt("");
+                props.onAnswer({ kind: "text", text });
+                return;
+              }
               if (text.length === 0 || props.busy || !allowed(promptToolId)) {
                 return;
               }
+              setPrompt("");
               props.run({ tool: promptToolId, text });
             }}
           >
@@ -118,20 +216,15 @@ export function DesignView(props: BenchControl) {
               class="min-w-0 flex-1"
               value={prompt()}
               onChange={setPrompt}
-              placeholder="A box 80 by 40 by 20, a cylinder, a sphere…"
+              placeholder={question()?.form === "text" ? "Your answer" : "Tell the designer what to change"}
               aria-label="Prompt"
               data-testid="print-bench-prompt"
-              disabled={props.busy || !allowed(promptToolId)}
+              disabled={lock()}
             />
-            <Button type="submit" data-testid="print-bench-build" disabled={props.busy || !allowed(promptToolId)}>
-              Build
+            <Button type="submit" data-testid="print-bench-build" disabled={lock()}>
+              {question()?.form === "text" ? "Answer" : "Send"}
             </Button>
           </form>
-          <Show when={props.snapshot.reply.length > 0}>
-            <p class="pt-2 text-sm text-[var(--text-muted)]" data-testid="print-bench-reply">
-              {props.snapshot.reply}
-            </p>
-          </Show>
         </div>
       </div>
       <aside class="min-h-0 overflow-y-auto border-t border-[var(--border)] p-4 lg:border-t-0 lg:border-l">

@@ -55,7 +55,10 @@ describe("print bench window", () => {
     await expect(page.getByTestId("print-bench-quote")).toContainText("USD");
     await page.getByTestId("workspace-view-tab-print-bench.design").click();
 
-    await page.getByTestId("print-bench-prompt").fill("add a sphere radius 15");
+    await page.getByTestId("print-bench-prompt").fill("a sphere");
+    await page.getByTestId("print-bench-build").click();
+    await expect(page.getByTestId("print-bench-question")).toContainText("radius", { timeout: 20_000 });
+    await page.getByTestId("print-bench-prompt").fill("15");
     await page.getByTestId("print-bench-build").click();
     await expect(findings).toContainText("Overhang", { timeout: 20_000 });
     await page.getByTestId("workspace-view-tab-print-bench.quote").click();

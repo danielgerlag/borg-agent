@@ -326,6 +326,9 @@ importers:
       '@borg/plugin-config-sqlite':
         specifier: workspace:*
         version: link:../../plugins/config-sqlite
+      '@borg/plugin-feedback':
+        specifier: workspace:*
+        version: link:../../plugins/feedback
       '@borg/plugin-secrets-dev':
         specifier: workspace:*
         version: link:../../plugins/secrets-dev
