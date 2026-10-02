@@ -5,10 +5,13 @@ import {
   bodySchema,
   deleteToolId,
   feedbackAskToolId,
+  placeToolId,
   transformToolId,
+  type PlacedPart,
   type Primitive,
   type SceneBody,
 } from "./contract.js";
+import { gearParts, type GearSpec } from "./gear.js";
 
 const usage = {
   inputTokens: 8,
@@ -18,12 +21,13 @@ const usage = {
 };
 
 const help =
-  "Name a box, cube, cylinder, sphere, or cone, with millimetres. Move, rotate, scale, and delete use the selection.";
+  "Name a gear, or a box, cube, cylinder, sphere, or cone, with millimetres. Move, rotate, scale, and delete use the selection.";
 
 export type PlannedCall =
   | { readonly name: typeof addToolId; readonly input: Primitive }
   | { readonly name: typeof transformToolId; readonly input: SceneBody }
-  | { readonly name: typeof deleteToolId; readonly input: { readonly id: string } };
+  | { readonly name: typeof deleteToolId; readonly input: { readonly id: string } }
+  | { readonly name: typeof placeToolId; readonly input: { readonly parts: readonly PlacedPart[] } };
 
 export type DesignerStep =
   | PlannedCall
@@ -51,13 +55,6 @@ interface TurnMessage {
   readonly content: string;
   readonly toolCalls?: readonly { readonly name: string; readonly input?: unknown }[] | undefined;
 }
-
-const solidChoices = [
-  { id: "box", label: "Box" },
-  { id: "cylinder", label: "Cylinder" },
-  { id: "sphere", label: "Sphere" },
-  { id: "cone", label: "Cone" },
-] as const;
 
 export function nextDesignerStep(messages: readonly TurnMessage[], canAsk = true): DesignerStep {
   const done = finished(messages);
@@ -99,7 +96,7 @@ export function registerScriptedModel(context: PluginContext): { dispose(): void
     async complete(request, permit, signal) {
       signal.throwIfAborted();
       await permit.commit();
-      const editable = [addToolId, transformToolId, deleteToolId].some((id) =>
+      const editable = [addToolId, placeToolId, transformToolId, deleteToolId].some((id) =>
         request.tools.some((tool) => tool.id === id),
       );
       if (!editable) {
@@ -257,10 +254,13 @@ function decide(user: string, replies: readonly string[], canAsk: boolean): Desi
     }
     return planFromPrompt(sceneText);
   }
+  if (/\bgears?\b/u.test(lower)) {
+    return { name: placeToolId, input: { parts: gearParts(readGearSpec(spoken)) } };
+  }
   const shape = mentionedShape(lower);
   if (!shape) {
-    return canAsk && replies.length < 2
-      ? askChoice("Which solid should I add?", solidChoices)
+    return canAsk && replies.length === 0
+      ? askText("Name a gear, or a box, cylinder, sphere, or cone, and the millimetres.")
       : { content: help };
   }
   const dims = numbers(spoken, false).filter((value) => value > 0);
@@ -285,6 +285,9 @@ function finished(messages: readonly TurnMessage[]): string | undefined {
   if (call.name === addToolId) {
     const kind = isRecord(call.input) && typeof call.input.kind === "string" ? call.input.kind : "solid";
     return `Added a ${kind}.`;
+  }
+  if (call.name === placeToolId) {
+    return placedSentence(messages, call.input);
   }
   if (call.name === deleteToolId) {
     return "Removed the solid.";
@@ -400,11 +403,54 @@ function askText(prompt: string): DesignerStep {
   return { name: feedbackAskToolId, input: { title: "Designer", prompt, form: "text" } };
 }
 
-function askChoice(
-  prompt: string,
-  choices: readonly { readonly id: string; readonly label: string }[],
-): DesignerStep {
-  return { name: feedbackAskToolId, input: { title: "Designer", prompt, form: "choice", choices } };
+function readGearSpec(text: string): GearSpec {
+  const lower = text.toLowerCase();
+  const teeth = firstNumber(lower, /(\d+(?:\.\d+)?)\s*-?\s*(?:teeth|tooth)\b/u);
+  const thickness = firstNumber(lower, /(\d+(?:\.\d+)?)\s*(?:mm\s+)?(?:thick|thickness)\b/u);
+  const withoutCounts = lower
+    .replace(/\d+(?:\.\d+)?\s*-?\s*(?:teeth|tooth)\b/gu, " ")
+    .replace(/\d+(?:\.\d+)?\s*(?:mm\s+)?(?:thick|thickness)\b/gu, " ");
+  const diameter =
+    firstNumber(withoutCounts, /\b(?:diameter|across|wide)\s+(\d+(?:\.\d+)?)/u) ??
+    firstNumber(withoutCounts, /(\d+(?:\.\d+)?)\s*(?:mm|millimetres|millimeters)\b/u);
+  return {
+    teeth: teeth ?? 8,
+    diameterMm: diameter ?? 40,
+    thicknessMm: thickness ?? 8,
+  };
+}
+
+function firstNumber(text: string, pattern: RegExp): number | undefined {
+  const match = text.match(pattern);
+  const raw = match?.[1];
+  if (raw === undefined) {
+    return undefined;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function placedSentence(messages: readonly TurnMessage[], input: unknown): string {
+  const user = messages.find((message) => message.role === "user")?.content ?? "";
+  const gear = gearSentence(input);
+  if (/\bgears?\b/u.test(user) && gear) {
+    return gear;
+  }
+  const count = isRecord(input) && Array.isArray(input.parts) ? input.parts.length : 0;
+  return count === 1 ? "Placed the solid." : `Placed ${count} solids.`;
+}
+
+function gearSentence(input: unknown): string | undefined {
+  if (!isRecord(input) || !Array.isArray(input.parts)) {
+    return undefined;
+  }
+  const parts = input.parts.filter(isRecord);
+  const teeth = parts.filter((part) => part.kind === "box").length;
+  const disc = parts.find((part) => part.kind === "cylinder");
+  if (!disc || teeth === 0 || typeof disc.radiusMm !== "number") {
+    return undefined;
+  }
+  return `Drew a gear with ${teeth} teeth, ${Math.round(disc.radiusMm * 2)} mm across.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -26,7 +26,7 @@ const palette: readonly { label: string; testid: string; solid: Primitive }[] = 
 export function DesignView(
   props: BenchControl & {
     readonly pending: BenchInteraction | null;
-    onAnswer(response: BenchAnswer): void;
+    onAnswer(response: BenchAnswer): Promise<boolean>;
   },
 ) {
   const [mode, setMode] = createSignal<Mode>("translate");
@@ -36,11 +36,30 @@ export function DesignView(
   const question = (): BenchInteraction | undefined =>
     props.pending?.kind === "human_input" ? props.pending : undefined;
   const holding = (): boolean => heldId() !== null && heldId() === question()?.id;
+  const asking = (): boolean => {
+    const form = question()?.form;
+    return form === "text" || form === "choice";
+  };
   const lock = (): boolean => {
-    if (question()?.form === "text" && !holding()) {
+    if (asking() && !holding()) {
       return false;
     }
     return props.busy || !allowed(promptToolId) || holding();
+  };
+  const answer = (response: BenchAnswer): void => {
+    const current = question();
+    if (!current || holding()) {
+      return;
+    }
+    setHeldId(current.id);
+    void props.onAnswer(response).then(
+      (accepted) => {
+        if (!accepted) {
+          setHeldId(null);
+        }
+      },
+      () => setHeldId(null),
+    );
   };
   const selected = (): Body | undefined =>
     props.snapshot.scene.bodies.find((body) => body.id === props.snapshot.scene.selectedId);
@@ -143,13 +162,10 @@ export function DesignView(
                         <For each={choices()}>
                           {(choice) => (
                             <Button
-                              variant="secondary"
+                              type="button"
                               data-testid={`print-bench-choice-${choice.id}`}
-                              disabled={holding()}
-                              onClick={() => {
-                                setHeldId(item().id);
-                                props.onAnswer({ kind: "choice", choiceId: choice.id });
-                              }}
+                              {...(holding() ? { disabled: true } : {})}
+                              onClick={() => answer({ kind: "choice", choiceId: choice.id })}
                             >
                               {choice.label}
                             </Button>
@@ -161,23 +177,19 @@ export function DesignView(
                   <Show when={item().form === "confirm"}>
                     <div class="flex gap-2">
                       <Button
+                        type="button"
                         data-testid="print-bench-confirm-yes"
-                        disabled={holding()}
-                        onClick={() => {
-                          setHeldId(item().id);
-                          props.onAnswer({ kind: "confirm", confirmed: true });
-                        }}
+                        {...(holding() ? { disabled: true } : {})}
+                        onClick={() => answer({ kind: "confirm", confirmed: true })}
                       >
                         Yes
                       </Button>
                       <Button
+                        type="button"
                         variant="secondary"
                         data-testid="print-bench-confirm-no"
-                        disabled={holding()}
-                        onClick={() => {
-                          setHeldId(item().id);
-                          props.onAnswer({ kind: "confirm", confirmed: false });
-                        }}
+                        {...(holding() ? { disabled: true } : {})}
+                        onClick={() => answer({ kind: "confirm", confirmed: false })}
                       >
                         No
                       </Button>
@@ -200,9 +212,20 @@ export function DesignView(
                 if (text.length === 0 || holding()) {
                   return;
                 }
-                setHeldId(current.id);
                 setPrompt("");
-                props.onAnswer({ kind: "text", text });
+                answer({ kind: "text", text });
+                return;
+              }
+              if (current?.form === "choice") {
+                const typed = text.toLowerCase();
+                const match = current.choices?.find(
+                  (choice) => choice.id.toLowerCase() === typed || choice.label.toLowerCase() === typed,
+                );
+                if (!match || text.length === 0 || holding()) {
+                  return;
+                }
+                setPrompt("");
+                answer({ kind: "choice", choiceId: match.id });
                 return;
               }
               if (text.length === 0 || props.busy || !allowed(promptToolId)) {
@@ -216,13 +239,13 @@ export function DesignView(
               class="min-w-0 flex-1"
               value={prompt()}
               onChange={setPrompt}
-              placeholder={question()?.form === "text" ? "Your answer" : "Tell the designer what to change"}
+              placeholder={asking() ? "Your answer" : "Tell the designer what to change"}
               aria-label="Prompt"
               data-testid="print-bench-prompt"
-              disabled={lock()}
+              {...(lock() ? { disabled: true } : {})}
             />
-            <Button type="submit" data-testid="print-bench-build" disabled={lock()}>
-              {question()?.form === "text" ? "Answer" : "Send"}
+            <Button type="submit" data-testid="print-bench-build" {...(lock() ? { disabled: true } : {})}>
+              {asking() ? "Answer" : "Send"}
             </Button>
           </form>
         </div>

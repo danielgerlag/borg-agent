@@ -10,6 +10,8 @@ import {
   designerPersonaId,
   feedbackAskToolId,
   effectSchema,
+  placeInputSchema,
+  placeToolId,
   primitiveSchema,
   printBenchAct,
   printBenchSnapshot,
@@ -20,6 +22,7 @@ import {
   startMachineToolId,
   transformToolId,
   usePersonaToolId,
+  type PlacedPart,
   type Primitive,
 } from "./contract.js";
 import { createJobWriter, withScene, type Job, type JobWriter } from "./job.js";
@@ -59,6 +62,7 @@ export default definePlugin({
     const jobs = createJobWriter(context.store);
     const tools = [
       addTool(jobs),
+      placeTool(jobs),
       transformTool(jobs),
       deleteTool(jobs),
       selectTool(jobs),
@@ -121,6 +125,33 @@ function addTool(jobs: JobWriter) {
             bodies: [...session.job.scene.bodies, body],
             selectedId: body.id,
           }, ""),
+        );
+      });
+      return { type: "revised" };
+    },
+  });
+}
+
+function placeTool(jobs: JobWriter) {
+  return defineTool({
+    id: placeToolId,
+    description: "Place one or more solids, each with its own position and rotation, in one edit.",
+    input: placeInputSchema,
+    output: effectSchema,
+    approval: "auto",
+    sideEffect: true,
+    async execute(input): Promise<Effect> {
+      await jobs.run(async (session) => {
+        const added = input.parts.map((part) => placedBody(part, randomUUID()));
+        session.commit(
+          withScene(
+            session.job,
+            {
+              bodies: [...session.job.scene.bodies, ...added],
+              selectedId: added.at(-1)?.id ?? session.job.scene.selectedId,
+            },
+            "",
+          ),
         );
       });
       return { type: "revised" };
@@ -217,7 +248,7 @@ function promptTool(context: PluginContext, jobs: JobWriter) {
         });
       });
       const job = await jobs.read();
-      // The loop calls add, transform, and feedback.ask, which must not wait behind this writer.
+      // The loop calls the solid tools and feedback.ask, which must not wait behind this writer.
       const started = await context.loops.start({
         prompt: [
           input.text,
@@ -225,12 +256,20 @@ function promptTool(context: PluginContext, jobs: JobWriter) {
           `Scene: ${JSON.stringify(job.scene.bodies)}`,
         ].join("\n"),
         personaId: designerPersonaId,
-        allowedTools: [addToolId, transformToolId, deleteToolId, selectToolId, feedbackAskToolId],
+        allowedTools: [
+          addToolId,
+          placeToolId,
+          transformToolId,
+          deleteToolId,
+          selectToolId,
+          feedbackAskToolId,
+        ],
         providerId: "example.print-bench",
         modelId: "scripted",
         security: {
           kind: "root",
-          subject: { kind: "print-bench", id: "model" },
+          // A repeated subject resumes the same root, and the loop closes that root when the turn ends.
+          subject: { kind: "print-bench", id: randomUUID() },
           classification: "confidential",
           provenance: { kind: "user", id: "bench" },
           operationPrefix: modelOperationPrefixSchema.parse("example.print-bench"),
@@ -351,6 +390,20 @@ function personaTool(context: PluginContext, jobs: JobWriter) {
       return { type: "persona" };
     },
   });
+}
+
+function placedBody(part: PlacedPart, id: string): Body {
+  switch (part.kind) {
+    case "box":
+    case "cylinder":
+    case "cone":
+    case "sphere":
+      return { id, ...part };
+    default: {
+      const unreachable: never = part;
+      return unreachable;
+    }
+  }
 }
 
 function materialize(input: Primitive, id: string): Body {

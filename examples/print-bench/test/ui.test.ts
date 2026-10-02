@@ -97,5 +97,17 @@ describe("print bench window", () => {
     await expect(page.getByTestId("print-bench-send")).toBeDisabled();
     await page.getByTestId("workspace-view-tab-print-bench.printer").click();
     await expect(page.getByTestId("print-bench-start")).toBeDisabled();
+
+    await page.getByTestId("workspace-view-tab-print-bench.design").click();
+    await expect(page.getByTestId("print-bench-prompt")).toBeEnabled();
+    await page.getByTestId("print-bench-prompt").fill("draw a gear");
+    await page.getByTestId("print-bench-build").click();
+    await expect(page.getByTestId("print-bench-transcript")).toContainText(
+      "Drew a gear with 8 teeth, 40 mm across.",
+      { timeout: 20_000 },
+    );
+    await expect(page.getByTestId("print-bench-question")).toHaveCount(0);
+    await expect(page.getByTestId("print-bench-choice-box")).toHaveCount(0);
+    await expect(page.getByText("The bed is empty")).toHaveCount(0);
   }, 60_000);
 });

@@ -2,6 +2,7 @@ import { defineCommand } from "@borg-agent/contracts";
 import { z } from "@borg-agent/plugin-sdk";
 
 export const addToolId = "example.print-bench.add";
+export const placeToolId = "example.print-bench.place";
 export const transformToolId = "example.print-bench.transform";
 export const deleteToolId = "example.print-bench.delete";
 export const selectToolId = "example.print-bench.select";
@@ -66,6 +67,49 @@ export const bodySchema = z.discriminatedUnion("kind", [
     })
     .strict(),
 ]);
+
+export const placedPartSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("box"),
+      widthMm: z.number().positive(),
+      depthMm: z.number().positive(),
+      heightMm: z.number().positive(),
+      ...pose,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("cylinder"),
+      radiusMm: z.number().positive(),
+      heightMm: z.number().positive(),
+      ...pose,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("cone"),
+      radiusMm: z.number().positive(),
+      heightMm: z.number().positive(),
+      ...pose,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("sphere"),
+      radiusMm: z.number().positive(),
+      ...pose,
+    })
+    .strict(),
+]);
+
+export const placeInputSchema = z
+  .object({
+    parts: z.array(placedPartSchema).min(1).max(48),
+  })
+  .strict();
+
+export type PlacedPart = z.infer<typeof placedPartSchema>;
 
 export const primitiveSchema = z.discriminatedUnion("kind", [
   z

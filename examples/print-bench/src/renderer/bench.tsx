@@ -160,12 +160,12 @@ export function Bench() {
                     busy={busy()}
                     pending={pending()}
                     run={(input) => void run(input)}
-                    onAnswer={(response) => {
+                    onAnswer={async (response) => {
                       const item = pending();
                       if (!item) {
-                        return;
+                        return false;
                       }
-                      void benchApi().interactions.respond(item.id, response);
+                      return benchApi().interactions.respond(item.id, response);
                     }}
                   />
                 </Show>

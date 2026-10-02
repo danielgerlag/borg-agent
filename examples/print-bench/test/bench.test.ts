@@ -157,6 +157,45 @@ describe("print bench", () => {
     expect(done.snapshot.inspection.kind).toBe("fail");
     expect(done.snapshot.inspection.findings.map((finding) => finding.code)).toContain("overhang");
   }, 60_000);
+
+  it("draws a gear without asking which solid", async () => {
+    dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
+    kernel = await startPrintBench(dataDirectory);
+    const drawn = kernel.bus.invoke(printBenchAct, {
+      tool: promptToolId,
+      text: "draw a gear",
+    });
+    void drawn.catch(() => undefined);
+    const done = await withTimeout(drawn, 10_000, "gear did not finish");
+    expect(kernel.interactions.listPending()).toEqual([]);
+    const kinds = done.snapshot.scene.bodies.map((body) => body.kind);
+    expect(kinds.filter((kind) => kind === "cylinder")).toEqual(["cylinder"]);
+    expect(kinds.filter((kind) => kind === "box")).toHaveLength(8);
+    expect(done.snapshot.reply).toBe("Drew a gear with 8 teeth, 40 mm across.");
+    expect(done.snapshot.turns.map((turn) => turn.role)).toEqual(["user", "designer"]);
+    const disc = done.snapshot.scene.bodies.find((body) => body.kind === "cylinder");
+    expect(disc?.kind === "cylinder" ? disc.position.z : 0).toBeGreaterThan(0);
+  }, 60_000);
+
+  it("draws a gear after an earlier designer turn", async () => {
+    dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
+    kernel = await startPrintBench(dataDirectory);
+    const first = await kernel.bus.invoke(printBenchAct, {
+      tool: promptToolId,
+      text: "add a sphere radius 15",
+    });
+    expect(first.snapshot.scene.bodies.map((body) => body.kind)).toEqual(["sphere"]);
+    const drawn = kernel.bus.invoke(printBenchAct, {
+      tool: promptToolId,
+      text: "draw a gear",
+    });
+    void drawn.catch(() => undefined);
+    const done = await withTimeout(drawn, 10_000, "second designer turn did not finish");
+    expect(done.snapshot.reply).toBe("Drew a gear with 8 teeth, 40 mm across.");
+    expect(done.snapshot.scene.bodies.filter((body) => body.kind === "box")).toHaveLength(8);
+    expect(done.snapshot.scene.bodies.filter((body) => body.kind === "cylinder")).toHaveLength(1);
+    expect(done.snapshot.scene.bodies.filter((body) => body.kind === "sphere")).toHaveLength(1);
+  }, 60_000);
 });
 
 async function waitForKind(
