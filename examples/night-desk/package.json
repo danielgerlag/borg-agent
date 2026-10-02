@@ -1,0 +1,18 @@
+{
+  "name": "@borg/example-night-desk",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "main": "dist/main.js",
+  "dependencies": {
+    "@borg-agent/kernel": "workspace:*",
+    "@borg/plugin-config-sqlite": "workspace:*",
+    "@borg/plugin-secrets-dev": "workspace:*",
+    "@borg-agent/plugin-sdk": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js"
+  }
+}
