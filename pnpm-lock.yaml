@@ -309,6 +309,30 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/secrets-dev
 
+  examples/print-bench:
+    dependencies:
+      '@borg-agent/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg-agent/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@borg-agent/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/plugin-channel-mock':
+        specifier: workspace:*
+        version: link:../../plugins/channel-mock
+      '@borg/plugin-config-sqlite':
+        specifier: workspace:*
+        version: link:../../plugins/config-sqlite
+      '@borg/plugin-secrets-dev':
+        specifier: workspace:*
+        version: link:../../plugins/secrets-dev
+      '@borg/plugin-security-prompt-injection':
+        specifier: workspace:*
+        version: link:../../plugins/security-prompt-injection
+
   packages/contracts:
     dependencies:
       zod:

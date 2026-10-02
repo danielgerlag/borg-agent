@@ -1,0 +1,29 @@
+{
+  "id": "example.print-bench",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/example-print-bench/main",
+  "permissions": [
+    "tools.register",
+    "tools.invoke",
+    "models.register",
+    "loops.start",
+    "channels.send",
+    "personas.read",
+    "personas.write",
+    "ui.workspace"
+  ],
+  "contributes": {
+    "commands": [
+      "example.print-bench.snapshot",
+      "example.print-bench.act"
+    ],
+    "kinds": [
+      "tool",
+      "llmProvider",
+      "workspaceView"
+    ]
+  }
+}
