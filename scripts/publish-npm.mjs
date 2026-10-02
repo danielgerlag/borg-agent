@@ -8,12 +8,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const registry = "https://registry.npmjs.org";
 const repositoryUrl = "git+https://github.com/danielgerlag/borg-agent.git";
 
-// The npm org "borg" is taken. These publish under the danielgerlag user scope.
+// The npm org "borg" is taken. Publish under the borg-agent org.
 // The packed name, dependency names, and import specifiers are rewritten to match.
 const packages = [
-  ["@borg/contracts", "@danielgerlag/borg-contracts", "packages/contracts"],
-  ["@borg/plugin-sdk", "@danielgerlag/borg-plugin-sdk", "packages/plugin-sdk"],
-  ["@borg/kernel", "@danielgerlag/borg-kernel", "packages/kernel"],
+  ["@borg/contracts", "@borg-agent/contracts", "packages/contracts"],
+  ["@borg/plugin-sdk", "@borg-agent/plugin-sdk", "packages/plugin-sdk"],
+  ["@borg/kernel", "@borg-agent/kernel", "packages/kernel"],
 ];
 const publishedNames = new Map(packages.map(([workspace, npmName]) => [workspace, npmName]));
 const replacements = [...publishedNames.entries()].sort((a, b) => b[0].length - a[0].length);

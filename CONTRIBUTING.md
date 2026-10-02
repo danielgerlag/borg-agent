@@ -67,13 +67,13 @@ Rules for contributors:
 
 `.github/workflows/publish.yml` publishes three packages, in this order:
 
-1. `@danielgerlag/borg-contracts`
-2. `@danielgerlag/borg-plugin-sdk` (`@danielgerlag/borg-contracts` is a dependency)
-3. `@danielgerlag/borg-kernel` (both of the others are dependencies)
+1. `@borg-agent/contracts`
+2. `@borg-agent/plugin-sdk` (`@borg-agent/contracts` is a dependency)
+3. `@borg-agent/kernel` (both of the others are dependencies)
 
-The npm org `borg` is already registered to someone else. These packages publish under the user `danielgerlag`. Inside the repository the same three packages are still named `@borg/contracts`, `@borg/plugin-sdk`, and `@borg/kernel`. That is what the rest of the workspace imports.
+The npm org `borg` is already registered to someone else. These packages publish under the org `borg-agent`. Inside the repository the same three packages are still named `@borg/contracts`, `@borg/plugin-sdk`, and `@borg/kernel`. That is what the rest of the workspace imports.
 
-`scripts/publish-npm.mjs` packs each package and rewrites each `workspace:*` dependency to the version in that package's `package.json`. It then rewrites the package name, the dependency names, and those three import specifiers in the tarball, including subpaths such as `@borg/contracts/calendar`. It publishes that tarball to `https://registry.npmjs.org`. The root package, the desktop app, and every plugin stay private. A consumer can install `@danielgerlag/borg-kernel` after all three versions are on npm.
+`scripts/publish-npm.mjs` packs each package and rewrites each `workspace:*` dependency to the version in that package's `package.json`. It then rewrites the package name, the dependency names, and those three import specifiers in the tarball, including subpaths such as `@borg/contracts/calendar`. It publishes that tarball to `https://registry.npmjs.org`. The root package, the desktop app, and every plugin stay private. A consumer can install `@borg-agent/kernel` after all three versions are on npm.
 
 Run **Publish npm packages** from the Actions tab, on `main`, after CI is green. The workflow publishes the versions already committed in those three files. It skips a package whose version is already on npm. Bump the version in git before you publish again. The workflow does not change versions.
 
@@ -84,10 +84,10 @@ The workflow cannot answer an interactive 2FA prompt. Log in with a granular acc
 Use a token for the first publish. npm will not attach a trusted publisher to a package that does not exist yet.
 
 1. Sign in at [npmjs.com](https://www.npmjs.com) and turn on 2FA for the account.
-2. Publish from the npm user `danielgerlag`. The scope in `@danielgerlag/borg-kernel` is that user. Package access is a separate setting on the token.
+2. Create the npm org `borg-agent` if you do not already own it, and make your account an owner. The scope in `@borg-agent/kernel` is that org. Org membership alone does not let a token publish. Package access is a separate setting on the token.
 3. Open your profile menu, then **Access Tokens**, then **Generate New Token**.
 4. Check **Bypass two-factor authentication**. A workflow cannot enter a one-time code. Leave **Allowed IP ranges** empty. GitHub-hosted runner addresses change.
-5. Under **Packages and scopes**, set the permission to **Read and write (publish and stage)**. Choose **Only select packages and scopes**, and select the `danielgerlag` scope. That covers the first publish of these three names. **Read and write (stage only)** cannot run `npm publish`.
+5. Under **Packages and scopes**, set the permission to **Read and write (publish and stage)**. Choose **Only select packages and scopes**, and select the `borg-agent` scope. That covers the first publish of these three names. **Read and write (stage only)** cannot run `npm publish`.
 6. Set an expiration. Copy the token from the next screen. npm shows the full token only once.
 7. In the GitHub repo, open **Settings**, then **Secrets and variables**, then **Actions**, then **New repository secret**. Name it `NPM_TOKEN` and paste the token.
 
@@ -97,7 +97,7 @@ Run the workflow with **auth** set to `token`. The secret is read as `secrets.NP
 
 After the first publish, prefer this login. npm gives that workflow run a short-lived credential. You do not store a token in GitHub.
 
-For each of `@danielgerlag/borg-contracts`, `@danielgerlag/borg-plugin-sdk`, and `@danielgerlag/borg-kernel`:
+For each of `@borg-agent/contracts`, `@borg-agent/plugin-sdk`, and `@borg-agent/kernel`:
 
 1. Open the package on npmjs.com and go to **Settings**, then **Trusted Publisher**.
 2. Choose **GitHub Actions**.
