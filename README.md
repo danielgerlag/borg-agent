@@ -127,7 +127,7 @@ corepack pnpm test:e2e
 
 **Desktop app** (`apps/desktop`). The Electron host that runs `borg.desktop`. `tests/e2e` holds its Playwright specs.
 
-**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above.
+**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above. [examples/night-desk](examples/night-desk), [examples/field-catalog](examples/field-catalog), and [examples/auction-clerk](examples/auction-clerk) each bundle a scripted model and the plugins that keep the domain rules. `node examples/night-desk/dist/main.js` prints `Night desk: pager-1 disk 98% full, mitigated by rotated the log and freed the volume`. `node examples/field-catalog/dist/main.js` prints `Field catalog: voucher FC-1042 for cicindela sexguttata at point pelee`. `node examples/auction-clerk/dist/main.js` prints `Auction clerk: lot 7 hammered at 15 to paddle 4`.
 
 ## Boundaries
 
