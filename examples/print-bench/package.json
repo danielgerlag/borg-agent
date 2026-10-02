@@ -30,7 +30,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node build-renderer.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
-    "start": "electron dist/electron-main.js"
+    "start": "npm run build && electron dist/electron-main.js"
   },
   "devDependencies": {
     "@types/three": "0.170.0"
