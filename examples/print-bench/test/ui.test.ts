@@ -27,6 +27,8 @@ describe("print bench window", () => {
     page.on("pageerror", (error) => {
       console.error(error);
     });
+    await expect(page.getByTestId("print-bench-tools")).toContainText("example.print-bench.ask");
+    await expect(page.getByTestId("print-bench-tools")).toContainText("Propose a revision");
     const findings = page.getByTestId("print-bench-findings");
     await expect(findings).toContainText("Wall", { timeout: 20_000 });
     await expect(findings).toContainText("Overhang");
@@ -44,22 +46,22 @@ describe("print bench window", () => {
     await page.getByTestId("print-bench-accept").click();
     await expect(page.getByTestId("print-bench-quote")).toContainText("USD");
 
-    await page.getByRole("button", { name: "Persona" }).click();
+    await page.getByRole("button", { name: "Seat" }).click();
     await page.getByRole("option", { name: "Front desk" }).click();
     await expect(page.getByTestId("print-bench-send")).toBeEnabled();
     await page.getByTestId("print-bench-send").click();
     await expect(page.getByTestId("print-bench-approval")).toContainText("classification");
     await page.getByTestId("print-bench-approval-allow").click();
-    await expect(page.getByTestId("print-bench-sent")).toHaveText("Sent");
+    await expect(page.getByTestId("print-bench-sent")).toHaveText("Quote sent");
 
-    await page.getByRole("button", { name: "Persona" }).click();
+    await page.getByRole("button", { name: "Seat" }).click();
     await page.getByRole("option", { name: "Operator" }).click();
     await page.getByTestId("print-bench-start").click();
     await expect(page.getByTestId("print-bench-approval")).toContainText("tool_approval");
     await page.getByTestId("print-bench-approval-allow").click();
-    await expect(page.getByTestId("print-bench-running")).toHaveText("Running");
+    await expect(page.getByTestId("print-bench-running")).toHaveText("Printer is running");
 
-    await page.getByRole("button", { name: "Persona" }).click();
+    await page.getByRole("button", { name: "Seat" }).click();
     await page.getByRole("option", { name: "Designer" }).click();
     await expect(page.getByTestId("print-bench-send")).toBeDisabled();
     await expect(page.getByTestId("print-bench-start")).toBeDisabled();

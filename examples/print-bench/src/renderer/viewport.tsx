@@ -22,10 +22,10 @@ export function Viewport(props: {
     const camera = new THREE.PerspectiveCamera(40, 1, 1, 4000);
     // The mesh is the printer frame: x across the bed, y toward the back, z up.
     camera.up.set(0, 0, 1);
-    camera.position.set(210, -170, 150);
-    camera.lookAt(40, 20, 16);
+    camera.position.set(150, -110, 90);
+    camera.lookAt(40, 20, 14);
     const controls = new OrbitControls(camera, element);
-    controls.target.set(40, 20, 16);
+    controls.target.set(40, 20, 14);
     controls.enableDamping = true;
     controls.update();
 
