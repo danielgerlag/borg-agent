@@ -1,5 +1,0 @@
-@import "tailwindcss";
-@import "@borg/example-ui-host/styles.css";
-@source "../../../../../packages/ui-kit";
-@source "../../";
-@source "../../../../ui-host/src";

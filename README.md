@@ -127,7 +127,7 @@ corepack pnpm test:e2e
 
 **Desktop app** (`apps/desktop`). The Electron host that runs `borg.desktop`. `tests/e2e` holds its Playwright specs.
 
-**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above. [examples/night-desk](examples/night-desk), [examples/field-catalog](examples/field-catalog), and [examples/auction-clerk](examples/auction-clerk) each open a window for one domain. The UI plugin calls the plugin that keeps the rules. After `pnpm build`, `pnpm --filter @borg/example-night-desk start` opens page p-19, `pnpm --filter @borg/example-field-catalog start` opens the specimen catalog, and `pnpm --filter @borg/example-auction-clerk start` opens lot 7. The same three examples still print one line from `node examples/<name>/dist/main.js`.
+**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above.
 
 ## Boundaries
 
