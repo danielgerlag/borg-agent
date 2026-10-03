@@ -1,4 +1,3 @@
-import { Button, Panel } from "@borg/ui-kit";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { benchApi, type BenchInteraction } from "./bridge.js";
 import {
@@ -10,17 +9,13 @@ import {
 } from "../contract.js";
 import { DesignView } from "./design.js";
 import { FlightDeck } from "./flight-deck.js";
-import { PrinterView } from "./printer.js";
-import { QuoteView } from "./quote.js";
 import { SettingsView } from "./settings.js";
 
-type Surface = "design" | "quote" | "printer" | "flight-deck" | "settings";
-type SettingsSection = "machine" | "seats" | "model";
+type Surface = "design" | "flight-deck" | "settings";
+type SettingsSection = "machine" | "model";
 
 const workspaceTabs: readonly { id: Surface; label: string; testId: string }[] = [
   { id: "design", label: "Design", testId: "workspace-view-tab-print-bench.design" },
-  { id: "quote", label: "Quote", testId: "workspace-view-tab-print-bench.quote" },
-  { id: "printer", label: "Printer", testId: "workspace-view-tab-print-bench.printer" },
 ];
 
 export function Bench() {
@@ -152,29 +147,21 @@ export function Bench() {
             <Show when={error()}>
               <p class="border-b border-[var(--border)] px-5 py-2 text-sm text-[var(--danger)]">{error()}</p>
             </Show>
-            <Show when={surface() === "design" || surface() === "quote" || surface() === "printer"}>
+            <Show when={surface() === "design"}>
               <div class="h-full min-h-0" data-testid="surface-workspace">
-                <Show when={surface() === "design"}>
-                  <DesignView
-                    snapshot={current()}
-                    busy={busy()}
-                    pending={pending()}
-                    run={(input) => void run(input)}
-                    onAnswer={async (response) => {
-                      const item = pending();
-                      if (!item) {
-                        return false;
-                      }
-                      return benchApi().interactions.respond(item.id, response);
-                    }}
-                  />
-                </Show>
-                <Show when={surface() === "quote"}>
-                  <QuoteView snapshot={current()} busy={busy()} run={(input) => void run(input)} />
-                </Show>
-                <Show when={surface() === "printer"}>
-                  <PrinterView snapshot={current()} busy={busy()} run={(input) => void run(input)} />
-                </Show>
+                <DesignView
+                  snapshot={current()}
+                  busy={busy()}
+                  pending={pending()}
+                  run={(input) => void run(input)}
+                  onAnswer={async (response) => {
+                    const item = pending();
+                    if (!item) {
+                      return false;
+                    }
+                    return benchApi().interactions.respond(item.id, response);
+                  }}
+                />
               </div>
             </Show>
             <Show when={surface() === "flight-deck"}>
@@ -196,29 +183,6 @@ export function Bench() {
               />
             </Show>
           </main>
-          <Show when={pending()?.kind !== "human_input" ? pending() : undefined}>
-            {(item) => (
-              <div class="fixed inset-0 z-20 grid place-items-center bg-black/60 p-6">
-                <Panel data-testid="print-bench-approval" class="grid max-w-md gap-3">
-                  <p class="text-xs uppercase tracking-[0.16em] text-[var(--text-subtle)]">{item().kind}</p>
-                  <h2 class="text-lg font-semibold">{item().title}</h2>
-                  <p class="text-sm text-[var(--text-muted)]">{item().prompt}</p>
-                  <Button
-                    data-testid="print-bench-approval-allow"
-                    onClick={() =>
-                      void benchApi().interactions.respond(item().id, {
-                        kind: "approval",
-                        decision: "allow",
-                        duration: "once",
-                      })
-                    }
-                  >
-                    Allow once
-                  </Button>
-                </Panel>
-              </div>
-            )}
-          </Show>
         </div>
       )}
     </Show>

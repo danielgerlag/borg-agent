@@ -45,7 +45,6 @@ describe("print bench domain", () => {
     const inspection = evaluate(EMPTY_SCENE);
     expect(inspection.kind).toBe("fail");
     expect(inspection.findings.map((finding) => finding.code)).toEqual(["empty"]);
-    expect("quote" in inspection).toBe(false);
   });
 
   it("puts the centre of a solid in the middle of the plate", () => {
@@ -107,7 +106,7 @@ describe("print bench domain", () => {
     expect(objectFrame([])).toBe("The bed is empty. There is no object to move.");
   });
 
-  it("prices a box that sits on the bed", () => {
+  it("passes a box that sits on the bed", () => {
     const body = onBed({
       id: boxId,
       kind: "box",
@@ -125,10 +124,6 @@ describe("print bench domain", () => {
     expect(inspection.findings).toEqual([]);
     expect(inspection.solid.volumeCm3).toBeCloseTo(1, 5);
     expect(inspection.solid.overhangDeg).toBeCloseTo(0, 5);
-    expect(inspection.quote.grams).toBeGreaterThan(0);
-    expect(inspection.quote.hours).toBeGreaterThan(0);
-    expect(inspection.quote.price.amount).toBeGreaterThan(0);
-    expect(inspection.quote.price.currency).toBe("USD");
   });
 
   it("rejects a sphere for overhang and a box that leaves the bed", () => {
@@ -142,7 +137,6 @@ describe("print bench domain", () => {
     const overhang = evaluate({ bodies: [sphere], selectedId: sphere.id });
     expect(overhang.kind).toBe("fail");
     expect(overhang.findings.map((finding) => finding.code)).toContain("overhang");
-    expect("quote" in overhang).toBe(false);
 
     const parked = onBed({
       id: boxId,
@@ -159,7 +153,6 @@ describe("print bench domain", () => {
     });
     expect(footprint.kind).toBe("fail");
     expect(footprint.findings.map((finding) => finding.code)).toContain("footprint");
-    expect("quote" in footprint).toBe(false);
   });
 
   it("measures a downward face that never had a body record", () => {
@@ -173,7 +166,6 @@ describe("print bench domain", () => {
     expect(inspection.kind).toBe("fail");
     expect(inspection.findings.map((finding) => finding.code)).toEqual(["overhang"]);
     expect(inspection.solid.overhangDeg).toBeGreaterThan(45);
-    expect("quote" in inspection).toBe(false);
   });
 
   it("rotates a vertex the same way the viewport does", () => {

@@ -2,22 +2,15 @@ import { Panel, Select } from "@borg/ui-kit";
 import { z } from "@borg-agent/plugin-sdk";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { SHOP } from "../domain.js";
-import {
-  designerPersonaId,
-  frontDeskPersonaId,
-  operatorPersonaId,
-  preferModelToolId,
-  usePersonaToolId,
-} from "../contract.js";
+import { preferModelToolId } from "../contract.js";
 import { benchApi } from "./bridge.js";
 import type { BenchControl } from "./control.js";
 import { ProviderScreens } from "./provider-setup.js";
 
-type Section = "machine" | "seats" | "model";
+type Section = "machine" | "model";
 
 const sections: readonly { id: Section; label: string }[] = [
   { id: "machine", label: "Machine" },
-  { id: "seats", label: "Seats" },
   { id: "model", label: "Model" },
 ];
 
@@ -67,25 +60,12 @@ function sameCatalog(
   );
 }
 
-const seatTools: Record<string, readonly string[]> = {
-  [designerPersonaId]: [
-    "Add a box, cylinder, sphere, or cone",
-    "Move, rotate, and scale the selection",
-    "Delete the selection",
-    "Talk to the designer. It calls tools to change the model, and asks when a size is missing",
-    "Change seat",
-  ],
-  [frontDeskPersonaId]: ["Send the quote", "Change seat"],
-  [operatorPersonaId]: ["Start the printer", "Change seat"],
-};
-
 export function SettingsView(
   props: BenchControl & {
     readonly section: Section;
     onSection(section: Section): void;
   },
 ) {
-  const allowed = () => props.snapshot.persona.allowedTools.includes(usePersonaToolId);
   const [models, setModels] = createSignal<z.output<typeof modelListSchema>>([]);
   const [modelError, setModelError] = createSignal<string | undefined>();
   let menuOpen = false;
@@ -169,44 +149,9 @@ export function SettingsView(
                   label="Bed"
                   value={`${SHOP.bedMm.x} × ${SHOP.bedMm.y} × ${SHOP.bedMm.z} mm`}
                 />
-                <Row label="Minimum wall" value={`${SHOP.minWallMm} mm`} />
                 <Row label="Maximum overhang" value={`${SHOP.maxOverhangDeg}°`} />
-                <Row label="Density" value={`${SHOP.densityGPerCm3} g/cm³`} />
-                <Row label="Print rate" value={`${SHOP.gramsPerHour} g/hour`} />
-                <Row
-                  label="Price"
-                  value={`${SHOP.usdPerGram} USD/g and ${SHOP.usdPerHour} USD/hour`}
-                />
               </dl>
             </Panel>
-          </Show>
-          <Show when={props.section === "seats"}>
-            <h2 class="mb-2 text-2xl font-semibold">Seats</h2>
-            <p class="mb-5 text-sm text-[var(--text-muted)]">
-              The seat decides which tools can run. Design, Quote, and Printer stay where they are.
-            </p>
-            <Select
-              label="Seat"
-              aria-label="Seat"
-              data-testid="print-bench-persona"
-              value={props.snapshot.persona.id}
-              options={props.snapshot.personas.map((seat) => ({
-                value: seat.id,
-                label: seat.name,
-              }))}
-              onChange={(personaId) => {
-                if (personaId === props.snapshot.persona.id) {
-                  return;
-                }
-                props.run({ tool: usePersonaToolId, personaId });
-              }}
-              disabled={props.busy || !allowed()}
-            />
-            <ul class="mt-5 grid gap-2 text-sm">
-              <For each={seatTools[props.snapshot.persona.id] ?? []}>
-                {(tool) => <li>{tool}</li>}
-              </For>
-            </ul>
           </Show>
           <Show when={props.section === "model"}>
             <h2 class="mb-2 text-2xl font-semibold">Model</h2>

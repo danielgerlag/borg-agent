@@ -326,9 +326,6 @@ importers:
       '@borg/plugin-azure':
         specifier: workspace:*
         version: link:../../plugins/azure
-      '@borg/plugin-channel-mock':
-        specifier: workspace:*
-        version: link:../../plugins/channel-mock
       '@borg/plugin-config-sqlite':
         specifier: workspace:*
         version: link:../../plugins/config-sqlite

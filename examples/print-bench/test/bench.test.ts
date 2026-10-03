@@ -31,19 +31,14 @@ import {
   translateToolInput,
   deleteToolId,
   designerPersonaId,
-  frontDeskPersonaId,
-  operatorPersonaId,
   newDesignToolId,
   openDesignToolId,
   preferModelToolId,
   printBenchAct,
   printBenchSnapshot,
   promptToolId,
-  sendQuoteToolId,
-  startMachineToolId,
   transformToolId,
   transformToolInput,
-  usePersonaToolId,
 } from "../src/contract.js";
 
 let dataDirectory: string | undefined;
@@ -98,13 +93,16 @@ describe("print bench", () => {
     expect(current.id).toBe(sessionId);
     expect(current.title).toBe("draw a gear");
     expect(current.reply).toBe(legacy.reply);
+    expect(current).not.toHaveProperty("quoteSent");
+    expect(current).not.toHaveProperty("machine");
+    expect(JSON.stringify(values.get("job"))).not.toContain("quoteSent");
     expect(values.get("job")).toMatchObject({ currentId: sessionId });
     expect(designTitle(newDesignTitle, ` ${"a".repeat(80)} `)).toBe("a".repeat(48));
     expect(designTitle("Bracket", "draw a gear")).toBe("Bracket");
     expect(() => readCatalog({ revision: 1 })).toThrow("Print bench job is corrupt");
   });
 
-  it("builds a solid from the palette and a prompt, then gates the quote and the printer", async () => {
+  it("builds a solid from the palette and a prompt", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);
     const opened = await kernel.bus.invoke(printBenchSnapshot, {});
@@ -112,7 +110,6 @@ describe("print bench", () => {
     expect(opened.scene.bodies).toEqual([]);
     expect(opened.inspection.kind).toBe("fail");
     expect(opened.inspection.findings.map((finding) => finding.code)).toEqual(["empty"]);
-    expect("quote" in opened.inspection).toBe(false);
 
     const added = await kernel.bus.invoke(printBenchAct, {
       tool: addToolId,
@@ -120,10 +117,6 @@ describe("print bench", () => {
     });
     expect(added.snapshot.scene.bodies).toHaveLength(1);
     expect(added.snapshot.inspection.kind).toBe("pass");
-    if (added.snapshot.inspection.kind !== "pass") {
-      return;
-    }
-    expect(added.snapshot.inspection.quote.price.amount).toBeGreaterThan(0);
 
     await connectDesigner(kernel);
     const prompted = await kernel.bus.invoke(printBenchAct, {
@@ -137,7 +130,6 @@ describe("print bench", () => {
     expect(prompted.snapshot.inspection.findings.map((finding) => finding.code)).toContain(
       "overhang",
     );
-    expect("quote" in prompted.snapshot.inspection).toBe(false);
     const sphereId = prompted.snapshot.scene.selectedId;
     expect(sphereId).toEqual(expect.any(String));
     if (sphereId === null) {
@@ -150,66 +142,6 @@ describe("print bench", () => {
     });
     expect(deleted.snapshot.scene.bodies).toHaveLength(1);
     expect(deleted.snapshot.inspection.kind).toBe("pass");
-
-    await expect(kernel.bus.invoke(printBenchAct, { tool: sendQuoteToolId })).rejects.toThrow(
-      /not allowed/,
-    );
-
-    await kernel.bus.invoke(printBenchAct, {
-      tool: usePersonaToolId,
-      personaId: frontDeskPersonaId,
-    });
-    const send = kernel.bus.invoke(printBenchAct, { tool: sendQuoteToolId });
-    void send.catch(() => undefined);
-    const classification = await waitForKind(kernel, "classification", send);
-    expect(classification.kind).toBe("classification");
-    expect(
-      kernel.interactions.respond(classification.id, {
-        kind: "approval",
-        decision: "allow",
-        duration: "once",
-      }),
-    ).toBe(true);
-    const sent = await withTimeout(send, 10_000, "send did not finish after allow");
-    expect(sent.effect.type).toBe("sent");
-    if (sent.effect.type === "sent") {
-      expect(sent.snapshot.quoteSent?.messageId).toBe(sent.effect.messageId);
-    }
-
-    const again = kernel.bus.invoke(printBenchAct, { tool: sendQuoteToolId });
-    void again.catch(() => undefined);
-    const duplicate = await withTimeout(again, 2_000, "second send waited on a person");
-    expect(kernel.interactions.listPending()).toEqual([]);
-    expect(duplicate.effect.type).toBe("duplicate");
-
-    await kernel.bus.invoke(printBenchAct, {
-      tool: usePersonaToolId,
-      personaId: operatorPersonaId,
-    });
-    const start = kernel.bus.invoke(printBenchAct, { tool: startMachineToolId });
-    void start.catch(() => undefined);
-    const approval = await waitForKind(kernel, "tool_approval", start);
-    expect(
-      kernel.interactions.respond(approval.id, {
-        kind: "approval",
-        decision: "allow",
-        duration: "once",
-      }),
-    ).toBe(true);
-    const running = await withTimeout(start, 10_000, "start did not finish after allow");
-    expect(running.effect.type).toBe("running");
-    expect(running.snapshot.machine).toEqual({
-      status: "running",
-      revision: running.snapshot.revision,
-    });
-
-    await kernel.bus.invoke(printBenchAct, {
-      tool: usePersonaToolId,
-      personaId: designerPersonaId,
-    });
-    await expect(kernel.bus.invoke(printBenchAct, { tool: startMachineToolId })).rejects.toThrow(
-      /not allowed/,
-    );
   }, 60_000);
 
   it("asks for a missing size, then adds the solid", async () => {
@@ -355,7 +287,7 @@ describe("print bench", () => {
     expect(fetchDouble?.requests).toEqual([]);
   });
 
-  it("keeps each design's model, transcript, quote, and printer apart", async () => {
+  it("keeps each design's model and transcript apart", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);
     const opened = await kernel.bus.invoke(printBenchSnapshot, {});
@@ -391,23 +323,7 @@ describe("print bench", () => {
     expect(back.snapshot.scene.bodies).toHaveLength(1);
     expect(back.snapshot.turns).toEqual([]);
     expect(back.snapshot.reply).toBe("");
-
-    await kernel.bus.invoke(printBenchAct, {
-      tool: usePersonaToolId,
-      personaId: frontDeskPersonaId,
-    });
-    const sent = await allow(kernel, { tool: sendQuoteToolId }, "classification");
-    expect(sent.effect.type).toBe("sent");
-    if (sent.effect.type !== "sent") {
-      return;
-    }
-
-    await kernel.bus.invoke(printBenchAct, {
-      tool: usePersonaToolId,
-      personaId: operatorPersonaId,
-    });
-    const running = await allow(kernel, { tool: startMachineToolId }, "tool_approval");
-    expect(running.snapshot.machine.status).toBe("running");
+    expect(back.snapshot.persona.id).toBe(designerPersonaId);
 
     const other = await kernel.bus.invoke(printBenchAct, {
       tool: openDesignToolId,
@@ -415,27 +331,13 @@ describe("print bench", () => {
     });
     expect(other.snapshot.design.title).toBe("gear sketch");
     expect(other.snapshot.scene.bodies).toEqual([]);
-    expect(other.snapshot.quoteSent).toBeNull();
-    expect(other.snapshot.machine).toEqual({ status: "idle" });
-    expect(other.snapshot.persona.id).toBe(designerPersonaId);
+    expect(other.snapshot.turns.map((turn) => turn.text)).toEqual(["gear sketch", connectModelMessage]);
 
     await kernel.bus.invoke(printBenchAct, { tool: addToolId, solid: box });
-    await kernel.bus.invoke(printBenchAct, {
-      tool: usePersonaToolId,
-      personaId: frontDeskPersonaId,
-    });
-    const sentAgain = await allow(kernel, { tool: sendQuoteToolId }, "classification");
-    expect(sentAgain.effect.type).toBe("sent");
-    if (sentAgain.effect.type === "sent" && sent.effect.type === "sent") {
-      expect(sentAgain.effect.messageId).not.toBe(sent.effect.messageId);
-    }
-
     const firstAgain = await kernel.bus.invoke(printBenchAct, {
       tool: openDesignToolId,
       designId: firstId,
     });
-    expect(firstAgain.snapshot.machine.status).toBe("running");
-    expect(firstAgain.snapshot.quoteSent?.messageId).toBe(sent.effect.messageId);
     expect(firstAgain.snapshot.scene.bodies).toHaveLength(1);
 
     const removed = await kernel.bus.invoke(printBenchAct, {
@@ -452,7 +354,6 @@ describe("print bench", () => {
     expect(emptied.snapshot.design.id).not.toBe(firstId);
     expect(emptied.snapshot.designs).toHaveLength(1);
     expect(emptied.snapshot.scene.bodies).toEqual([]);
-    expect(emptied.snapshot.machine).toEqual({ status: "idle" });
   }, 60_000);
 
   it("lists the provider plugins and keeps their secrets on that plugin", async () => {
@@ -479,24 +380,6 @@ describe("print bench", () => {
     ]);
   });
 });
-
-async function allow(
-  running: Kernel,
-  input: { tool: typeof sendQuoteToolId } | { tool: typeof startMachineToolId },
-  kind: PendingInteraction["kind"],
-) {
-  const pending = running.bus.invoke(printBenchAct, input);
-  void pending.catch(() => undefined);
-  const question = await waitForKind(running, kind, pending);
-  expect(
-    running.interactions.respond(question.id, {
-      kind: "approval",
-      decision: "allow",
-      duration: "once",
-    }),
-  ).toBe(true);
-  return withTimeout(pending, 10_000, `${kind} did not finish`);
-}
 
 async function connectDesigner(running: Kernel): Promise<void> {
   await running.secrets.set("borg.openai", "apiKey", "sk-test");

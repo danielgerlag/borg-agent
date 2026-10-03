@@ -39,12 +39,9 @@ import {
   deleteDesignToolId,
   promptToolId,
   selectToolId,
-  sendQuoteToolId,
   snapshotSchema,
-  startMachineToolId,
   transformToolId,
   unconfiguredModelPreference,
-  usePersonaToolId,
   type PlacedPart,
   type Primitive,
 } from "./contract.js";
@@ -60,9 +57,6 @@ import { benchPersonas } from "./personas.js";
 
 type Effect = z.output<typeof effectSchema>;
 
-const emptyInput = z.object({}).strict();
-const personaInput = z.object({ personaId: z.string().min(1) }).strict();
-const startInput = z.object({ revision: z.number().int() }).strict();
 const idInput = z.object({ id: z.string().uuid() }).strict();
 const selectInput = z.object({ id: z.string().uuid().nullable() }).strict();
 const promptInput = z.object({ text: z.string().min(1) }).strict();
@@ -77,7 +71,6 @@ export default definePlugin({
     "tools.register",
     "tools.invoke",
     "loops.start",
-    "channels.send",
     "personas.read",
     "personas.write",
     "ui.workspace",
@@ -97,10 +90,13 @@ export default definePlugin({
       deleteTool(jobs, pins),
       selectTool(jobs, pins),
       promptTool(context, jobs, pins),
-      sendTool(context, jobs, pins),
-      startTool(jobs, pins),
-      personaTool(context, jobs, pins),
     ].map((tool) => context.tools.register(tool));
+    for (const id of retiredSeats) {
+      const retired = context.personas.get(id);
+      if (retired && !retired.archived) {
+        await context.personas.archive(id);
+      }
+    }
     for (const persona of benchPersonas) {
       const existing = context.personas.get(persona.id);
       if (!existing) {
@@ -168,6 +164,8 @@ export default definePlugin({
 });
 
 type DesignPins = Map<string, string>;
+
+const retiredSeats = ["print-bench/front-desk", "print-bench/operator"] as const;
 
 const loopPin = "loop";
 
@@ -433,103 +431,6 @@ function promptTool(context: PluginContext, jobs: JobWriter, pins: DesignPins) {
   });
 }
 
-function sendTool(context: PluginContext, jobs: JobWriter, pins: DesignPins) {
-  return defineTool({
-    id: sendQuoteToolId,
-    description: "Send the quote for the current passing revision.",
-    input: emptyInput,
-    output: effectSchema,
-    approval: "auto",
-    sideEffect: true,
-    async execute(_input, toolContext): Promise<Effect> {
-      return mutate(jobs, pins, toolContext, async (session) => {
-        const inspection = evaluate(session.job.scene);
-        if (inspection.kind !== "pass") {
-          return { type: "unquotable" };
-        }
-        if (session.job.quoteSent?.revision === session.job.revision) {
-          return { type: "duplicate", messageId: session.job.quoteSent.messageId };
-        }
-        const receipt = await context.channels.send({
-          adapterId: "borg.channel.mock",
-          destinationId: "default",
-          classification: "confidential",
-          idempotencyKey: `quote-${session.job.id}-${session.job.revision}`,
-          text: `${inspection.quote.grams} g, ${inspection.quote.hours} h, ${inspection.quote.price.amount} USD`,
-          ...(toolContext.runId ? { runId: toolContext.runId } : {}),
-          signal: toolContext.signal,
-        });
-        if (receipt.status === "denied") {
-          return { type: "denied", reasons: [...receipt.reasons] };
-        }
-        const sentAt = receipt.status === "sent" ? receipt.sentAt : new Date().toISOString();
-        session.commit({
-          ...session.job,
-          quoteSent: {
-            revision: session.job.revision,
-            messageId: receipt.messageId,
-            sentAt,
-          },
-        });
-        return receipt.status === "sent"
-          ? { type: "sent", messageId: receipt.messageId }
-          : { type: "duplicate", messageId: receipt.messageId };
-      });
-    },
-  });
-}
-
-function startTool(jobs: JobWriter, pins: DesignPins) {
-  return defineTool({
-    id: startMachineToolId,
-    description: "Start the printer on the current passing revision.",
-    input: startInput,
-    output: effectSchema,
-    approval: "ask",
-    sideEffect: true,
-    async execute(input, toolContext): Promise<Effect> {
-      return mutate(jobs, pins, toolContext, async (session) => {
-        const inspection = evaluate(session.job.scene);
-        if (inspection.kind !== "pass" || session.job.revision !== input.revision) {
-          return { type: "not-printable" };
-        }
-        session.commit({
-          ...session.job,
-          machine: { status: "running", revision: session.job.revision },
-        });
-        return { type: "running" };
-      });
-    },
-  });
-}
-
-function personaTool(context: PluginContext, jobs: JobWriter, pins: DesignPins) {
-  return defineTool({
-    id: usePersonaToolId,
-    description: "Sit as a shop persona.",
-    input: personaInput,
-    output: effectSchema,
-    approval: "auto",
-    sideEffect: true,
-    async execute(input, toolContext): Promise<Effect> {
-      if (input.personaId.startsWith("system/")) {
-        throw new Error(`Persona ${input.personaId} is not a bench seat`);
-      }
-      const persona = context.personas.get(input.personaId);
-      if (!persona) {
-        throw new Error(`Persona ${input.personaId} is unavailable`);
-      }
-      await mutate(jobs, pins, toolContext, async (session) => {
-        if (session.job.personaId === persona.id) {
-          return;
-        }
-        session.commit({ ...session.job, personaId: persona.id });
-      });
-      return { type: "persona" };
-    },
-  });
-}
-
 function placedBody(part: PlacedPart, id: string): Body {
   switch (part.kind) {
     case "box":
@@ -561,15 +462,6 @@ async function apply(
   jobs: JobWriter,
   action: z.output<typeof actInputSchema>,
 ): Promise<Effect> {
-  if (action.tool === startMachineToolId) {
-    const job = await jobs.read();
-    if (evaluate(job.scene).kind !== "pass") {
-      return { type: "not-printable" };
-    }
-    return effectSchema.parse(
-      await scopedInvoke(context, job, action.tool, { revision: job.revision }),
-    );
-  }
   const job = await jobs.read();
   const input =
     action.tool === addToolId
@@ -582,9 +474,7 @@ async function apply(
             ? { id: action.id }
             : action.tool === promptToolId
               ? { text: action.text }
-              : action.tool === usePersonaToolId
-                ? { personaId: action.personaId }
-                : {};
+              : {};
   return effectSchema.parse(await scopedInvoke(context, job, action.tool, input));
 }
 
@@ -624,18 +514,10 @@ async function project(context: PluginContext, jobs: JobWriter) {
       name: persona.name,
       allowedTools: [...persona.allowedTools],
     },
-    personas: context.personas
-      .list()
-      .filter((seat) => seat.id.startsWith("print-bench/"))
-      .map((seat) => ({ id: seat.id, name: seat.name })),
     scene: job.scene,
     reply: job.reply,
     turns: job.turns.map((turn) => ({ role: turn.role, text: turn.text })),
     inspection,
-    machine: job.machine,
-    quoteSent: job.quoteSent
-      ? { revision: job.quoteSent.revision, messageId: job.quoteSent.messageId }
-      : null,
     bedMm: SHOP.bedMm,
     designerModel: chosenModel(context),
   });
@@ -669,7 +551,6 @@ function wire(inspection: Inspection) {
   return {
     kind: "pass" as const,
     findings: [] as const,
-    quote: inspection.quote,
     solid,
   };
 }

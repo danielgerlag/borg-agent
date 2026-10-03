@@ -6,7 +6,6 @@ import { createKernel, defineDistribution, type Kernel, type PluginSource } from
 import type { BorgPluginManifest } from "@borg-agent/plugin-sdk";
 import configSqlite from "@borg/plugin-config-sqlite/main";
 import secretsDev from "@borg/plugin-secrets-dev/main";
-import channelMock from "@borg/plugin-channel-mock/main";
 import promptInjection from "@borg/plugin-security-prompt-injection/main";
 import feedback from "@borg/plugin-feedback/main";
 import anthropic from "@borg/plugin-anthropic/main";
@@ -47,7 +46,6 @@ function packaged(
 const packagedPlugins: readonly PluginSource[] = [
   packaged("@borg/plugin-config-sqlite", configSqlite),
   packaged("@borg/plugin-secrets-dev", secretsDev),
-  packaged("@borg/plugin-channel-mock", channelMock),
   packaged("@borg/plugin-security-prompt-injection", promptInjection),
   packaged("@borg/plugin-feedback", feedback),
   packaged("@borg/plugin-anthropic", anthropic),
@@ -68,7 +66,6 @@ export async function startPrintBench(dataDirectory: string): Promise<Kernel> {
     plugins: [
       "borg.config.sqlite",
       "borg.secrets.dev",
-      "borg.channel.mock",
       "borg.security.prompt-injection",
       "borg.feedback",
       "borg.anthropic",

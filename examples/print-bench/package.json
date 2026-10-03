@@ -16,7 +16,6 @@
     "@borg-agent/plugin-sdk": "workspace:*",
     "@borg/plugin-anthropic": "workspace:*",
     "@borg/plugin-azure": "workspace:*",
-    "@borg/plugin-channel-mock": "workspace:*",
     "@borg/plugin-config-sqlite": "workspace:*",
     "@borg/plugin-copilot": "workspace:*",
     "@borg/plugin-feedback": "workspace:*",

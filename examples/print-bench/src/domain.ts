@@ -8,22 +8,12 @@ export interface Vec3 {
 
 export interface ShopRules {
   readonly bedMm: { readonly x: 250; readonly y: 210; readonly z: 220 };
-  readonly minWallMm: 1.2;
   readonly maxOverhangDeg: 45;
-  readonly densityGPerCm3: 1.27;
-  readonly gramsPerHour: 15;
-  readonly usdPerGram: 0.08;
-  readonly usdPerHour: 12;
 }
 
 export const SHOP: ShopRules = {
   bedMm: { x: 250, y: 210, z: 220 },
-  minWallMm: 1.2,
   maxOverhangDeg: 45,
-  densityGPerCm3: 1.27,
-  gramsPerHour: 15,
-  usdPerGram: 0.08,
-  usdPerHour: 12,
 };
 
 export type Body =
@@ -75,19 +65,6 @@ export interface Finding {
   readonly limit: number;
 }
 
-export interface Quote {
-  readonly grams: number;
-  readonly hours: number;
-  readonly price: { readonly currency: "USD"; readonly amount: number };
-}
-
-const passBrand: unique symbol = Symbol("print-bench-pass");
-
-export interface PassToken {
-  readonly [passBrand]: "pass";
-  readonly solid: MeasuredSolid;
-}
-
 export type Inspection =
   | {
       readonly kind: "fail";
@@ -98,8 +75,6 @@ export type Inspection =
       readonly kind: "pass";
       readonly solid: MeasuredSolid;
       readonly findings: readonly [];
-      readonly quote: Quote;
-      readonly token: PassToken;
     };
 
 export const EMPTY_SCENE: Scene = { bodies: [], selectedId: null };
@@ -209,26 +184,12 @@ export function inspectMesh(mesh: Mesh, rules: ShopRules): Inspection {
     }
   }
   if (findings.length === 0) {
-    const token: PassToken = { [passBrand]: "pass", solid };
-    return { kind: "pass", solid, findings: [], quote: price(token, rules), token };
+    return { kind: "pass", solid, findings: [] };
   }
   return {
     kind: "fail",
     solid,
     findings: findings as [Finding, ...Finding[]],
-  };
-}
-
-export function price(token: PassToken, rules: ShopRules): Quote {
-  const grams = token.solid.volumeCm3 * rules.densityGPerCm3;
-  const hours = grams / rules.gramsPerHour;
-  return {
-    grams,
-    hours,
-    price: {
-      currency: "USD",
-      amount: rules.usdPerGram * grams + rules.usdPerHour * hours,
-    },
   };
 }
 

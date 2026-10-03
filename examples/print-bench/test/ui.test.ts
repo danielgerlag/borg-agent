@@ -96,7 +96,7 @@ async function chooseDesignerModel(page: Page, label: string, preference: string
 }
 
 describe("print bench window", () => {
-  it("builds any solid from the palette or a prompt, then gates quote and print", async () => {
+  it("builds any solid from the palette or a prompt", async () => {
     designer = await startDesignerServer();
     const azureCatalog = await startAzureCatalog();
     azure = azureCatalog;
@@ -121,6 +121,8 @@ describe("print bench window", () => {
     await expect(page.getByTestId("workspace-view-tab-print-bench.design")).toBeVisible({
       timeout: 20_000,
     });
+    await expect(page.getByTestId("workspace-view-tab-print-bench.quote")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-view-tab-print-bench.printer")).toHaveCount(0);
     await page.getByTestId("nav-flight-deck").click();
     await expect(page.getByTestId("surface-flightDeck")).toContainText("Flight deck");
     await expect(page.getByTestId("flightdeck-inspection")).toContainText("failed");
@@ -152,17 +154,12 @@ describe("print bench window", () => {
     await expect(findings).toContainText("Nothing");
     await expect(page.getByTestId("print-bench-palette")).toBeVisible();
     await expect(page.getByTestId("print-bench-prompt")).toBeVisible();
-    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
-    await expect(page.getByTestId("print-bench-quote")).not.toContainText("USD");
-    await page.getByTestId("workspace-view-tab-print-bench.design").click();
     const box = await page.getByTestId("print-bench-viewport").boundingBox();
     expect(box?.width ?? 0).toBeGreaterThan(100);
 
     await page.getByTestId("print-bench-tool-box").click();
-    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
-    await expect(page.getByTestId("print-bench-quote")).toContainText("USD");
+    await expect(findings).not.toContainText("Nothing");
     await expect(page.getByTestId("print-bench-design-title")).toHaveText("New design");
-    await page.getByTestId("workspace-view-tab-print-bench.design").click();
     await page.getByTestId("print-bench-new-design").click();
     await expect(findings).toContainText("Nothing");
     await expect(page.getByTestId("print-bench-design-item")).toHaveCount(2);
@@ -185,44 +182,9 @@ describe("print bench window", () => {
     await page.getByTestId("print-bench-prompt").fill("15");
     await page.getByTestId("print-bench-build").click();
     await expect(findings).toContainText("Overhang", { timeout: 20_000 });
-    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
-    await expect(page.getByTestId("print-bench-quote")).not.toContainText("USD");
-    await page.getByTestId("workspace-view-tab-print-bench.design").click();
     await page.getByTestId("print-bench-tool-delete").click();
-    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
-    await expect(page.getByTestId("print-bench-quote")).toContainText("USD");
-
-    await page.getByTestId("nav-settings").click();
-    await page.getByTestId("settings-section-seats").click();
-    await page.getByTestId("settings-page").getByRole("button", { name: "Designer" }).click();
-    await page.getByRole("option", { name: "Front desk" }).click();
-    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
-    await expect(page.getByTestId("print-bench-send")).toBeEnabled();
-    await page.getByTestId("print-bench-send").click();
-    await expect(page.getByTestId("print-bench-approval")).toContainText("classification");
-    await page.getByTestId("print-bench-approval-allow").click();
-    await expect(page.getByTestId("print-bench-sent")).toHaveText("Quote sent");
-
-    await page.getByTestId("nav-settings").click();
-    await page.getByTestId("settings-section-seats").click();
-    await page.getByTestId("settings-page").getByRole("button", { name: "Front desk" }).click();
-    await page.getByRole("option", { name: "Operator" }).click();
-    await page.getByTestId("workspace-view-tab-print-bench.printer").click();
-    await page.getByTestId("print-bench-start").click();
-    await expect(page.getByTestId("print-bench-approval")).toContainText("tool_approval");
-    await page.getByTestId("print-bench-approval-allow").click();
-    await expect(page.getByTestId("print-bench-running")).toHaveText("Printer is running");
-
-    await page.getByTestId("nav-settings").click();
-    await page.getByTestId("settings-section-seats").click();
-    await page.getByTestId("settings-page").getByRole("button", { name: "Operator" }).click();
-    await page.getByRole("option", { name: "Designer" }).click();
-    await page.getByTestId("workspace-view-tab-print-bench.quote").click();
-    await expect(page.getByTestId("print-bench-send")).toBeDisabled();
-    await page.getByTestId("workspace-view-tab-print-bench.printer").click();
-    await expect(page.getByTestId("print-bench-start")).toBeDisabled();
-
-    await page.getByTestId("workspace-view-tab-print-bench.design").click();
+    await expect(findings).not.toContainText("Overhang");
+    await expect(page.getByTestId("settings-section-seats")).toHaveCount(0);
     await expect(page.getByTestId("print-bench-prompt")).toBeEnabled();
     await page.getByTestId("print-bench-prompt").fill("draw a gear");
     await page.getByTestId("print-bench-build").click();

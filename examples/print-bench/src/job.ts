@@ -13,25 +13,6 @@ const turnSchema = z
   })
   .strict();
 
-const machineSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("idle") }).strict(),
-  z
-    .object({
-      status: z.literal("running"),
-      revision: z.number().int(),
-    })
-    .strict(),
-]);
-
-const quoteSentSchema = z
-  .object({
-    revision: z.number().int(),
-    messageId: z.string().min(1),
-    sentAt: z.string().min(1),
-  })
-  .strict()
-  .nullable();
-
 const designSchema = z
   .object({
     id: z.string().uuid(),
@@ -43,8 +24,6 @@ const designSchema = z
     scene: sceneSchema,
     reply: z.string(),
     turns: z.array(turnSchema),
-    machine: machineSchema,
-    quoteSent: quoteSentSchema,
   })
   .strict();
 
@@ -63,8 +42,6 @@ const legacyJobSchema = z
     scene: sceneSchema,
     reply: z.string(),
     turns: z.array(turnSchema),
-    machine: machineSchema,
-    quoteSent: quoteSentSchema,
   })
   .strict();
 
@@ -110,15 +87,44 @@ export function designTitle(current: string, text: string): string {
 }
 
 export function readCatalog(stored: unknown): Catalog {
-  const catalog = catalogSchema.safeParse(stored);
+  const stripped = stripShopRun(stored);
+  const catalog = catalogSchema.safeParse(stripped);
   if (catalog.success) {
     return seal(catalog.data);
   }
-  const legacy = legacyJobSchema.safeParse(stored);
+  const legacy = legacyJobSchema.safeParse(stripped);
   if (!legacy.success) {
     throw new Error("Print bench job is corrupt");
   }
   return seal(migrate(legacy.data));
+}
+
+function stripShopRun(stored: unknown): unknown {
+  const record = z.record(z.string(), z.unknown()).safeParse(stored);
+  if (!record.success) {
+    return stored;
+  }
+  if (Array.isArray(record.data.designs)) {
+    return {
+      ...record.data,
+      designs: record.data.designs.map((design) => {
+        const body = z.record(z.string(), z.unknown()).safeParse(design);
+        return body.success ? dropRun(body.data) : design;
+      }),
+    };
+  }
+  if ("sessionId" in record.data) {
+    return dropRun(record.data);
+  }
+  return stored;
+}
+
+function dropRun(value: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...value };
+  delete next.machine;
+  delete next.quoteSent;
+  next.personaId = designerPersonaId;
+  return next;
 }
 
 function migrate(job: z.output<typeof legacyJobSchema>): Catalog {
@@ -130,12 +136,10 @@ function migrate(job: z.output<typeof legacyJobSchema>): Catalog {
     createdAt: now,
     updatedAt: now,
     revision: job.revision,
-    personaId: job.personaId,
+    personaId: designerPersonaId,
     scene: job.scene,
     reply: job.reply,
     turns: job.turns,
-    machine: job.machine,
-    quoteSent: job.quoteSent,
   });
   return { currentId: design.id, designs: [design] };
 }
@@ -177,8 +181,6 @@ export function seed(now = new Date().toISOString()): Job {
     scene: { bodies: [], selectedId: null },
     reply: "",
     turns: [],
-    machine: { status: "idle" },
-    quoteSent: null,
   };
 }
 
@@ -194,8 +196,6 @@ export function withScene(job: Job, scene: Job["scene"], reply = job.reply): Job
     revision: job.revision + 1,
     scene,
     reply,
-    quoteSent: null,
-    machine: { status: "idle" },
   };
 }
 
@@ -291,7 +291,7 @@ export function createJobWriter(store: JobStore): JobWriter {
   }
 
   return {
-    // Stay off the writer tail so a quote approval can still refresh the bench.
+    // Stay off the writer tail so the bench can refresh during a designer turn.
     read: async () => currentDesign(await load()),
     get: async (designId) => {
       const design = (await load()).designs.find((item) => item.id === designId);

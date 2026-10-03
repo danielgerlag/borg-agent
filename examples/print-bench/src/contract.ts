@@ -9,17 +9,12 @@ export const deleteToolId = "example.print-bench.delete";
 export const selectToolId = "example.print-bench.select";
 export const promptToolId = "example.print-bench.prompt";
 export const feedbackAskToolId = "feedback.ask";
-export const sendQuoteToolId = "example.print-bench.send-quote";
-export const startMachineToolId = "example.print-bench.start-machine";
-export const usePersonaToolId = "example.print-bench.use-persona";
 export const preferModelToolId = "example.print-bench.prefer-model";
 export const newDesignToolId = "example.print-bench.new-design";
 export const openDesignToolId = "example.print-bench.open-design";
 export const deleteDesignToolId = "example.print-bench.delete-design";
 
 export const designerPersonaId = "print-bench/designer";
-export const frontDeskPersonaId = "print-bench/front-desk";
-export const operatorPersonaId = "print-bench/operator";
 
 /** Persona preference until Settings chooses a connected model. */
 export const unconfiguredModelPreference = "example.print-bench:unconfigured";
@@ -180,19 +175,6 @@ const findingSchema = z
   })
   .strict();
 
-const quoteSchema = z
-  .object({
-    grams: z.number().nonnegative(),
-    hours: z.number().nonnegative(),
-    price: z
-      .object({
-        currency: z.literal("USD"),
-        amount: z.number().nonnegative(),
-      })
-      .strict(),
-  })
-  .strict();
-
 const measuredSolidSchema = z
   .object({
     boundsMm: vecSchema,
@@ -219,7 +201,6 @@ export const inspectionSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("pass"),
       findings: z.tuple([]),
-      quote: quoteSchema,
       solid: measuredSolidSchema,
     })
     .strict(),
@@ -232,16 +213,6 @@ const personaSchema = z
     allowedTools: z.array(z.string().min(1)),
   })
   .strict();
-
-const machineSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("idle") }).strict(),
-  z
-    .object({
-      status: z.literal("running"),
-      revision: z.number().int(),
-    })
-    .strict(),
-]);
 
 const designSummarySchema = z
   .object({
@@ -263,14 +234,6 @@ export const snapshotSchema = z
     designs: z.array(designSummarySchema).min(1),
     revision: z.number().int().positive(),
     persona: personaSchema,
-    personas: z.array(
-      z
-        .object({
-          id: z.string().min(1),
-          name: z.string().min(1),
-        })
-        .strict(),
-    ),
     scene: sceneSchema,
     reply: z.string(),
     turns: z.array(
@@ -282,14 +245,6 @@ export const snapshotSchema = z
         .strict(),
     ),
     inspection: inspectionSchema,
-    machine: machineSchema,
-    quoteSent: z
-      .object({
-        revision: z.number().int(),
-        messageId: z.string().min(1),
-      })
-      .strict()
-      .nullable(),
     bedMm: vecSchema,
     designerModel: z.string().min(1).nullable(),
   })
@@ -298,13 +253,6 @@ export const snapshotSchema = z
 export const effectSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("revised") }).strict(),
   z.object({ type: z.literal("asked") }).strict(),
-  z.object({ type: z.literal("persona") }).strict(),
-  z.object({ type: z.literal("unquotable") }).strict(),
-  z.object({ type: z.literal("sent"), messageId: z.string().min(1) }).strict(),
-  z.object({ type: z.literal("duplicate"), messageId: z.string().min(1) }).strict(),
-  z.object({ type: z.literal("denied"), reasons: z.array(z.string()) }).strict(),
-  z.object({ type: z.literal("not-printable") }).strict(),
-  z.object({ type: z.literal("running") }).strict(),
   z.object({ type: z.literal("model") }).strict(),
   z.object({ type: z.literal("design") }).strict(),
 ]);
@@ -315,15 +263,12 @@ export const actInputSchema = z.discriminatedUnion("tool", [
   z.object({ tool: z.literal(deleteToolId), id: z.string().uuid() }).strict(),
   z.object({ tool: z.literal(selectToolId), id: z.string().uuid().nullable() }).strict(),
   z.object({ tool: z.literal(promptToolId), text: z.string().min(1) }).strict(),
-  z.object({ tool: z.literal(usePersonaToolId), personaId: z.string().min(1) }).strict(),
   z
     .object({
       tool: z.literal(preferModelToolId),
       preferenceId: z.string().regex(/^[a-z0-9]+(?:[.-][a-z0-9-]+)+:\S+$/),
     })
     .strict(),
-  z.object({ tool: z.literal(sendQuoteToolId) }).strict(),
-  z.object({ tool: z.literal(startMachineToolId) }).strict(),
   z.object({ tool: z.literal(newDesignToolId) }).strict(),
   z.object({ tool: z.literal(openDesignToolId), designId: z.string().uuid() }).strict(),
   z.object({ tool: z.literal(deleteDesignToolId), designId: z.string().uuid() }).strict(),
@@ -344,7 +289,7 @@ export const printBenchAct = defineCommand({
       effect: effectSchema,
     })
     .strict(),
-  // A quote or a machine start waits on a person. The bus default is 30s.
+  // A designer question waits on a person. The bus default is 30s.
   timeoutMs: 300_000,
 });
 
