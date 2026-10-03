@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Kernel } from "@borg-agent/kernel";
 import type { PendingInteraction } from "@borg-agent/contracts";
+import { z } from "@borg-agent/plugin-sdk";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startPrintBench } from "../src/boot.js";
 import { handleProviderCall } from "../src/provider-bridge.js";
@@ -16,6 +17,7 @@ import {
 } from "./model-double.js";
 import {
   addToolId,
+  addToolInput,
   deleteToolId,
   designerPersonaId,
   frontDeskPersonaId,
@@ -26,6 +28,7 @@ import {
   promptToolId,
   sendQuoteToolId,
   startMachineToolId,
+  transformToolInput,
   usePersonaToolId,
 } from "../src/contract.js";
 
@@ -49,6 +52,12 @@ afterEach(async () => {
 });
 
 describe("print bench", () => {
+  it("publishes object schemas for the solid tools", () => {
+    for (const schema of [addToolInput, transformToolInput]) {
+      expect(z.toJSONSchema(schema)).toMatchObject({ type: "object" });
+    }
+  });
+
   it("builds a solid from the palette and a prompt, then gates the quote and the printer", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);

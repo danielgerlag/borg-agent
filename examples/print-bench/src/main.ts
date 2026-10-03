@@ -5,7 +5,7 @@ import { SHOP, evaluate, placeOnBed, type Body, type Inspection } from "./domain
 import {
   actInputSchema,
   addToolId,
-  bodySchema,
+  addToolInput,
   deleteToolId,
   connectModelMessage,
   designerPersonaId,
@@ -13,7 +13,7 @@ import {
   effectSchema,
   placeInputSchema,
   placeToolId,
-  primitiveSchema,
+  transformToolInput,
   printBenchAct,
   printBenchSnapshot,
   preferModelToolId,
@@ -121,14 +121,14 @@ function addTool(jobs: JobWriter) {
   return defineTool({
     id: addToolId,
     description:
-      "Add one box, cylinder, sphere, or cone. Sizes are millimetres. The bench places the solid on the bed. Pass only the fields in the schema.",
-    input: primitiveSchema,
+      "Add one box, cylinder, sphere, or cone. Sizes are millimetres. The bench places the solid on the bed. Pass the solid in the solid field.",
+    input: addToolInput,
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
     async execute(input): Promise<Effect> {
       await jobs.run(async (session) => {
-        const body = placeOnBed(materialize(input, randomUUID()), session.job.scene.bodies.length);
+        const body = placeOnBed(materialize(input.solid, randomUUID()), session.job.scene.bodies.length);
         session.commit(
           withScene(session.job, {
             bodies: [...session.job.scene.bodies, body],
@@ -173,22 +173,23 @@ function transformTool(jobs: JobWriter) {
   return defineTool({
     id: transformToolId,
     description:
-      "Move, rotate, or resize one solid already on the bed. Pass the whole solid, including its id. Positions are millimetres and rotations are degrees.",
-    input: bodySchema,
+      "Move, rotate, or resize one solid already on the bed. Pass the whole solid, including its id, in the body field. Positions are millimetres and rotations are degrees.",
+    input: transformToolInput,
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
     async execute(input): Promise<Effect> {
       await jobs.run(async (session) => {
-        if (!session.job.scene.bodies.some((body) => body.id === input.id)) {
+        const next = input.body;
+        if (!session.job.scene.bodies.some((body) => body.id === next.id)) {
           return;
         }
         session.commit(
           withScene(
             session.job,
             {
-              bodies: session.job.scene.bodies.map((body) => (body.id === input.id ? input : body)),
-              selectedId: input.id,
+              bodies: session.job.scene.bodies.map((body) => (body.id === next.id ? next : body)),
+              selectedId: next.id,
             },
             "",
           ),
@@ -449,9 +450,9 @@ async function apply(
   const job = await jobs.read();
   const input =
     action.tool === addToolId
-      ? action.solid
+      ? { solid: action.solid }
       : action.tool === transformToolId
-        ? action.body
+        ? { body: action.body }
         : action.tool === deleteToolId
           ? { id: action.id }
           : action.tool === selectToolId

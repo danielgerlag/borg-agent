@@ -116,6 +116,8 @@ export const placeInputSchema = z
   })
   .strict();
 
+export const transformToolInput = z.object({ body: bodySchema }).strict();
+
 export type PlacedPart = z.infer<typeof placedPartSchema>;
 
 export const primitiveSchema = z.discriminatedUnion("kind", [
@@ -148,6 +150,8 @@ export const primitiveSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
 ]);
+
+export const addToolInput = z.object({ solid: primitiveSchema }).strict();
 
 export const sceneSchema = z
   .object({

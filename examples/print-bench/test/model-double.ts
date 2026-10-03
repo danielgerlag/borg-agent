@@ -132,21 +132,21 @@ function opening(line: string): string[] {
     if (radius === undefined) {
       return ask(SPHERE_QUESTION);
     }
-    return toolCall(addToolId, { kind: "sphere", radiusMm: radius });
+    return toolCall(addToolId, { solid: { kind: "sphere", radiusMm: radius } });
   }
   return ask("Name a solid and a size in millimetres.");
 }
 
 function afterAnswer(line: string, answer: string): string[] {
   if (/\bgears?\b/iu.test(line)) {
-    return toolCall(addToolId, cylinderFromGearAnswer(answer));
+    return toolCall(addToolId, { solid: cylinderFromGearAnswer(answer) });
   }
   if (/\b(spheres?|balls?)\b/iu.test(line)) {
     const radius = numbers(answer)[0];
     if (radius === undefined) {
       return text("I still need a radius in millimetres.");
     }
-    return toolCall(addToolId, { kind: "sphere", radiusMm: radius });
+    return toolCall(addToolId, { solid: { kind: "sphere", radiusMm: radius } });
   }
   return text("Name a solid and a size in millimetres.");
 }
@@ -155,7 +155,8 @@ function afterEdit(
   call: { readonly function?: { readonly name?: string; readonly arguments?: string } } | undefined,
 ): string[] {
   const input = record(call?.function?.arguments);
-  const kind = input && typeof input.kind === "string" ? input.kind : "solid";
+  const solid = record(input?.solid);
+  const kind = solid && typeof solid.kind === "string" ? solid.kind : "solid";
   if (call?.function?.name === wire(addToolId)) {
     return text(addedReply(kind));
   }
