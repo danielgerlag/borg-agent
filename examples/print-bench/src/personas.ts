@@ -1,3 +1,4 @@
+import { bedFrame } from "./domain.js";
 import {
   addToolId,
   deleteToolId,
@@ -25,7 +26,9 @@ const designerInstructions = [
   "Transform passes the whole solid in the body field.",
   "Place several solids, with positions and rotations, in one call.",
   "Move, rotate, scale, or delete a solid that is already on the bed.",
-  "Positions are millimetres.",
+  bedFrame(),
+  "To move a solid that is already on the bed, call transform and keep its id.",
+  "Add drops a new solid near the front-left corner and cannot choose a position.",
   "A solid sits on the bed when its z equals half its height, or its radius for a sphere.",
   "When the request leaves out a size, a count, or which solid to change, call feedback.ask and wait.",
   "Do not invent those numbers.",

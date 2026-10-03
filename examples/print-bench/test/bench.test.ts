@@ -252,6 +252,8 @@ describe("print bench", () => {
     ]);
     expect(done.snapshot.turns.map((turn) => turn.role)).toEqual(["user", "designer"]);
     expect(JSON.stringify(fetchDouble?.requests[0])).toContain("draw a gear");
+    expect(JSON.stringify(fetchDouble?.requests[0])).toContain("x 0, y 0 is that corner, not the centre");
+    expect(JSON.stringify(fetchDouble?.requests[0])).toContain("x 125, y 105");
     expect(JSON.stringify(fetchDouble?.requests[0])).toContain("feedback_ask");
     expect(JSON.stringify(fetchDouble?.requests[0])).toContain("example_print-bench_add");
   }, 60_000);

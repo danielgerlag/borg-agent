@@ -7,7 +7,7 @@ import {
   type PluginContext,
   type ToolExecutionContext,
 } from "@borg-agent/plugin-sdk";
-import { SHOP, evaluate, placeOnBed, type Body, type Inspection } from "./domain.js";
+import { SHOP, bedFrame, evaluate, placeOnBed, type Body, type Inspection } from "./domain.js";
 import {
   actInputSchema,
   addToolId,
@@ -90,7 +90,8 @@ export default definePlugin({
       personaTool(context, jobs, pins),
     ].map((tool) => context.tools.register(tool));
     for (const persona of benchPersonas) {
-      if (!context.personas.get(persona.id)) {
+      const existing = context.personas.get(persona.id);
+      if (!existing) {
         await context.personas.create({
           id: persona.id,
           name: persona.name,
@@ -98,6 +99,8 @@ export default definePlugin({
           preferredModels: [...persona.preferredModels],
           allowedTools: [...persona.allowedTools],
         });
+      } else if (existing.instructions !== persona.instructions) {
+        await context.personas.update(persona.id, { instructions: persona.instructions });
       }
     }
     await context.personas.setDefault(designerPersonaId);
@@ -169,7 +172,7 @@ function addTool(jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: addToolId,
     description:
-      "Add one box, cylinder, sphere, or cone. Sizes are millimetres. The bench places the solid on the bed. Pass the solid in the solid field.",
+      "Add one box, cylinder, sphere, or cone. Sizes are millimetres. Pass the solid in the solid field. The bench drops it near the front-left corner. Add cannot set a position. Move an existing solid with transform.",
     input: addToolInput,
     output: effectSchema,
     approval: "auto",
@@ -193,7 +196,7 @@ function placeTool(jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: placeToolId,
     description:
-      "Place one or more solids in one edit. Each part keeps the position and rotation you send, in millimetres, z up. Use this for one object made of several solids, such as a gear: a cylinder for the disc and boxes for the teeth. A solid rests on the bed when position.z is half its height, or its radius for a sphere.",
+      `Place one or more solids in one edit. Each part keeps the position and rotation you send, in millimetres, z up. ${bedFrame()} Use this for one object made of several solids, such as a gear: a cylinder for the disc and boxes for the teeth. A solid rests on the bed when position.z is half its height, or its radius for a sphere.`,
     input: placeInputSchema,
     output: effectSchema,
     approval: "auto",
@@ -221,7 +224,7 @@ function transformTool(jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: transformToolId,
     description:
-      "Move, rotate, or resize one solid already on the bed. Pass the whole solid, including its id, in the body field. Positions are millimetres and rotations are degrees.",
+      `Move, rotate, or resize one solid already on the bed. Pass the whole solid, including its id, in the body field. Keep that id. Rotations are degrees. ${bedFrame()}`,
     input: transformToolInput,
     output: effectSchema,
     approval: "auto",
@@ -324,6 +327,7 @@ function promptTool(context: PluginContext, jobs: JobWriter, pins: DesignPins) {
         const started = await context.loops.start({
           prompt: [
             input.text,
+            bedFrame(),
             `Selection: ${job.scene.selectedId ?? "none"}`,
             `Scene: ${JSON.stringify(job.scene.bodies)}`,
           ].join("\n"),

@@ -104,6 +104,10 @@ export type Inspection =
 
 export const EMPTY_SCENE: Scene = { bodies: [], selectedId: null };
 
+export function bedFrame(): string {
+  return `x and y are millimetres from the front-left corner. x 0, y 0 is that corner, not the centre. The centre of the bed is x ${SHOP.bedMm.x / 2}, y ${SHOP.bedMm.y / 2}. Position is the centre of the solid.`;
+}
+
 export function evaluate(scene: Scene): Inspection {
   return inspectMesh(compile(scene.bodies), SHOP);
 }

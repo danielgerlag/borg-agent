@@ -12,6 +12,27 @@ import {
 
 const boxId = "00000000-0000-4000-8000-000000000001";
 
+function span(positions: readonly number[]): {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+} {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let index = 0; index < positions.length; index += 3) {
+    const x = positions[index] ?? 0;
+    const y = positions[index + 1] ?? 0;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+  return { minX, maxX, minY, maxY };
+}
+
 function onBed(body: Body, index = 0): Body {
   return placeOnBed(body, index);
 }
@@ -22,6 +43,28 @@ describe("print bench domain", () => {
     expect(inspection.kind).toBe("fail");
     expect(inspection.findings.map((finding) => finding.code)).toEqual(["empty"]);
     expect("quote" in inspection).toBe(false);
+  });
+
+  it("puts the centre of a solid in the middle of the plate", () => {
+    const centred: Body = {
+      id: boxId,
+      kind: "box",
+      widthMm: 40,
+      depthMm: 20,
+      heightMm: 10,
+      position: { x: SHOP.bedMm.x / 2, y: SHOP.bedMm.y / 2, z: 5 },
+      rotationDeg: { x: 0, y: 0, z: 0 },
+    };
+    const centredInspection = evaluate({ bodies: [centred], selectedId: centred.id });
+    expect(centredInspection.kind).toBe("pass");
+    const centredSpan = span(centredInspection.solid.mesh.positions);
+    expect((centredSpan.minX + centredSpan.maxX) / 2).toBe(SHOP.bedMm.x / 2);
+    expect((centredSpan.minY + centredSpan.maxY) / 2).toBe(SHOP.bedMm.y / 2);
+
+    const corner: Body = { ...centred, position: { x: 0, y: 0, z: 5 } };
+    const cornerInspection = evaluate({ bodies: [corner], selectedId: corner.id });
+    expect(cornerInspection.kind).toBe("fail");
+    expect(cornerInspection.findings.map((finding) => finding.code)).toContain("footprint");
   });
 
   it("prices a box that sits on the bed", () => {
