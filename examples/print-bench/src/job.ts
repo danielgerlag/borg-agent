@@ -4,42 +4,72 @@ import { z } from "@borg-agent/plugin-sdk";
 import type { Body } from "./domain.js";
 import { designerPersonaId, sceneSchema } from "./contract.js";
 
-const storedJobSchema = z
+export const newDesignTitle = "New design";
+
+const turnSchema = z
+  .object({
+    role: z.enum(["user", "designer"]),
+    text: z.string().min(1),
+  })
+  .strict();
+
+const machineSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("idle") }).strict(),
+  z
+    .object({
+      status: z.literal("running"),
+      revision: z.number().int(),
+    })
+    .strict(),
+]);
+
+const quoteSentSchema = z
+  .object({
+    revision: z.number().int(),
+    messageId: z.string().min(1),
+    sentAt: z.string().min(1),
+  })
+  .strict()
+  .nullable();
+
+const designSchema = z
+  .object({
+    id: z.string().uuid(),
+    title: z.string().min(1).max(48),
+    createdAt: z.string().min(1),
+    updatedAt: z.string().min(1),
+    revision: z.number().int().positive(),
+    personaId: z.string().min(1),
+    scene: sceneSchema,
+    reply: z.string(),
+    turns: z.array(turnSchema),
+    machine: machineSchema,
+    quoteSent: quoteSentSchema,
+  })
+  .strict();
+
+const catalogSchema = z
+  .object({
+    currentId: z.string().uuid(),
+    designs: z.array(designSchema).min(1),
+  })
+  .strict();
+
+const legacyJobSchema = z
   .object({
     revision: z.number().int().positive(),
     personaId: z.string().min(1),
     sessionId: z.string().uuid(),
     scene: sceneSchema,
     reply: z.string(),
-    turns: z.array(
-      z
-        .object({
-          role: z.enum(["user", "designer"]),
-          text: z.string().min(1),
-        })
-        .strict(),
-    ),
-    machine: z.discriminatedUnion("status", [
-      z.object({ status: z.literal("idle") }).strict(),
-      z
-        .object({
-          status: z.literal("running"),
-          revision: z.number().int(),
-        })
-        .strict(),
-    ]),
-    quoteSent: z
-      .object({
-        revision: z.number().int(),
-        messageId: z.string().min(1),
-        sentAt: z.string().min(1),
-      })
-      .strict()
-      .nullable(),
+    turns: z.array(turnSchema),
+    machine: machineSchema,
+    quoteSent: quoteSentSchema,
   })
   .strict();
 
-export type Job = z.output<typeof storedJobSchema>;
+export type Job = z.output<typeof designSchema>;
+type Catalog = z.output<typeof catalogSchema>;
 
 export interface JobStore {
   get(key: string): Promise<JsonValue | undefined>;
@@ -51,74 +81,99 @@ export interface JobSession {
   commit(next: Job): void;
 }
 
+export interface DesignSummary {
+  readonly id: string;
+  readonly title: string;
+  readonly updatedAt: string;
+  readonly solids: number;
+}
+
 export interface JobWriter {
   read(): Promise<Job>;
+  get(designId: string): Promise<Job>;
+  list(): Promise<readonly DesignSummary[]>;
   run<T>(operation: (session: JobSession) => Promise<T>): Promise<T>;
+  edit<T>(designId: string, operation: (session: JobSession) => Promise<T>): Promise<T>;
+  create(): Promise<Job>;
+  open(designId: string): Promise<Job>;
+  remove(designId: string): Promise<Job>;
 }
 
 const JOB_KEY = "job";
 
-function toJson(job: Job): JsonValue {
-  return JSON.parse(JSON.stringify(job)) as JsonValue;
+export function designTitle(current: string, text: string): string {
+  if (current !== newDesignTitle) {
+    return current;
+  }
+  const next = text.trim().slice(0, 48);
+  return next.length > 0 ? next : current;
 }
 
-export function createJobWriter(store: JobStore): JobWriter {
-  let tail = Promise.resolve();
-  let memory: Job | undefined;
+export function readCatalog(stored: unknown): Catalog {
+  const catalog = catalogSchema.safeParse(stored);
+  if (catalog.success) {
+    return seal(catalog.data);
+  }
+  const legacy = legacyJobSchema.safeParse(stored);
+  if (!legacy.success) {
+    throw new Error("Print bench job is corrupt");
+  }
+  return seal(migrate(legacy.data));
+}
 
-  async function load(): Promise<Job> {
-    if (memory) {
-      return memory;
-    }
-    const stored = await store.get(JOB_KEY);
-    if (stored === undefined) {
-      memory = seed();
-      await store.set(JOB_KEY, toJson(storedJobSchema.parse(memory)));
-      return memory;
-    }
-    const parsed = storedJobSchema.safeParse(stored);
-    if (!parsed.success) {
+function migrate(job: z.output<typeof legacyJobSchema>): Catalog {
+  const now = new Date().toISOString();
+  const firstAsk = job.turns.find((turn) => turn.role === "user")?.text ?? "";
+  const design = designSchema.parse({
+    id: job.sessionId,
+    title: designTitle(newDesignTitle, firstAsk),
+    createdAt: now,
+    updatedAt: now,
+    revision: job.revision,
+    personaId: job.personaId,
+    scene: job.scene,
+    reply: job.reply,
+    turns: job.turns,
+    machine: job.machine,
+    quoteSent: job.quoteSent,
+  });
+  return { currentId: design.id, designs: [design] };
+}
+
+function seal(catalog: Catalog): Catalog {
+  const ids = new Set<string>();
+  for (const design of catalog.designs) {
+    if (ids.has(design.id)) {
       throw new Error("Print bench job is corrupt");
     }
-    memory = parsed.data;
-    return memory;
+    ids.add(design.id);
   }
-
-  return {
-    // Stay off the writer tail so a quote approval can still refresh the bench.
-    read: load,
-    run(operation) {
-      const run = tail.then(async () => {
-        const job = await load();
-        let next = job;
-        let committed = false;
-        const result = await operation({
-          job,
-          commit(value) {
-            next = storedJobSchema.parse(value);
-            committed = true;
-          },
-        });
-        if (committed) {
-          memory = next;
-          await store.set(JOB_KEY, toJson(next));
-        }
-        return result;
-      });
-      tail = run.then(
-        () => undefined,
-        () => undefined,
-      );
-      return run;
-    },
-  };
+  if (!ids.has(catalog.currentId)) {
+    throw new Error("Print bench job is corrupt");
+  }
+  return catalog;
 }
 
-export function seed(): Job {
+function toJson(catalog: Catalog): JsonValue {
+  return JSON.parse(JSON.stringify(catalog)) as JsonValue;
+}
+
+function currentDesign(catalog: Catalog): Job {
+  const design = catalog.designs.find((item) => item.id === catalog.currentId);
+  if (!design) {
+    throw new Error("Print bench job is corrupt");
+  }
+  return design;
+}
+
+export function seed(now = new Date().toISOString()): Job {
   return {
+    id: randomUUID(),
+    title: newDesignTitle,
+    createdAt: now,
+    updatedAt: now,
     revision: 1,
     personaId: designerPersonaId,
-    sessionId: randomUUID(),
     scene: { bodies: [], selectedId: null },
     reply: "",
     turns: [],
@@ -146,4 +201,159 @@ export function withScene(job: Job, scene: Job["scene"], reply = job.reply): Job
 
 function sameBodies(left: readonly Body[], right: readonly Body[]): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function summaries(catalog: Catalog): readonly DesignSummary[] {
+  return catalog.designs
+    .map((design) => ({
+      id: design.id,
+      title: design.title,
+      updatedAt: design.updatedAt,
+      solids: design.scene.bodies.length,
+    }))
+    .sort(
+      (left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt) || left.title.localeCompare(right.title),
+    );
+}
+
+export function createJobWriter(store: JobStore): JobWriter {
+  let tail = Promise.resolve();
+  let memory: Catalog | undefined;
+
+  async function load(): Promise<Catalog> {
+    if (memory) {
+      return memory;
+    }
+    const stored = await store.get(JOB_KEY);
+    if (stored === undefined) {
+      const design = seed();
+      memory = seal({ currentId: design.id, designs: [design] });
+      await store.set(JOB_KEY, toJson(memory));
+      return memory;
+    }
+    const migrated = !catalogSchema.safeParse(stored).success;
+    memory = readCatalog(stored);
+    if (migrated) {
+      await store.set(JOB_KEY, toJson(memory));
+    }
+    return memory;
+  }
+
+  function enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const run = tail.then(operation);
+    tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  async function save(catalog: Catalog): Promise<void> {
+    memory = seal(catalogSchema.parse(catalog));
+    await store.set(JOB_KEY, toJson(memory));
+  }
+
+  function replace(catalog: Catalog, designId: string, next: Job): Catalog {
+    return {
+      currentId: catalog.currentId,
+      designs: catalog.designs.map((item) => (item.id === designId ? next : item)),
+    };
+  }
+
+  async function editDesign<T>(
+    designId: string,
+    operation: (session: JobSession) => Promise<T>,
+  ): Promise<T> {
+    const catalog = await load();
+    const job = catalog.designs.find((item) => item.id === designId);
+    if (!job) {
+      throw new Error(`Design ${designId} is unavailable`);
+    }
+    let next = job;
+    let committed = false;
+    const result = await operation({
+      job,
+      commit(value) {
+        next = designSchema.parse({
+          ...value,
+          id: job.id,
+          createdAt: job.createdAt,
+          updatedAt: new Date().toISOString(),
+        });
+        committed = true;
+      },
+    });
+    if (committed) {
+      await save(replace(catalog, job.id, next));
+    }
+    return result;
+  }
+
+  return {
+    // Stay off the writer tail so a quote approval can still refresh the bench.
+    read: async () => currentDesign(await load()),
+    get: async (designId) => {
+      const design = (await load()).designs.find((item) => item.id === designId);
+      if (!design) {
+        throw new Error(`Design ${designId} is unavailable`);
+      }
+      return design;
+    },
+    list: async () => summaries(await load()),
+    run(operation) {
+      return enqueue(async () => editDesign(currentDesign(await load()).id, operation));
+    },
+    edit(designId, operation) {
+      return enqueue(() => editDesign(designId, operation));
+    },
+    create() {
+      return enqueue(async () => {
+        const catalog = await load();
+        const design = seed();
+        await save({ currentId: design.id, designs: [design, ...catalog.designs] });
+        return design;
+      });
+    },
+    open(designId) {
+      return enqueue(async () => {
+        const catalog = await load();
+        const design = catalog.designs.find((item) => item.id === designId);
+        if (!design) {
+          throw new Error(`Design ${designId} is unavailable`);
+        }
+        if (catalog.currentId !== designId) {
+          await save({ ...catalog, currentId: designId });
+        }
+        return design;
+      });
+    },
+    remove(designId) {
+      return enqueue(async () => {
+        const catalog = await load();
+        const remaining = catalog.designs.filter((item) => item.id !== designId);
+        if (remaining.length === catalog.designs.length) {
+          throw new Error(`Design ${designId} is unavailable`);
+        }
+        let designs = remaining;
+        let currentId = catalog.currentId;
+        if (designs.length === 0) {
+          const design = seed();
+          designs = [design];
+          currentId = design.id;
+        } else if (currentId === designId) {
+          const newest = [...designs].sort(
+            (left, right) =>
+              right.updatedAt.localeCompare(left.updatedAt) || left.title.localeCompare(right.title),
+          )[0];
+          if (!newest) {
+            throw new Error("Print bench job is corrupt");
+          }
+          currentId = newest.id;
+        }
+        await save({ currentId, designs });
+        return currentDesign(memory ?? { currentId, designs });
+      });
+    },
+  };
 }

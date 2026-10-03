@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { modelOperationPrefixSchema } from "@borg-agent/contracts";
-import { definePlugin, defineTool, z, type PluginContext } from "@borg-agent/plugin-sdk";
+import {
+  definePlugin,
+  defineTool,
+  z,
+  type PluginContext,
+  type ToolExecutionContext,
+} from "@borg-agent/plugin-sdk";
 import { SHOP, evaluate, placeOnBed, type Body, type Inspection } from "./domain.js";
 import {
   actInputSchema,
@@ -17,6 +23,9 @@ import {
   printBenchAct,
   printBenchSnapshot,
   preferModelToolId,
+  newDesignToolId,
+  openDesignToolId,
+  deleteDesignToolId,
   promptToolId,
   selectToolId,
   sendQuoteToolId,
@@ -28,7 +37,14 @@ import {
   type PlacedPart,
   type Primitive,
 } from "./contract.js";
-import { createJobWriter, withScene, type Job, type JobWriter } from "./job.js";
+import {
+  createJobWriter,
+  designTitle,
+  withScene,
+  type Job,
+  type JobSession,
+  type JobWriter,
+} from "./job.js";
 import { benchPersonas } from "./personas.js";
 
 type Effect = z.output<typeof effectSchema>;
@@ -61,16 +77,17 @@ export default definePlugin({
   },
   async activate(context) {
     const jobs = createJobWriter(context.store);
+    const pins = new Map<string, string>();
     const tools = [
-      addTool(jobs),
-      placeTool(jobs),
-      transformTool(jobs),
-      deleteTool(jobs),
-      selectTool(jobs),
-      promptTool(context, jobs),
-      sendTool(context, jobs),
-      startTool(jobs),
-      personaTool(context, jobs),
+      addTool(jobs, pins),
+      placeTool(jobs, pins),
+      transformTool(jobs, pins),
+      deleteTool(jobs, pins),
+      selectTool(jobs, pins),
+      promptTool(context, jobs, pins),
+      sendTool(context, jobs, pins),
+      startTool(jobs, pins),
+      personaTool(context, jobs, pins),
     ].map((tool) => context.tools.register(tool));
     for (const persona of benchPersonas) {
       if (!context.personas.get(persona.id)) {
@@ -85,7 +102,7 @@ export default definePlugin({
     }
     await context.personas.setDefault(designerPersonaId);
     const snapshotCommand = context.bus.handle(printBenchSnapshot, async () =>
-      project(context, await jobs.read()),
+      project(context, jobs),
     );
     const actCommand = context.bus.handle(printBenchAct, async (input, signal) => {
       signal.throwIfAborted();
@@ -95,14 +112,26 @@ export default definePlugin({
           preferredModels: [action.preferenceId],
         });
         return {
-          snapshot: await project(context, await jobs.read()),
+          snapshot: await project(context, jobs),
           effect: { type: "model" as const },
         };
       }
-      const effect = await apply(context, jobs, action);
+      if (action.tool === newDesignToolId) {
+        await jobs.create();
+      } else if (action.tool === openDesignToolId) {
+        await jobs.open(action.designId);
+      } else if (action.tool === deleteDesignToolId) {
+        await jobs.remove(action.designId);
+      } else {
+        const effect = await apply(context, jobs, action);
+        return {
+          snapshot: await project(context, jobs),
+          effect,
+        };
+      }
       return {
-        snapshot: await project(context, await jobs.read()),
-        effect,
+        snapshot: await project(context, jobs),
+        effect: { type: "design" as const },
       };
     });
     return {
@@ -117,7 +146,26 @@ export default definePlugin({
   },
 });
 
-function addTool(jobs: JobWriter) {
+type DesignPins = Map<string, string>;
+
+const loopPin = "loop";
+
+// A designer turn's tool calls keep the design that started the turn.
+function mutate<T>(
+  jobs: JobWriter,
+  pins: DesignPins,
+  toolContext: ToolExecutionContext,
+  operation: (session: JobSession) => Promise<T>,
+): Promise<T> {
+  const pinned = toolContext.runId ? pins.get(toolContext.runId) : undefined;
+  const designId = pinned ?? toolContext.sessionId ?? pins.get(loopPin);
+  if (!designId) {
+    return jobs.run(operation);
+  }
+  return jobs.edit(designId, operation);
+}
+
+function addTool(jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: addToolId,
     description:
@@ -126,8 +174,8 @@ function addTool(jobs: JobWriter) {
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
-    async execute(input): Promise<Effect> {
-      await jobs.run(async (session) => {
+    async execute(input, toolContext): Promise<Effect> {
+      await mutate(jobs, pins, toolContext, async (session) => {
         const body = placeOnBed(materialize(input.solid, randomUUID()), session.job.scene.bodies.length);
         session.commit(
           withScene(session.job, {
@@ -141,7 +189,7 @@ function addTool(jobs: JobWriter) {
   });
 }
 
-function placeTool(jobs: JobWriter) {
+function placeTool(jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: placeToolId,
     description:
@@ -150,8 +198,8 @@ function placeTool(jobs: JobWriter) {
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
-    async execute(input): Promise<Effect> {
-      await jobs.run(async (session) => {
+    async execute(input, toolContext): Promise<Effect> {
+      await mutate(jobs, pins, toolContext, async (session) => {
         const added = input.parts.map((part) => placedBody(part, randomUUID()));
         session.commit(
           withScene(
@@ -169,7 +217,7 @@ function placeTool(jobs: JobWriter) {
   });
 }
 
-function transformTool(jobs: JobWriter) {
+function transformTool(jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: transformToolId,
     description:
@@ -178,8 +226,8 @@ function transformTool(jobs: JobWriter) {
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
-    async execute(input): Promise<Effect> {
-      await jobs.run(async (session) => {
+    async execute(input, toolContext): Promise<Effect> {
+      await mutate(jobs, pins, toolContext, async (session) => {
         const next = input.body;
         if (!session.job.scene.bodies.some((body) => body.id === next.id)) {
           return;
@@ -200,7 +248,7 @@ function transformTool(jobs: JobWriter) {
   });
 }
 
-function deleteTool(jobs: JobWriter) {
+function deleteTool(jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: deleteToolId,
     description: "Remove one solid by its id.",
@@ -208,8 +256,8 @@ function deleteTool(jobs: JobWriter) {
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
-    async execute(input): Promise<Effect> {
-      await jobs.run(async (session) => {
+    async execute(input, toolContext): Promise<Effect> {
+      await mutate(jobs, pins, toolContext, async (session) => {
         const bodies = session.job.scene.bodies.filter((body) => body.id !== input.id);
         session.commit(
           withScene(session.job, {
@@ -223,7 +271,7 @@ function deleteTool(jobs: JobWriter) {
   });
 }
 
-function selectTool(jobs: JobWriter) {
+function selectTool(jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: selectToolId,
     description: "Select one solid by its id, or pass null to clear the selection.",
@@ -231,8 +279,8 @@ function selectTool(jobs: JobWriter) {
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
-    async execute(input): Promise<Effect> {
-      await jobs.run(async (session) => {
+    async execute(input, toolContext): Promise<Effect> {
+      await mutate(jobs, pins, toolContext, async (session) => {
         const selectedId =
           input.id !== null && session.job.scene.bodies.some((body) => body.id === input.id)
             ? input.id
@@ -244,7 +292,7 @@ function selectTool(jobs: JobWriter) {
   });
 }
 
-function promptTool(context: PluginContext, jobs: JobWriter) {
+function promptTool(context: PluginContext, jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: promptToolId,
     description: "Ask the designer to build or edit the solids.",
@@ -253,64 +301,80 @@ function promptTool(context: PluginContext, jobs: JobWriter) {
     approval: "auto",
     sideEffect: true,
     async execute(input, toolContext): Promise<Effect> {
-      await jobs.run(async (session) => {
+      const designId = toolContext.sessionId;
+      if (!designId) {
+        throw new Error("Design is unavailable");
+      }
+      await jobs.edit(designId, async (session) => {
         session.commit({
           ...session.job,
+          title: designTitle(session.job.title, input.text),
           turns: [...session.job.turns, { role: "user", text: input.text }],
         });
       });
       const preference = context.personas.get(designerPersonaId)?.preferredModels[0];
       if (preference === undefined || preference === unconfiguredModelPreference) {
-        await remember(jobs, connectModelMessage);
+        await remember(jobs, designId, connectModelMessage);
         return { type: "asked" };
       }
-      const job = await jobs.read();
+      const job = await jobs.get(designId);
       // The loop calls the solid tools and feedback.ask, which must not wait behind this writer.
-      const started = await context.loops.start({
-        prompt: [
-          input.text,
-          `Selection: ${job.scene.selectedId ?? "none"}`,
-          `Scene: ${JSON.stringify(job.scene.bodies)}`,
-        ].join("\n"),
-        personaId: designerPersonaId,
-        allowedTools: [
-          addToolId,
-          placeToolId,
-          transformToolId,
-          deleteToolId,
-          selectToolId,
-          feedbackAskToolId,
-        ],
-        security: {
-          kind: "root",
-          // A repeated subject resumes the same root, and the loop closes that root when the turn ends.
-          subject: { kind: "print-bench", id: randomUUID() },
-          classification: "confidential",
-          provenance: { kind: "user", id: "bench" },
-          operationPrefix: modelOperationPrefixSchema.parse("example.print-bench"),
-        },
-      });
-      let reply = "Done.";
+      pins.set(loopPin, designId);
       try {
-        await waitForLoop(context, started.id, toolContext.signal);
-        const output = context.loops.get(started.id)?.output?.trim() ?? "";
-        if (output.length > 0) {
-          reply = output;
+        const started = await context.loops.start({
+          prompt: [
+            input.text,
+            `Selection: ${job.scene.selectedId ?? "none"}`,
+            `Scene: ${JSON.stringify(job.scene.bodies)}`,
+          ].join("\n"),
+          personaId: designerPersonaId,
+          allowedTools: [
+            addToolId,
+            placeToolId,
+            transformToolId,
+            deleteToolId,
+            selectToolId,
+            feedbackAskToolId,
+          ],
+          security: {
+            kind: "root",
+            // A repeated subject resumes the same root, and the loop closes that root when the turn ends.
+            subject: { kind: "print-bench", id: randomUUID() },
+            classification: "confidential",
+            provenance: { kind: "user", id: "bench" },
+            operationPrefix: modelOperationPrefixSchema.parse("example.print-bench"),
+          },
+        });
+        pins.set(started.id, designId);
+        let reply = "Done.";
+        try {
+          await waitForLoop(context, started.id, toolContext.signal);
+          const output = context.loops.get(started.id)?.output?.trim() ?? "";
+          if (output.length > 0) {
+            reply = output;
+          }
+        } catch (error) {
+          reply =
+            error instanceof Error && error.message.trim().length > 0
+              ? error.message
+              : "The designer stopped.";
+          await remember(jobs, designId, reply);
+          throw error;
+        } finally {
+          pins.delete(started.id);
         }
-      } catch (error) {
-        reply = error instanceof Error && error.message.trim().length > 0
-          ? error.message
-          : "The designer stopped.";
-        await remember(jobs, reply);
-        throw error;
+        await remember(jobs, designId, reply);
+        return { type: "asked" };
+      } finally {
+        if (pins.get(loopPin) === designId) {
+          pins.delete(loopPin);
+        }
       }
-      await remember(jobs, reply);
-      return { type: "asked" };
     },
   });
 }
 
-function sendTool(context: PluginContext, jobs: JobWriter) {
+function sendTool(context: PluginContext, jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: sendQuoteToolId,
     description: "Send the quote for the current passing revision.",
@@ -319,7 +383,7 @@ function sendTool(context: PluginContext, jobs: JobWriter) {
     approval: "auto",
     sideEffect: true,
     async execute(_input, toolContext): Promise<Effect> {
-      return jobs.run(async (session) => {
+      return mutate(jobs, pins, toolContext, async (session) => {
         const inspection = evaluate(session.job.scene);
         if (inspection.kind !== "pass") {
           return { type: "unquotable" };
@@ -331,7 +395,7 @@ function sendTool(context: PluginContext, jobs: JobWriter) {
           adapterId: "borg.channel.mock",
           destinationId: "default",
           classification: "confidential",
-          idempotencyKey: `quote-${session.job.revision}`,
+          idempotencyKey: `quote-${session.job.id}-${session.job.revision}`,
           text: `${inspection.quote.grams} g, ${inspection.quote.hours} h, ${inspection.quote.price.amount} USD`,
           ...(toolContext.runId ? { runId: toolContext.runId } : {}),
           signal: toolContext.signal,
@@ -356,7 +420,7 @@ function sendTool(context: PluginContext, jobs: JobWriter) {
   });
 }
 
-function startTool(jobs: JobWriter) {
+function startTool(jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: startMachineToolId,
     description: "Start the printer on the current passing revision.",
@@ -364,8 +428,8 @@ function startTool(jobs: JobWriter) {
     output: effectSchema,
     approval: "ask",
     sideEffect: true,
-    async execute(input): Promise<Effect> {
-      return jobs.run(async (session) => {
+    async execute(input, toolContext): Promise<Effect> {
+      return mutate(jobs, pins, toolContext, async (session) => {
         const inspection = evaluate(session.job.scene);
         if (inspection.kind !== "pass" || session.job.revision !== input.revision) {
           return { type: "not-printable" };
@@ -380,7 +444,7 @@ function startTool(jobs: JobWriter) {
   });
 }
 
-function personaTool(context: PluginContext, jobs: JobWriter) {
+function personaTool(context: PluginContext, jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: usePersonaToolId,
     description: "Sit as a shop persona.",
@@ -388,7 +452,7 @@ function personaTool(context: PluginContext, jobs: JobWriter) {
     output: effectSchema,
     approval: "auto",
     sideEffect: true,
-    async execute(input): Promise<Effect> {
+    async execute(input, toolContext): Promise<Effect> {
       if (input.personaId.startsWith("system/")) {
         throw new Error(`Persona ${input.personaId} is not a bench seat`);
       }
@@ -396,7 +460,7 @@ function personaTool(context: PluginContext, jobs: JobWriter) {
       if (!persona) {
         throw new Error(`Persona ${input.personaId} is unavailable`);
       }
-      await jobs.run(async (session) => {
+      await mutate(jobs, pins, toolContext, async (session) => {
         if (session.job.personaId === persona.id) {
           return;
         }
@@ -474,7 +538,7 @@ async function scopedInvoke(
   const runId = randomUUID();
   const scope = context.tools.registerExecutionScope({
     runId,
-    sessionId: job.sessionId,
+    sessionId: job.id,
     personaId: job.personaId,
   });
   try {
@@ -485,13 +549,16 @@ async function scopedInvoke(
   }
 }
 
-async function project(context: PluginContext, job: Job) {
+async function project(context: PluginContext, jobs: JobWriter) {
+  const job = await jobs.read();
   const persona = context.personas.get(job.personaId);
   if (!persona) {
     throw new Error(`Persona ${job.personaId} is unavailable`);
   }
   const inspection = wire(evaluate(job.scene));
   return snapshotSchema.parse({
+    design: { id: job.id, title: job.title },
+    designs: await jobs.list(),
     revision: job.revision,
     persona: {
       id: persona.id,
@@ -548,8 +615,8 @@ function wire(inspection: Inspection) {
   };
 }
 
-async function remember(jobs: JobWriter, reply: string): Promise<void> {
-  await jobs.run(async (session) => {
+async function remember(jobs: JobWriter, designId: string, reply: string): Promise<void> {
+  await jobs.edit(designId, async (session) => {
     session.commit({
       ...session.job,
       reply,

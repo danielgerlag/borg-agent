@@ -145,6 +145,8 @@ describe("print bench window", () => {
       .toBeGreaterThan(1);
     await chooseDesignerModel(page, "OpenAI · GPT-5 Mini", designerModelPreference);
     await page.getByTestId("workspace-view-tab-print-bench.design").click();
+    await expect(page.getByTestId("print-bench-designs")).toBeVisible();
+    await expect(page.getByTestId("print-bench-design-title")).toHaveText("New design");
 
     const findings = page.getByTestId("print-bench-findings");
     await expect(findings).toContainText("Nothing");
@@ -159,7 +161,23 @@ describe("print bench window", () => {
     await page.getByTestId("print-bench-tool-box").click();
     await page.getByTestId("workspace-view-tab-print-bench.quote").click();
     await expect(page.getByTestId("print-bench-quote")).toContainText("USD");
+    await expect(page.getByTestId("print-bench-design-title")).toHaveText("New design");
     await page.getByTestId("workspace-view-tab-print-bench.design").click();
+    await page.getByTestId("print-bench-new-design").click();
+    await expect(findings).toContainText("Nothing");
+    await expect(page.getByTestId("print-bench-design-item")).toHaveCount(2);
+    await page.getByRole("button", { name: "New design, 1 solid", exact: true }).click();
+    await expect(findings).not.toContainText("Nothing");
+    await page.getByRole("button", { name: "New design, Empty", exact: true }).click();
+    await expect(findings).toContainText("Nothing");
+    await page.getByTestId("print-bench-delete-design").click();
+    await expect(page.getByTestId("print-bench-delete-confirm")).toBeVisible();
+    await page.getByTestId("print-bench-delete-cancel").click();
+    await expect(page.getByTestId("print-bench-delete-confirm")).toHaveCount(0);
+    await page.getByTestId("print-bench-delete-design").click();
+    await page.getByTestId("print-bench-delete-confirm-action").click();
+    await expect(page.getByTestId("print-bench-design-item")).toHaveCount(1);
+    await expect(findings).not.toContainText("Nothing");
 
     await page.getByTestId("print-bench-prompt").fill("a sphere");
     await page.getByTestId("print-bench-build").click();

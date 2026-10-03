@@ -12,6 +12,9 @@ export const sendQuoteToolId = "example.print-bench.send-quote";
 export const startMachineToolId = "example.print-bench.start-machine";
 export const usePersonaToolId = "example.print-bench.use-persona";
 export const preferModelToolId = "example.print-bench.prefer-model";
+export const newDesignToolId = "example.print-bench.new-design";
+export const openDesignToolId = "example.print-bench.open-design";
+export const deleteDesignToolId = "example.print-bench.delete-design";
 
 export const designerPersonaId = "print-bench/designer";
 export const frontDeskPersonaId = "print-bench/front-desk";
@@ -231,8 +234,24 @@ const machineSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
+const designSummarySchema = z
+  .object({
+    id: z.string().uuid(),
+    title: z.string().min(1).max(48),
+    updatedAt: z.string().min(1),
+    solids: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const snapshotSchema = z
   .object({
+    design: z
+      .object({
+        id: z.string().uuid(),
+        title: z.string().min(1).max(48),
+      })
+      .strict(),
+    designs: z.array(designSummarySchema).min(1),
     revision: z.number().int().positive(),
     persona: personaSchema,
     personas: z.array(
@@ -278,6 +297,7 @@ export const effectSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("not-printable") }).strict(),
   z.object({ type: z.literal("running") }).strict(),
   z.object({ type: z.literal("model") }).strict(),
+  z.object({ type: z.literal("design") }).strict(),
 ]);
 
 export const actInputSchema = z.discriminatedUnion("tool", [
@@ -295,6 +315,9 @@ export const actInputSchema = z.discriminatedUnion("tool", [
     .strict(),
   z.object({ tool: z.literal(sendQuoteToolId) }).strict(),
   z.object({ tool: z.literal(startMachineToolId) }).strict(),
+  z.object({ tool: z.literal(newDesignToolId) }).strict(),
+  z.object({ tool: z.literal(openDesignToolId), designId: z.string().uuid() }).strict(),
+  z.object({ tool: z.literal(deleteDesignToolId), designId: z.string().uuid() }).strict(),
 ]);
 
 export const printBenchSnapshot = defineCommand({

@@ -16,6 +16,9 @@ export function QuoteView(props: BenchControl) {
         <header>
           <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-subtle)]">Quote</p>
           <h1 class="mt-2 text-3xl font-semibold">Revision {props.snapshot.revision}</h1>
+          <p class="mt-1 text-sm text-[var(--text-muted)]" data-testid="print-bench-design-title">
+            {props.snapshot.design.title}
+          </p>
         </header>
         <div data-testid="print-bench-quote">
           <Show

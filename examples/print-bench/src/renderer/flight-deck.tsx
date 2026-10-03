@@ -29,6 +29,7 @@ export function FlightDeck(props: FlightDeckProps) {
             <p class="mt-2 text-sm" data-testid="flightdeck-designer">
               {props.pending?.kind === "human_input" ? "Asking a question" : props.busy ? "Building" : "Idle"}
             </p>
+            <p class="mt-1 text-sm text-[var(--text-muted)]">{props.snapshot.design.title}</p>
             <p class="mt-1 text-sm text-[var(--text-muted)]">Seat {props.snapshot.persona.name}</p>
           </Panel>
           <Panel>

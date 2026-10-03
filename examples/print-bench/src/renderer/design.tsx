@@ -1,8 +1,11 @@
-import { Button, TextField } from "@borg/ui-kit";
+import { Button, Panel, TextField } from "@borg/ui-kit";
 import { For, Show, createSignal } from "solid-js";
 import {
   addToolId,
+  deleteDesignToolId,
   deleteToolId,
+  newDesignToolId,
+  openDesignToolId,
   promptToolId,
   selectToolId,
   transformToolId,
@@ -32,6 +35,7 @@ export function DesignView(
   const [mode, setMode] = createSignal<Mode>("translate");
   const [prompt, setPrompt] = createSignal("");
   const [heldId, setHeldId] = createSignal<string | null>(null);
+  const [pendingDelete, setPendingDelete] = createSignal<string | null>(null);
   const allowed = (toolId: string): boolean => props.snapshot.persona.allowedTools.includes(toolId);
   const question = (): BenchInteraction | undefined =>
     props.pending?.kind === "human_input" ? props.pending : undefined;
@@ -69,8 +73,53 @@ export function DesignView(
     }
     props.run({ tool: transformToolId, body });
   };
+  const pendingTitle = (): string =>
+    props.snapshot.designs.find((design) => design.id === pendingDelete())?.title ??
+    props.snapshot.design.title;
   return (
-    <section class="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)_18rem]">
+    <>
+    <section class="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[12rem_9rem_minmax(0,1fr)_16rem]">
+      <aside
+        class="flex max-h-44 min-h-0 flex-col gap-2 border-b border-[var(--border)] p-3 lg:max-h-none lg:border-r lg:border-b-0"
+        data-testid="print-bench-designs"
+        aria-label="Designs"
+      >
+        <Button
+          data-testid="print-bench-new-design"
+          {...(props.busy ? { disabled: true } : {})}
+          onClick={() => props.run({ tool: newDesignToolId })}
+        >
+          New design
+        </Button>
+        <div class="grid min-h-0 gap-1 overflow-y-auto">
+          <For each={props.snapshot.designs}>
+            {(design) => {
+              const current = (): boolean => design.id === props.snapshot.design.id;
+              const label = (): string => `${design.title}, ${solidsLabel(design.solids)}`;
+              return (
+                <button
+                  type="button"
+                  class="w-full rounded-xl px-3 py-2 text-left text-sm transition hover:bg-[var(--panel)]"
+                  classList={{
+                    "bg-[var(--panel)] text-[var(--accent)]": current(),
+                    "text-[var(--text)]": !current(),
+                  }}
+                  aria-label={label()}
+                  data-testid="print-bench-design-item"
+                  {...(current() ? { "aria-current": "true" as const } : {})}
+                  {...(props.busy ? { disabled: true } : {})}
+                  onClick={() => props.run({ tool: openDesignToolId, designId: design.id })}
+                >
+                  <span class="block truncate font-medium">{design.title}</span>
+                  <span class="mt-1 block text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">
+                    {solidsLabel(design.solids)}
+                  </span>
+                </button>
+              );
+            }}
+          </For>
+        </div>
+      </aside>
       <aside class="flex flex-col gap-2 border-b border-[var(--border)] p-3 lg:border-r lg:border-b-0" data-testid="print-bench-palette">
         <p class="px-1 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-subtle)]">Palette</p>
         <ModeButton label="Move" mode="translate" current={mode()} onPick={setMode} />
@@ -102,9 +151,23 @@ export function DesignView(
           Delete
         </Button>
       </aside>
-      <div class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
+      <div class="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto]">
         <header class="border-b border-[var(--border)] px-5 py-3">
-          <h1 class="text-xl font-semibold">Model</h1>
+          <div class="flex items-start justify-between gap-3">
+            <h1 data-testid="print-bench-design-title" class="truncate text-xl font-semibold">
+              {props.snapshot.design.title}
+            </h1>
+            <button
+              type="button"
+              class="shrink-0 rounded-lg px-2 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--danger)]"
+              aria-label="Delete design"
+              data-testid="print-bench-delete-design"
+              {...(props.busy ? { disabled: true } : {})}
+              onClick={() => setPendingDelete(props.snapshot.design.id)}
+            >
+              Delete
+            </button>
+          </div>
           <p class="mt-1 text-sm text-[var(--text-muted)]">
             {props.snapshot.scene.bodies.length === 0
               ? "The bed is empty. Add a solid, or describe one."
@@ -260,7 +323,59 @@ export function DesignView(
         </Show>
       </aside>
     </section>
+      <Show when={pendingDelete()}>
+        <div
+          class="fixed inset-0 z-30 grid place-items-center bg-black/60 p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="print-bench-delete-title"
+          data-testid="print-bench-delete-confirm"
+        >
+          <Panel class="grid w-full max-w-md gap-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--danger)]">Delete design</p>
+            <h2 id="print-bench-delete-title" class="text-xl font-semibold">
+              Delete “{pendingTitle()}”?
+            </h2>
+            <p class="text-sm text-[var(--text-muted)]">This design and its model will be removed.</p>
+            <div class="mt-3 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                data-testid="print-bench-delete-cancel"
+                onClick={() => setPendingDelete(null)}
+              >
+                Keep design
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                data-testid="print-bench-delete-confirm-action"
+                onClick={() => {
+                  const designId = pendingDelete();
+                  setPendingDelete(null);
+                  if (designId) {
+                    props.run({ tool: deleteDesignToolId, designId });
+                  }
+                }}
+              >
+                Delete design
+              </Button>
+            </div>
+          </Panel>
+        </div>
+      </Show>
+    </>
   );
+}
+
+function solidsLabel(count: number): string {
+  if (count === 0) {
+    return "Empty";
+  }
+  if (count === 1) {
+    return "1 solid";
+  }
+  return `${count} solids`;
 }
 
 function ModeButton(props: { label: string; mode: Mode; current: Mode; onPick: (mode: Mode) => void }) {

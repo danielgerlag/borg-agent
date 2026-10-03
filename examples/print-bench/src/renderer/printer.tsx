@@ -13,6 +13,9 @@ export function PrinterView(props: BenchControl) {
         <header>
           <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-subtle)]">Printer</p>
           <h1 class="mt-2 text-3xl font-semibold">Prusa MK4</h1>
+          <p class="mt-1 text-sm text-[var(--text-muted)]" data-testid="print-bench-design-title">
+            {props.snapshot.design.title}
+          </p>
         </header>
         <Panel>
           <Show
