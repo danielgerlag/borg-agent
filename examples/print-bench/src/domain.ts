@@ -108,6 +108,67 @@ export function bedFrame(): string {
   return `x and y are millimetres from the front-left corner. x 0, y 0 is that corner, not the centre. The centre of the bed is x ${SHOP.bedMm.x / 2}, y ${SHOP.bedMm.y / 2}. Position is the centre of the solid.`;
 }
 
+export interface MeshSpan {
+  readonly min: Vec3;
+  readonly max: Vec3;
+  readonly centre: Vec3;
+}
+
+export function meshSpan(bodies: readonly Body[]): MeshSpan | undefined {
+  const positions = compile(bodies).positions;
+  if (positions.length === 0) {
+    return undefined;
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  for (let index = 0; index < positions.length; index += 3) {
+    const x = positions[index] ?? 0;
+    const y = positions[index + 1] ?? 0;
+    const z = positions[index + 2] ?? 0;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    minZ = Math.min(minZ, z);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+    maxZ = Math.max(maxZ, z);
+  }
+  return {
+    min: { x: minX, y: minY, z: minZ },
+    max: { x: maxX, y: maxY, z: maxZ },
+    centre: { x: (minX + maxX) / 2, y: (minY + maxY) / 2, z: (minZ + maxZ) / 2 },
+  };
+}
+
+export function shiftBodies(bodies: readonly Body[], delta: Vec3): Body[] {
+  return bodies.map((body): Body => ({
+    ...body,
+    position: {
+      x: body.position.x + delta.x,
+      y: body.position.y + delta.y,
+      z: body.position.z + delta.z,
+    },
+  }));
+}
+
+export function objectFrame(bodies: readonly Body[]): string {
+  const span = meshSpan(bodies);
+  if (!span) {
+    return "The bed is empty. There is no object to move.";
+  }
+  const dx = SHOP.bedMm.x / 2 - span.centre.x;
+  const dy = SHOP.bedMm.y / 2 - span.centre.y;
+  return `The solids are one object. Its centre is x ${mm(span.centre.x)}, y ${mm(span.centre.y)}. It spans x ${mm(span.min.x)} to ${mm(span.max.x)} and y ${mm(span.min.y)} to ${mm(span.max.y)}. Selection is one solid, not the object. To centre the whole object on the bed, call translate with dxMm ${mm(dx)}, dyMm ${mm(dy)}, dzMm 0. translate moves every solid by that same amount and keeps their spacing.`;
+}
+
+function mm(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  return Object.is(rounded, -0) ? "0" : String(rounded);
+}
+
 export function evaluate(scene: Scene): Inspection {
   return inspectMesh(compile(scene.bodies), SHOP);
 }

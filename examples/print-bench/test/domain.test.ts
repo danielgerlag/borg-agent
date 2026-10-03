@@ -5,8 +5,11 @@ import {
   SHOP,
   evaluate,
   inspectMesh,
+  meshSpan,
+  objectFrame,
   placeOnBed,
   rotateEulerXYZ,
+  shiftBodies,
   type Body,
 } from "../src/domain.js";
 
@@ -65,6 +68,43 @@ describe("print bench domain", () => {
     const cornerInspection = evaluate({ bodies: [corner], selectedId: corner.id });
     expect(cornerInspection.kind).toBe("fail");
     expect(cornerInspection.findings.map((finding) => finding.code)).toContain("footprint");
+  });
+
+  it("shifts every solid so the object centre meets the middle of the plate", () => {
+    const first: Body = {
+      id: boxId,
+      kind: "box",
+      widthMm: 10,
+      depthMm: 10,
+      heightMm: 10,
+      position: { x: 40, y: 40, z: 5 },
+      rotationDeg: { x: 0, y: 0, z: 0 },
+    };
+    const second: Body = {
+      ...first,
+      id: "00000000-0000-4000-8000-000000000002",
+      position: { x: 85, y: 40, z: 5 },
+    };
+    const span = meshSpan([first, second]);
+    expect(span).toBeDefined();
+    if (!span) {
+      return;
+    }
+    const delta = {
+      x: SHOP.bedMm.x / 2 - span.centre.x,
+      y: SHOP.bedMm.y / 2 - span.centre.y,
+      z: 0,
+    };
+    const moved = shiftBodies([first, second], delta);
+    const next = meshSpan(moved);
+    expect(next?.centre.x).toBe(SHOP.bedMm.x / 2);
+    expect(next?.centre.y).toBe(SHOP.bedMm.y / 2);
+    expect(moved[1]?.position.x).toBe((moved[0]?.position.x ?? 0) + 45);
+    expect(moved[0]?.position.z).toBe(5);
+    expect(moved[1]?.position.z).toBe(5);
+    expect(objectFrame([first, second])).toContain(`dxMm ${delta.x}`);
+    expect(objectFrame([first, second])).toContain(`dyMm ${delta.y}`);
+    expect(objectFrame([])).toBe("The bed is empty. There is no object to move.");
   });
 
   it("prices a box that sits on the bed", () => {

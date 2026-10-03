@@ -6,6 +6,7 @@ import type { PendingInteraction } from "@borg-agent/contracts";
 import { z } from "@borg-agent/plugin-sdk";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startPrintBench } from "../src/boot.js";
+import { meshSpan, SHOP } from "../src/domain.js";
 import { handleProviderCall } from "../src/provider-bridge.js";
 import { connectModelMessage } from "../src/contract.js";
 import {
@@ -26,6 +27,8 @@ import {
   addToolId,
   addToolInput,
   deleteDesignToolId,
+  translateToolId,
+  translateToolInput,
   deleteToolId,
   designerPersonaId,
   frontDeskPersonaId,
@@ -38,6 +41,7 @@ import {
   promptToolId,
   sendQuoteToolId,
   startMachineToolId,
+  transformToolId,
   transformToolInput,
   usePersonaToolId,
 } from "../src/contract.js";
@@ -63,7 +67,7 @@ afterEach(async () => {
 
 describe("print bench", () => {
   it("publishes object schemas for the solid tools", () => {
-    for (const schema of [addToolInput, transformToolInput]) {
+    for (const schema of [addToolInput, transformToolInput, translateToolInput]) {
       expect(z.toJSONSchema(schema)).toMatchObject({ type: "object" });
     }
   });
@@ -257,6 +261,58 @@ describe("print bench", () => {
     expect(JSON.stringify(fetchDouble?.requests[0])).toContain("feedback_ask");
     expect(JSON.stringify(fetchDouble?.requests[0])).toContain("example_print-bench_add");
   }, 60_000);
+
+  it("moves every solid when asked to centre the object", async () => {
+    dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
+    kernel = await startPrintBench(dataDirectory);
+    await connectDesigner(kernel);
+    await kernel.bus.invoke(printBenchAct, {
+      tool: addToolId,
+      solid: { kind: "box", widthMm: 10, depthMm: 10, heightMm: 10 },
+    });
+    const placed = await kernel.bus.invoke(printBenchAct, {
+      tool: addToolId,
+      solid: { kind: "box", widthMm: 10, depthMm: 10, heightMm: 10 },
+    });
+    const before = placed.snapshot.scene.bodies;
+    expect(before).toHaveLength(2);
+    expect(placed.snapshot.scene.selectedId).toBe(before[1]?.id);
+    const moved = await kernel.bus.invoke(printBenchAct, {
+      tool: promptToolId,
+      text: "move it to the centre of the build plate",
+    });
+    const after = moved.snapshot.scene.bodies;
+    expect(moved.snapshot.reply).toBe("Moved the whole object.");
+    expect(after.map((body) => body.id)).toEqual(before.map((body) => body.id));
+    expect(after[1]?.position.x).toBe((after[0]?.position.x ?? 0) + 45);
+    expect(after[0]?.position.z).toBe(before[0]?.position.z);
+    expect(after[1]?.position.z).toBe(before[1]?.position.z);
+    expect(after[0]?.position.x).not.toBe(before[0]?.position.x);
+    expect(after[1]?.position.x).not.toBe(before[1]?.position.x);
+    const centred = meshSpan(after);
+    expect(centred?.centre.x).toBe(SHOP.bedMm.x / 2);
+    expect(centred?.centre.y).toBe(SHOP.bedMm.y / 2);
+    const request = JSON.stringify(fetchDouble?.requests[0]);
+    expect(request).toContain("call translate with dxMm");
+    expect(request).toContain("example_print-bench_translate");
+    expect(request).toContain("Selection is one solid, not the object.");
+  }, 60_000);
+
+  it("refreshes designer tools without clearing the chosen model", async () => {
+    dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
+    kernel = await startPrintBench(dataDirectory);
+    await connectDesigner(kernel);
+    await kernel.personas.update(designerPersonaId, {
+      instructions: "old designer instructions",
+      allowedTools: [addToolId, transformToolId],
+    });
+    await kernel.stop();
+    kernel = await startPrintBench(dataDirectory);
+    const designer = kernel.personas.get(designerPersonaId);
+    expect(designer?.instructions).toContain("example.print-bench.translate");
+    expect(designer?.allowedTools).toContain(translateToolId);
+    expect(designer?.preferredModels).toEqual([designerModelPreference]);
+  });
 
   it("asks about a gear after an earlier designer turn", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));

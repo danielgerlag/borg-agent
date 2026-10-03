@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { addToolId, feedbackAskToolId } from "../src/contract.js";
+import { addToolId, feedbackAskToolId, translateToolId } from "../src/contract.js";
 
 export const GEAR_QUESTION = "How many teeth, and what diameter in millimetres?";
 export const SPHERE_QUESTION = "What radius should the sphere have, in millimetres?";
@@ -120,6 +120,9 @@ function framesFor(body: unknown): string[] {
     }
     return afterEdit(call);
   }
+  if (/\bcent(?:re|er) of the build plate\b/iu.test(line)) {
+    return centreMove(userContent(messages));
+  }
   return opening(line);
 }
 
@@ -160,7 +163,20 @@ function afterEdit(
   if (call?.function?.name === wire(addToolId)) {
     return text(addedReply(kind));
   }
+  if (call?.function?.name === wire(translateToolId)) {
+    return text("Moved the whole object.");
+  }
   return text("Updated the solid.");
+}
+
+function centreMove(content: string): string[] {
+  const dxMm = labelled(content, "dxMm");
+  const dyMm = labelled(content, "dyMm");
+  const dzMm = labelled(content, "dzMm");
+  if (dxMm === undefined || dyMm === undefined || dzMm === undefined) {
+    return text("I need a delta.");
+  }
+  return toolCall(translateToolId, { dxMm, dyMm, dzMm });
 }
 
 function ask(prompt: string): string[] {
@@ -262,9 +278,22 @@ function readMessages(body: unknown): ChatMessage[] {
 }
 
 function userLine(messages: readonly ChatMessage[]): string {
+  return userContent(messages).split("\n")[0]?.trim() ?? "";
+}
+
+function userContent(messages: readonly ChatMessage[]): string {
   const user = messages.find((message) => message.role === "user" && typeof message.content === "string");
-  const content = typeof user?.content === "string" ? user.content : "";
-  return content.split("\n")[0]?.trim() ?? "";
+  return typeof user?.content === "string" ? user.content : "";
+}
+
+function labelled(text: string, label: string): number | undefined {
+  const match = new RegExp(`${label} (-?\\d+(?:\\.\\d+)?)`, "u").exec(text);
+  const raw = match?.[1];
+  if (raw === undefined) {
+    return undefined;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function matchingCall(messages: readonly ChatMessage[], toolCallId: string | undefined) {

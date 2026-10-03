@@ -7,7 +7,16 @@ import {
   type PluginContext,
   type ToolExecutionContext,
 } from "@borg-agent/plugin-sdk";
-import { SHOP, bedFrame, evaluate, placeOnBed, type Body, type Inspection } from "./domain.js";
+import {
+  SHOP,
+  bedFrame,
+  evaluate,
+  objectFrame,
+  placeOnBed,
+  shiftBodies,
+  type Body,
+  type Inspection,
+} from "./domain.js";
 import {
   actInputSchema,
   addToolId,
@@ -20,6 +29,8 @@ import {
   placeInputSchema,
   placeToolId,
   transformToolInput,
+  translateToolId,
+  translateToolInput,
   printBenchAct,
   printBenchSnapshot,
   preferModelToolId,
@@ -82,6 +93,7 @@ export default definePlugin({
       addTool(jobs, pins),
       placeTool(jobs, pins),
       transformTool(jobs, pins),
+      translateTool(jobs, pins),
       deleteTool(jobs, pins),
       selectTool(jobs, pins),
       promptTool(context, jobs, pins),
@@ -99,8 +111,14 @@ export default definePlugin({
           preferredModels: [...persona.preferredModels],
           allowedTools: [...persona.allowedTools],
         });
-      } else if (existing.instructions !== persona.instructions) {
-        await context.personas.update(persona.id, { instructions: persona.instructions });
+      } else if (
+        existing.instructions !== persona.instructions ||
+        !sameTools(existing.allowedTools, persona.allowedTools)
+      ) {
+        await context.personas.update(persona.id, {
+          instructions: persona.instructions,
+          allowedTools: [...persona.allowedTools],
+        });
       }
     }
     await context.personas.setDefault(designerPersonaId);
@@ -152,6 +170,10 @@ export default definePlugin({
 type DesignPins = Map<string, string>;
 
 const loopPin = "loop";
+
+function sameTools(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((tool, index) => tool === right[index]);
+}
 
 // A designer turn's tool calls keep the design that started the turn.
 function mutate<T>(
@@ -224,7 +246,7 @@ function transformTool(jobs: JobWriter, pins: DesignPins) {
   return defineTool({
     id: transformToolId,
     description:
-      `Move, rotate, or resize one solid already on the bed. Pass the whole solid, including its id, in the body field. Keep that id. Rotations are degrees. ${bedFrame()}`,
+      `Change one solid already on the bed. Pass the whole solid, including its id, in the body field. Keep that id. Rotations are degrees. Use this when the user names that one part. To move every solid together, call translate. ${bedFrame()}`,
     input: transformToolInput,
     output: effectSchema,
     approval: "auto",
@@ -241,6 +263,37 @@ function transformTool(jobs: JobWriter, pins: DesignPins) {
             {
               bodies: session.job.scene.bodies.map((body) => (body.id === next.id ? next : body)),
               selectedId: next.id,
+            },
+            "",
+          ),
+        );
+      });
+      return { type: "revised" };
+    },
+  });
+}
+
+function translateTool(jobs: JobWriter, pins: DesignPins) {
+  return defineTool({
+    id: translateToolId,
+    description:
+      "Shift every solid on the bed by the same delta. Pass dxMm, dyMm, and dzMm in millimetres. Spacing stays as it is. To centre the whole object on the bed, copy dxMm and dyMm from the turn and set dzMm to 0. This is the move for the whole object. transform changes one solid only.",
+    input: translateToolInput,
+    output: effectSchema,
+    approval: "auto",
+    sideEffect: true,
+    async execute(input, toolContext): Promise<Effect> {
+      await mutate(jobs, pins, toolContext, async (session) => {
+        session.commit(
+          withScene(
+            session.job,
+            {
+              bodies: shiftBodies(session.job.scene.bodies, {
+                x: input.dxMm,
+                y: input.dyMm,
+                z: input.dzMm,
+              }),
+              selectedId: session.job.scene.selectedId,
             },
             "",
           ),
@@ -328,7 +381,8 @@ function promptTool(context: PluginContext, jobs: JobWriter, pins: DesignPins) {
           prompt: [
             input.text,
             bedFrame(),
-            `Selection: ${job.scene.selectedId ?? "none"}`,
+            objectFrame(job.scene.bodies),
+            `Selected solid: ${job.scene.selectedId ?? "none"}. That is one part, not the whole object.`,
             `Scene: ${JSON.stringify(job.scene.bodies)}`,
           ].join("\n"),
           personaId: designerPersonaId,
@@ -336,6 +390,7 @@ function promptTool(context: PluginContext, jobs: JobWriter, pins: DesignPins) {
             addToolId,
             placeToolId,
             transformToolId,
+            translateToolId,
             deleteToolId,
             selectToolId,
             feedbackAskToolId,

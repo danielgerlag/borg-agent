@@ -4,6 +4,7 @@ import { z } from "@borg-agent/plugin-sdk";
 export const addToolId = "example.print-bench.add";
 export const placeToolId = "example.print-bench.place";
 export const transformToolId = "example.print-bench.transform";
+export const translateToolId = "example.print-bench.translate";
 export const deleteToolId = "example.print-bench.delete";
 export const selectToolId = "example.print-bench.select";
 export const promptToolId = "example.print-bench.prompt";
@@ -120,6 +121,14 @@ export const placeInputSchema = z
   .strict();
 
 export const transformToolInput = z.object({ body: bodySchema }).strict();
+
+export const translateToolInput = z
+  .object({
+    dxMm: z.number(),
+    dyMm: z.number(),
+    dzMm: z.number(),
+  })
+  .strict();
 
 export type PlacedPart = z.infer<typeof placedPartSchema>;
 
