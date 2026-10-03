@@ -57,6 +57,16 @@ function modelLabel(providerId: string, modelId: string): string {
   return `${provider} · ${model}`;
 }
 
+function sameCatalog(
+  left: readonly { readonly preferenceId: string }[],
+  right: readonly { readonly preferenceId: string }[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((model, index) => model.preferenceId === right[index]?.preferenceId)
+  );
+}
+
 const seatTools: Record<string, readonly string[]> = {
   [designerPersonaId]: [
     "Add a box, cylinder, sphere, or cone",
@@ -78,31 +88,40 @@ export function SettingsView(
   const allowed = () => props.snapshot.persona.allowedTools.includes(usePersonaToolId);
   const [models, setModels] = createSignal<z.output<typeof modelListSchema>>([]);
   const [modelError, setModelError] = createSignal<string | undefined>();
+  let menuOpen = false;
+  let catalogStopped = false;
+
+  const pullModels = (): void => {
+    // A replaced option list closes the open menu, so leave it alone until it closes.
+    if (menuOpen || catalogStopped) {
+      return;
+    }
+    void benchApi()
+      .provider.call({ method: "models.list" })
+      .then((value) => {
+        if (menuOpen || catalogStopped) {
+          return;
+        }
+        const next = modelListSchema.parse(value);
+        setModels((current) => (sameCatalog(current, next) ? current : next));
+        setModelError(undefined);
+      })
+      .catch((caught: unknown) => {
+        if (!catalogStopped) {
+          setModelError(caught instanceof Error ? caught.message : String(caught));
+        }
+      });
+  };
 
   createEffect(() => {
     if (props.section !== "model") {
       return;
     }
-    let stopped = false;
-    const pull = (): void => {
-      void benchApi()
-        .provider.call({ method: "models.list" })
-        .then((value) => {
-          if (!stopped) {
-            setModels(modelListSchema.parse(value));
-            setModelError(undefined);
-          }
-        })
-        .catch((caught: unknown) => {
-          if (!stopped) {
-            setModelError(caught instanceof Error ? caught.message : String(caught));
-          }
-        });
-    };
-    pull();
-    const timer = setInterval(pull, 500);
+    catalogStopped = false;
+    pullModels();
+    const timer = setInterval(pullModels, 500);
     onCleanup(() => {
-      stopped = true;
+      catalogStopped = true;
       clearInterval(timer);
     });
   });
@@ -209,6 +228,12 @@ export function SettingsView(
                   return;
                 }
                 props.run({ tool: preferModelToolId, preferenceId });
+              }}
+              onOpenChange={(open) => {
+                menuOpen = open;
+                if (!open) {
+                  pullModels();
+                }
               }}
               disabled={props.busy}
             />
