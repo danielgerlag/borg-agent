@@ -3,8 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Kernel } from "@borg-agent/kernel";
 import type { PendingInteraction } from "@borg-agent/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startPrintBench } from "../src/boot.js";
+import { missingDesignerKeyMessage } from "../src/provider.js";
+import {
+  addedReply,
+  cylinderFromGearAnswer,
+  GEAR_QUESTION,
+  installDesignerFetch,
+} from "./model-double.js";
 import {
   addToolId,
   deleteToolId,
@@ -21,10 +28,17 @@ import {
 
 let dataDirectory: string | undefined;
 let kernel: Kernel | undefined;
+let fetchDouble: ReturnType<typeof installDesignerFetch> | undefined;
+
+beforeEach(() => {
+  fetchDouble = installDesignerFetch();
+});
 
 afterEach(async () => {
   await kernel?.stop();
   kernel = undefined;
+  fetchDouble?.restore();
+  fetchDouble = undefined;
   if (dataDirectory) {
     await rm(dataDirectory, { recursive: true, force: true });
     dataDirectory = undefined;
@@ -158,7 +172,7 @@ describe("print bench", () => {
     expect(done.snapshot.inspection.findings.map((finding) => finding.code)).toContain("overhang");
   }, 60_000);
 
-  it("draws a gear without asking which solid", async () => {
+  it("asks about a gear, then adds the solid the model returns", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);
     const drawn = kernel.bus.invoke(printBenchAct, {
@@ -166,18 +180,24 @@ describe("print bench", () => {
       text: "draw a gear",
     });
     void drawn.catch(() => undefined);
+    const question = await waitForKind(kernel, "human_input", drawn);
+    expect(question.prompt).toBe(GEAR_QUESTION);
+    const mid = await kernel.bus.invoke(printBenchSnapshot, {});
+    expect(mid.scene.bodies).toEqual([]);
+    const answer = "8 teeth, 40 mm";
+    expect(kernel.interactions.respond(question.id, { kind: "text", text: answer })).toBe(true);
     const done = await withTimeout(drawn, 10_000, "gear did not finish");
-    expect(kernel.interactions.listPending()).toEqual([]);
-    const kinds = done.snapshot.scene.bodies.map((body) => body.kind);
-    expect(kinds.filter((kind) => kind === "cylinder")).toEqual(["cylinder"]);
-    expect(kinds.filter((kind) => kind === "box")).toHaveLength(8);
-    expect(done.snapshot.reply).toBe("Drew a gear with 8 teeth, 40 mm across.");
+    expect(done.snapshot.reply).toBe(addedReply("cylinder"));
+    expect(done.snapshot.scene.bodies).toEqual([
+      expect.objectContaining(cylinderFromGearAnswer(answer)),
+    ]);
     expect(done.snapshot.turns.map((turn) => turn.role)).toEqual(["user", "designer"]);
-    const disc = done.snapshot.scene.bodies.find((body) => body.kind === "cylinder");
-    expect(disc?.kind === "cylinder" ? disc.position.z : 0).toBeGreaterThan(0);
+    expect(JSON.stringify(fetchDouble?.requests[0])).toContain("draw a gear");
+    expect(JSON.stringify(fetchDouble?.requests[0])).toContain("feedback_ask");
+    expect(JSON.stringify(fetchDouble?.requests[0])).toContain("example_print_bench_add");
   }, 60_000);
 
-  it("draws a gear after an earlier designer turn", async () => {
+  it("asks about a gear after an earlier designer turn", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);
     const first = await kernel.bus.invoke(printBenchAct, {
@@ -190,12 +210,39 @@ describe("print bench", () => {
       text: "draw a gear",
     });
     void drawn.catch(() => undefined);
+    const question = await waitForKind(kernel, "human_input", drawn);
+    expect(question.prompt).toBe(GEAR_QUESTION);
+    const answer = "12 teeth, 50 mm";
+    expect(kernel.interactions.respond(question.id, { kind: "text", text: answer })).toBe(true);
     const done = await withTimeout(drawn, 10_000, "second designer turn did not finish");
-    expect(done.snapshot.reply).toBe("Drew a gear with 8 teeth, 40 mm across.");
-    expect(done.snapshot.scene.bodies.filter((body) => body.kind === "box")).toHaveLength(8);
-    expect(done.snapshot.scene.bodies.filter((body) => body.kind === "cylinder")).toHaveLength(1);
+    expect(done.snapshot.reply).toBe(addedReply("cylinder"));
     expect(done.snapshot.scene.bodies.filter((body) => body.kind === "sphere")).toHaveLength(1);
+    expect(done.snapshot.scene.bodies.find((body) => body.kind === "cylinder")).toMatchObject(
+      cylinderFromGearAnswer(answer),
+    );
   }, 60_000);
+
+  it("says when the designer key is missing and does not invent a solid", async () => {
+    const previous = process.env.XAI_API_KEY;
+    delete process.env.XAI_API_KEY;
+    try {
+      dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
+      kernel = await startPrintBench(dataDirectory);
+      const result = await kernel.bus.invoke(printBenchAct, {
+        tool: promptToolId,
+        text: "draw a gear",
+      });
+      expect(result.snapshot.reply).toBe(missingDesignerKeyMessage);
+      expect(result.snapshot.scene.bodies).toEqual([]);
+      expect(fetchDouble?.requests).toEqual([]);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.XAI_API_KEY;
+      } else {
+        process.env.XAI_API_KEY = previous;
+      }
+    }
+  });
 });
 
 async function waitForKind(

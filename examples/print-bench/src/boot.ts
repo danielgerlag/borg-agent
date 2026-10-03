@@ -9,6 +9,7 @@ import secretsDev from "@borg/plugin-secrets-dev/main";
 import channelMock from "@borg/plugin-channel-mock/main";
 import promptInjection from "@borg/plugin-security-prompt-injection/main";
 import feedback from "@borg/plugin-feedback/main";
+import { designerModelId, designerProviderId } from "./contract.js";
 import printBench from "./main.js";
 
 const require = createRequire(import.meta.url);
@@ -41,7 +42,7 @@ export async function startPrintBench(dataDirectory: string): Promise<Kernel> {
       "borg.feedback",
       "example.print-bench",
     ],
-    defaults: { models: ["example.print-bench:scripted"] },
+    defaults: { models: [`${designerProviderId}:${designerModelId}`] },
   });
   const kernel = createKernel({
     distribution,

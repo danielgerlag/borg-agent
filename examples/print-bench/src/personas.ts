@@ -2,7 +2,9 @@ import {
   addToolId,
   deleteToolId,
   placeToolId,
+  designerModelId,
   designerPersonaId,
+  designerProviderId,
   frontDeskPersonaId,
   operatorPersonaId,
   feedbackAskToolId,
@@ -14,14 +16,34 @@ import {
   usePersonaToolId,
 } from "./contract.js";
 
-const model = "example.print-bench:scripted";
+const model = `${designerProviderId}:${designerModelId}`;
+
+const designerInstructions = [
+  "You are the designer on a print bench.",
+  "The bed is 250 by 210 by 220 millimetres, z up.",
+  "Change the model only by calling tools.",
+  "Add a box, cylinder, sphere, or cone.",
+  "Place several solids, with positions and rotations, in one call.",
+  "Move, rotate, scale, or delete a solid that is already on the bed.",
+  "Positions are millimetres.",
+  "A solid sits on the bed when its z equals half its height, or its radius for a sphere.",
+  "When the request leaves out a size, a count, or which solid to change, call feedback.ask and wait.",
+  "Do not invent those numbers.",
+  "A gear is a short cylinder for the disc and boxes for the teeth around the rim.",
+  "Ask for the tooth count and the diameter when they were not given.",
+  "When you have enough, call the tools, then say what changed in one sentence.",
+  "Do not send the quote or start the machine.",
+  "feedback.ask takes prompt and form. form is text, confirm, or choice.",
+  "Include choices, each with an id and a label, only when form is choice.",
+  "Omit source.",
+  "Pass only the fields each tool schema lists.",
+].join(" ");
 
 export const benchPersonas = [
   {
     id: designerPersonaId,
     name: "Designer",
-    instructions:
-      "Build solids from the designer's words. Draw a gear as a disc with teeth. Add, move, rotate, scale, and delete. Ask when the shape or the size is missing. Do not send the quote or start the machine.",
+    instructions: designerInstructions,
     preferredModels: [model],
     allowedTools: [
       addToolId,

@@ -16,6 +16,9 @@ export const designerPersonaId = "print-bench/designer";
 export const frontDeskPersonaId = "print-bench/front-desk";
 export const operatorPersonaId = "print-bench/operator";
 
+export const designerProviderId = "example.print-bench";
+export const designerModelId = "grok-4.7";
+
 const vecSchema = z
   .object({
     x: z.number(),

@@ -7,7 +7,9 @@ import {
   addToolId,
   bodySchema,
   deleteToolId,
+  designerModelId,
   designerPersonaId,
+  designerProviderId,
   feedbackAskToolId,
   effectSchema,
   placeInputSchema,
@@ -27,7 +29,7 @@ import {
 } from "./contract.js";
 import { createJobWriter, withScene, type Job, type JobWriter } from "./job.js";
 import { benchPersonas } from "./personas.js";
-import { registerScriptedModel } from "./provider.js";
+import { missingDesignerKeyMessage, registerDesignerModel } from "./provider.js";
 
 type Effect = z.output<typeof effectSchema>;
 
@@ -71,7 +73,7 @@ export default definePlugin({
       startTool(jobs),
       personaTool(context, jobs),
     ].map((tool) => context.tools.register(tool));
-    const model = registerScriptedModel(context);
+    const model = registerDesignerModel(context);
     for (const persona of benchPersonas) {
       if (!context.personas.get(persona.id)) {
         await context.personas.create({
@@ -112,7 +114,8 @@ export default definePlugin({
 function addTool(jobs: JobWriter) {
   return defineTool({
     id: addToolId,
-    description: "Add a box, cylinder, sphere, or cone to the bed.",
+    description:
+      "Add one box, cylinder, sphere, or cone. Sizes are millimetres. The bench places the solid on the bed. Pass only the fields in the schema.",
     input: primitiveSchema,
     output: effectSchema,
     approval: "auto",
@@ -135,7 +138,8 @@ function addTool(jobs: JobWriter) {
 function placeTool(jobs: JobWriter) {
   return defineTool({
     id: placeToolId,
-    description: "Place one or more solids, each with its own position and rotation, in one edit.",
+    description:
+      "Place one or more solids in one edit. Each part keeps the position and rotation you send, in millimetres, z up. Use this for one object made of several solids, such as a gear: a cylinder for the disc and boxes for the teeth. A solid rests on the bed when position.z is half its height, or its radius for a sphere.",
     input: placeInputSchema,
     output: effectSchema,
     approval: "auto",
@@ -162,7 +166,8 @@ function placeTool(jobs: JobWriter) {
 function transformTool(jobs: JobWriter) {
   return defineTool({
     id: transformToolId,
-    description: "Move, rotate, or resize one solid.",
+    description:
+      "Move, rotate, or resize one solid already on the bed. Pass the whole solid, including its id. Positions are millimetres and rotations are degrees.",
     input: bodySchema,
     output: effectSchema,
     approval: "auto",
@@ -191,7 +196,7 @@ function transformTool(jobs: JobWriter) {
 function deleteTool(jobs: JobWriter) {
   return defineTool({
     id: deleteToolId,
-    description: "Remove one solid from the bed.",
+    description: "Remove one solid by its id.",
     input: idInput,
     output: effectSchema,
     approval: "auto",
@@ -214,7 +219,7 @@ function deleteTool(jobs: JobWriter) {
 function selectTool(jobs: JobWriter) {
   return defineTool({
     id: selectToolId,
-    description: "Choose the solid the palette and the prompt edit.",
+    description: "Select one solid by its id, or pass null to clear the selection.",
     input: selectInput,
     output: effectSchema,
     approval: "auto",
@@ -235,7 +240,7 @@ function selectTool(jobs: JobWriter) {
 function promptTool(context: PluginContext, jobs: JobWriter) {
   return defineTool({
     id: promptToolId,
-    description: "Build or edit solids from a description.",
+    description: "Ask the designer to build or edit the solids.",
     input: promptInput,
     output: effectSchema,
     approval: "auto",
@@ -247,6 +252,10 @@ function promptTool(context: PluginContext, jobs: JobWriter) {
           turns: [...session.job.turns, { role: "user", text: input.text }],
         });
       });
+      if ((process.env.XAI_API_KEY ?? "").trim().length === 0) {
+        await remember(jobs, missingDesignerKeyMessage);
+        return { type: "asked" };
+      }
       const job = await jobs.read();
       // The loop calls the solid tools and feedback.ask, which must not wait behind this writer.
       const started = await context.loops.start({
@@ -264,8 +273,8 @@ function promptTool(context: PluginContext, jobs: JobWriter) {
           selectToolId,
           feedbackAskToolId,
         ],
-        providerId: "example.print-bench",
-        modelId: "scripted",
+        providerId: designerProviderId,
+        modelId: designerModelId,
         security: {
           kind: "root",
           // A repeated subject resumes the same root, and the loop closes that root when the turn ends.

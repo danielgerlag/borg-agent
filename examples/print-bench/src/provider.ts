@@ -1,458 +1,438 @@
 import { randomUUID } from "node:crypto";
-import { z, type PluginContext } from "@borg-agent/plugin-sdk";
 import {
-  addToolId,
-  bodySchema,
-  deleteToolId,
-  feedbackAskToolId,
-  placeToolId,
-  transformToolId,
-  type PlacedPart,
-  type Primitive,
-  type SceneBody,
-} from "./contract.js";
-import { gearParts, type GearSpec } from "./gear.js";
+  contractJsonValueSchema,
+  type ContractJsonValue,
+  type ModelCompletionRequest,
+  type ModelCompletionResult,
+  type ModelMessage,
+  type ModelToolCall,
+  type ModelUsage,
+} from "@borg-agent/contracts";
+import {
+  z,
+  type PluginContext,
+  type ProviderDispatchPermit,
+} from "@borg-agent/plugin-sdk";
+import { designerModelId, designerProviderId } from "./contract.js";
 
-const usage = {
-  inputTokens: 8,
-  outputTokens: 8,
-  amount: 0,
-  currency: "USD",
-};
+export const designerModelUrl = "https://api.x.ai/v1/responses";
+export const missingDesignerKeyMessage = "Set XAI_API_KEY to talk to the designer.";
 
-const help =
-  "Name a gear, or a box, cube, cylinder, sphere, or cone, with millimetres. Move, rotate, scale, and delete use the selection.";
+const localUrlMessage = "The designer model URL must stay on this machine.";
+const rejectedKeyMessage = "The designer rejected the API key.";
+const unreachableMessage = "The designer model is unreachable.";
+const unreadableMessage = "The designer returned an unreadable response.";
+const unknownToolMessage = "The designer called an unknown tool.";
+const timedOutMessage = "The designer model timed out.";
+const busyMessage = "The designer is busy. Try again shortly.";
+const rejectedMessage = "The designer rejected the request.";
+const completionTimeoutMs = 60_000;
 
-export type PlannedCall =
-  | { readonly name: typeof addToolId; readonly input: Primitive }
-  | { readonly name: typeof transformToolId; readonly input: SceneBody }
-  | { readonly name: typeof deleteToolId; readonly input: { readonly id: string } }
-  | { readonly name: typeof placeToolId; readonly input: { readonly parts: readonly PlacedPart[] } };
+const loopbackHosts = new Set(["127.0.0.1", "localhost", "::1"]);
 
-export type DesignerStep =
-  | PlannedCall
-  | {
-      readonly name: typeof feedbackAskToolId;
-      readonly input: {
-        readonly title: string;
-        readonly prompt: string;
-        readonly form: "text";
-      };
-    }
-  | {
-      readonly name: typeof feedbackAskToolId;
-      readonly input: {
-        readonly title: string;
-        readonly prompt: string;
-        readonly form: "choice";
-        readonly choices: readonly { readonly id: string; readonly label: string }[];
-      };
-    }
-  | { readonly content: string };
+const responseSchema = z
+  .object({
+    output: z.array(z.unknown()).optional(),
+    output_text: z.string().optional(),
+    usage: z
+      .object({
+        input_tokens: z.number().optional(),
+        output_tokens: z.number().optional(),
+      })
+      .optional(),
+  })
+  .passthrough();
 
-interface TurnMessage {
-  readonly role: string;
-  readonly content: string;
-  readonly toolCalls?: readonly { readonly name: string; readonly input?: unknown }[] | undefined;
+const functionCallSchema = z
+  .object({
+    name: z.string().min(1),
+    arguments: z.unknown().optional(),
+    call_id: z.string().min(1).optional(),
+    id: z.string().min(1).optional(),
+  })
+  .passthrough();
+
+const messageSchema = z
+  .object({
+    content: z
+      .union([
+        z.string(),
+        z.array(z.object({ text: z.string().optional() }).passthrough()),
+        z.null(),
+      ])
+      .optional(),
+  })
+  .passthrough();
+
+export interface DesignerTurn {
+  readonly request: ModelCompletionRequest;
+  readonly permit: ProviderDispatchPermit;
+  readonly signal: AbortSignal;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly fetchImpl?: typeof fetch;
+  readonly onUsage?: ((usage: ModelUsage) => void | Promise<void>) | undefined;
 }
 
-export function nextDesignerStep(messages: readonly TurnMessage[], canAsk = true): DesignerStep {
-  const done = finished(messages);
-  if (done) {
-    return { content: done };
-  }
-  const user = messages.find((message) => message.role === "user")?.content ?? "";
-  return decide(user, answers(messages), canAsk);
+export function wireToolName(id: string): string {
+  return id.replaceAll(".", "_").replaceAll("-", "_");
 }
 
-export function planFromPrompt(text: string): PlannedCall | { readonly content: string } {
-  const request = text.split("\n")[0]?.trim() ?? "";
-  const scene = readScene(text);
-  const selected = scene.bodies.find((body) => body.id === readSelection(text)) ?? scene.bodies.at(-1);
-  const lower = request.toLowerCase();
-  if (/\b(delete|remove)\b/u.test(lower)) {
-    return selected
-      ? { name: deleteToolId, input: { id: selected.id } }
-      : { content: "Nothing is selected." };
+export function designerModelEndpoint(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.BORG_PRINT_BENCH_MODEL_URL?.trim();
+  if (!override) {
+    return designerModelUrl;
   }
-  if (/\b(move|translate|shift)\b/u.test(lower)) {
-    return selected ? move(request, selected, /\bto\b/u.test(lower)) : { content: "Nothing is selected." };
+  let url: URL;
+  try {
+    url = new URL(override);
+  } catch {
+    throw new Error(localUrlMessage);
   }
-  if (/\b(rotate|turn)\b/u.test(lower)) {
-    return selected ? rotate(request, selected) : { content: "Nothing is selected." };
+  const host = url.hostname.replace(/^\[|\]$/gu, "").toLowerCase();
+  const loopback = loopbackHosts.has(host) || /^127(?:\.\d{1,3}){3}$/u.test(host);
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || !loopback) {
+    throw new Error(localUrlMessage);
   }
-  if (/\bscale\b/u.test(lower)) {
-    return selected ? scale(request, selected) : { content: "Nothing is selected." };
-  }
-  const solid = primitiveFrom(lower, numbers(request, false));
-  return solid ? { name: addToolId, input: solid } : { content: help };
+  return url.toString();
 }
 
-export function registerScriptedModel(context: PluginContext): { dispose(): void } {
+export async function completeDesignerTurn(turn: DesignerTurn): Promise<ModelCompletionResult> {
+  turn.signal.throwIfAborted();
+  const env = turn.env ?? process.env;
+  const endpoint = designerModelEndpoint(env);
+  const apiKey = env.XAI_API_KEY?.trim() ?? "";
+  if (apiKey.length === 0) {
+    throw new Error(missingDesignerKeyMessage);
+  }
+  const aliases = aliasTools(turn.request.tools);
+  const outbound = {
+    model: turn.request.modelId,
+    input: toInput(turn.request.messages),
+    ...(turn.request.tools.length > 0 ? { tools: toTools(turn.request.tools) } : {}),
+  };
+  await turn.permit.commit();
+  const result = await requestCompletion({
+    endpoint,
+    apiKey,
+    outbound,
+    signal: turn.signal,
+    fetchImpl: turn.fetchImpl ?? globalThis.fetch,
+    fromWire: aliases,
+  });
+  if (turn.onUsage) {
+    await turn.onUsage(result.usage);
+  }
+  return result;
+}
+
+export function registerDesignerModel(context: PluginContext): { dispose(): void } {
   return context.models.registerProvider({
-    id: "example.print-bench",
-    models: ["scripted"],
-    egress: { kind: "local", capacity: "local-only" },
-    async complete(request, permit, signal) {
-      signal.throwIfAborted();
-      await permit.commit();
-      const editable = [addToolId, placeToolId, transformToolId, deleteToolId].some((id) =>
-        request.tools.some((tool) => tool.id === id),
-      );
-      if (!editable) {
-        return { content: "This seat cannot edit the solid.", usage };
-      }
-      const step = nextDesignerStep(
-        request.messages,
-        request.tools.some((tool) => tool.id === feedbackAskToolId),
-      );
-      if ("content" in step) {
-        return { content: step.content, usage };
-      }
-      return {
-        toolCalls: [{ id: randomUUID(), name: step.name, input: step.input }],
-        usage,
-      };
+    id: designerProviderId,
+    models: [designerModelId],
+    // The registered destination stays on the public API. Tests may point the fetch at loopback.
+    egress: {
+      kind: "remote",
+      capacity: "private",
+      destination: designerModelUrl,
+    },
+    async complete(request, permit, signal, onRawToken, onUsage) {
+      void onRawToken;
+      return completeDesignerTurn({
+        request,
+        permit,
+        signal,
+        ...(onUsage ? { onUsage } : {}),
+      });
     },
   });
 }
 
-function primitiveFrom(text: string, values: readonly number[]): Primitive | undefined {
-  const mentions: { index: number; kind: Primitive["kind"] | "cube" }[] = [];
-  for (const [word, kind] of [
-    ["cube", "cube"],
-    ["box", "box"],
-    ["block", "box"],
-    ["cylinder", "cylinder"],
-    ["tube", "cylinder"],
-    ["sphere", "sphere"],
-    ["ball", "sphere"],
-    ["cone", "cone"],
-  ] as const) {
-    const index = text.indexOf(word);
-    if (index >= 0) {
-      mentions.push({ index, kind });
+function aliasTools(tools: ModelCompletionRequest["tools"]): Map<string, string> {
+  const fromWire = new Map<string, string>();
+  for (const tool of tools) {
+    const wire = wireToolName(tool.id);
+    const previous = fromWire.get(wire);
+    if (previous !== undefined && previous !== tool.id) {
+      throw new Error("The designer tool names collide.");
+    }
+    fromWire.set(wire, tool.id);
+  }
+  return fromWire;
+}
+
+function toTools(tools: ModelCompletionRequest["tools"]): ContractJsonValue[] {
+  return tools.map((tool) => ({
+    type: "function",
+    name: wireToolName(tool.id),
+    description: tool.description,
+    parameters: parametersOf(tool.inputSchema),
+  }));
+}
+
+function parametersOf(schema: ContractJsonValue): { readonly [key: string]: ContractJsonValue } {
+  if (!isJsonObject(schema)) {
+    throw new Error("The designer tool schema is not an object.");
+  }
+  const parameters: { [key: string]: ContractJsonValue } = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key !== "$schema" && value !== undefined) {
+      parameters[key] = value;
     }
   }
-  mentions.sort((left, right) => left.index - right.index);
-  const kind = mentions[0]?.kind;
-  const first = values[0] ?? 0;
-  const second = values[1] ?? 0;
-  const third = values[2] ?? 0;
-  if (kind === "cube") {
-    const size = first > 0 ? first : 30;
-    return { kind: "box", widthMm: size, depthMm: size, heightMm: size };
-  }
-  if (kind === "box") {
-    return {
-      kind: "box",
-      widthMm: first > 0 ? first : 40,
-      depthMm: second > 0 ? second : 30,
-      heightMm: third > 0 ? third : 20,
-    };
-  }
-  if (kind === "cylinder") {
-    return {
-      kind: "cylinder",
-      radiusMm: first > 0 ? first : 12,
-      heightMm: second > 0 ? second : 30,
-    };
-  }
-  if (kind === "cone") {
-    return {
-      kind: "cone",
-      radiusMm: first > 0 ? first : 16,
-      heightMm: second > 0 ? second : 28,
-    };
-  }
-  if (kind === "sphere") {
-    return { kind: "sphere", radiusMm: first > 0 ? first : 15 };
-  }
-  return undefined;
+  return parameters;
 }
 
-function move(request: string, body: SceneBody, absolute: boolean): PlannedCall {
-  const [x, y, z] = numbers(request, true);
-  const position = absolute
-    ? { x: x ?? body.position.x, y: y ?? body.position.y, z: z ?? body.position.z }
-    : {
-        x: body.position.x + (x ?? 0),
-        y: body.position.y + (y ?? 0),
-        z: body.position.z + (z ?? 0),
-      };
-  return { name: transformToolId, input: { ...body, position } };
+function isJsonObject(
+  value: ContractJsonValue,
+): value is { readonly [key: string]: ContractJsonValue } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function rotate(request: string, body: SceneBody): PlannedCall {
-  const values = numbers(request, true);
-  const rotationDeg =
-    values.length >= 3
-      ? {
-          x: body.rotationDeg.x + (values[0] ?? 0),
-          y: body.rotationDeg.y + (values[1] ?? 0),
-          z: body.rotationDeg.z + (values[2] ?? 0),
-        }
-      : { ...body.rotationDeg, z: body.rotationDeg.z + (values[0] ?? 0) };
-  return { name: transformToolId, input: { ...body, rotationDeg } };
+function toInput(messages: readonly ModelMessage[]): ContractJsonValue[] {
+  const items: ContractJsonValue[] = [];
+  for (const message of messages) {
+    if (message.role === "system" || message.role === "user") {
+      items.push({ role: message.role, content: message.content });
+    } else if (message.role === "assistant") {
+      if (message.content.length > 0) {
+        items.push({ role: "assistant", content: message.content });
+      }
+      for (const call of message.toolCalls ?? []) {
+        items.push({
+          type: "function_call",
+          call_id: call.id,
+          name: wireToolName(call.name),
+          arguments: JSON.stringify(call.input),
+        });
+      }
+    } else if (message.role === "tool") {
+      if (!message.toolCallId) {
+        throw new Error("The designer history is missing a tool call id.");
+      }
+      items.push({
+        type: "function_call_output",
+        call_id: message.toolCallId,
+        output: message.content,
+      });
+    } else {
+      const unexpected: never = message.role;
+      throw new Error(`Unexpected designer message role ${unexpected}`);
+    }
+  }
+  return items;
 }
 
-function scale(request: string, body: SceneBody): PlannedCall {
-  const factor = numbers(request, false)[0] ?? 2;
-  if (body.kind === "box") {
-    return {
-      name: transformToolId,
-      input: {
-        ...body,
-        widthMm: body.widthMm * factor,
-        depthMm: body.depthMm * factor,
-        heightMm: body.heightMm * factor,
+async function requestCompletion(input: {
+  readonly endpoint: string;
+  readonly apiKey: string;
+  readonly outbound: ContractJsonValue;
+  readonly signal: AbortSignal;
+  readonly fetchImpl: typeof fetch;
+  readonly fromWire: ReadonlyMap<string, string>;
+}): Promise<ModelCompletionResult> {
+  let response: Response;
+  try {
+    response = await input.fetchImpl(input.endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${input.apiKey}`,
+        "Content-Type": "application/json",
       },
-    };
+      body: JSON.stringify(input.outbound),
+      redirect: "error",
+      signal: AbortSignal.any([input.signal, AbortSignal.timeout(completionTimeoutMs)]),
+    });
+  } catch (error) {
+    input.signal.throwIfAborted();
+    return failed(timeoutError(error) ? timedOutMessage : unreachableMessage);
   }
-  if (body.kind === "sphere") {
-    return { name: transformToolId, input: { ...body, radiusMm: body.radiusMm * factor } };
+  input.signal.throwIfAborted();
+  if (!response.ok) {
+    if (response.status === 400) {
+      const detail = await errorDetail(response);
+      return failed(detail.length > 0 ? `${rejectedMessage} ${detail}` : rejectedMessage);
+    }
+    await discard(response);
+    return failed(statusMessage(response.status));
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    return failed(unreadableMessage);
+  }
+  return parseCompletion(payload, input.fromWire);
+}
+
+function parseCompletion(
+  payload: unknown,
+  fromWire: ReadonlyMap<string, string>,
+): ModelCompletionResult {
+  const parsed = responseSchema.safeParse(payload);
+  if (!parsed.success) {
+    return failed(unreadableMessage);
+  }
+  const texts: string[] = [];
+  const toolCalls: ModelToolCall[] = [];
+  for (const item of parsed.data.output ?? []) {
+    const type = readType(item);
+    if (type === "function_call") {
+      const call = readFunctionCall(item, fromWire);
+      if ("message" in call) {
+        return failed(call.message);
+      }
+      toolCalls.push(call);
+      continue;
+    }
+    if (type !== "message") {
+      continue;
+    }
+    const message = messageSchema.safeParse(item);
+    if (!message.success) {
+      return failed(unreadableMessage);
+    }
+    const text = messageText(message.data.content);
+    if (text.length > 0) {
+      texts.push(text);
+    }
+  }
+  const text = texts.join("\n").trim() || (parsed.data.output_text ?? "").trim();
+  const usage = {
+    inputTokens: whole(parsed.data.usage?.input_tokens),
+    outputTokens: whole(parsed.data.usage?.output_tokens),
+  };
+  if (toolCalls.length > 0 && text.length > 0) {
+    return { content: text, toolCalls, usage };
+  }
+  if (toolCalls.length > 0) {
+    return { toolCalls, usage };
+  }
+  if (text.length > 0) {
+    return { content: text, usage };
+  }
+  return failed(unreadableMessage);
+}
+
+function readFunctionCall(
+  item: unknown,
+  fromWire: ReadonlyMap<string, string>,
+): ModelToolCall | { readonly message: string } {
+  const parsed = functionCallSchema.safeParse(item);
+  if (!parsed.success) {
+    return { message: unreadableMessage };
+  }
+  const name = fromWire.get(parsed.data.name);
+  if (!name) {
+    return { message: unknownToolMessage };
+  }
+  const input = parseArguments(parsed.data.arguments);
+  if (!input) {
+    return { message: unreadableMessage };
   }
   return {
-    name: transformToolId,
-    input: { ...body, radiusMm: body.radiusMm * factor, heightMm: body.heightMm * factor },
+    id: parsed.data.call_id ?? parsed.data.id ?? randomUUID(),
+    name,
+    input,
   };
 }
 
-function readScene(text: string): { bodies: SceneBody[] } {
-  const match = text.match(/Scene: (\[.*\])/u);
-  const parsed = z.array(bodySchema).safeParse(match?.[1] ? JSON.parse(match[1]) : []);
-  return { bodies: parsed.success ? parsed.data : [] };
-}
-
-function readSelection(text: string): string | undefined {
-  const match = text.match(/Selection: ([^\s]+)/u);
-  return match?.[1] === "none" ? undefined : match?.[1];
-}
-
-function numbers(text: string, signed: boolean): number[] {
-  const pattern = signed ? /-?\d+(?:\.\d+)?/gu : /\d+(?:\.\d+)?/gu;
-  return [...text.matchAll(pattern)].map((match) => Number(match[0])).filter((value) => Number.isFinite(value));
-}
-
-function decide(user: string, replies: readonly string[], canAsk: boolean): DesignerStep {
-  const lines = user.split("\n");
-  const brief = lines[0]?.trim() ?? "";
-  const spoken = [brief, ...replies].filter((part) => part.length > 0).join(" ");
-  const sceneText = [spoken, ...lines.slice(1)].join("\n");
-  const lower = spoken.toLowerCase();
-  if (/\b(delete|remove)\b/u.test(lower)) {
-    return planFromPrompt(sceneText);
-  }
-  if (/\b(move|translate|shift|rotate|turn|scale)\b/u.test(lower)) {
-    if (numbers(spoken, true).length === 0) {
-      if (replies.length > 0 || !canAsk) {
-        return replies.length > 0
-          ? { content: "I still need a distance, an angle, or a scale." }
-          : planFromPrompt(sceneText);
-      }
-      return askText(editQuestion(lower));
-    }
-    return planFromPrompt(sceneText);
-  }
-  if (/\bgears?\b/u.test(lower)) {
-    return { name: placeToolId, input: { parts: gearParts(readGearSpec(spoken)) } };
-  }
-  const shape = mentionedShape(lower);
-  if (!shape) {
-    return canAsk && replies.length === 0
-      ? askText("Name a gear, or a box, cylinder, sphere, or cone, and the millimetres.")
-      : { content: help };
-  }
-  const dims = numbers(spoken, false).filter((value) => value > 0);
-  if (dims.length === 0) {
-    const last = replies.at(-1)?.toLowerCase() ?? "";
-    if (last.length > 0 && !mentionedShape(last) && numbers(last, false).every((value) => value <= 0)) {
-      return { content: "I still need a size in millimetres." };
-    }
-    return canAsk ? askText(dimensionQuestion(shape)) : planFromPrompt(sceneText);
-  }
-  return planFromPrompt(sceneText);
-}
-
-function finished(messages: readonly TurnMessage[]): string | undefined {
-  if (messages.at(-1)?.role !== "tool") {
-    return undefined;
-  }
-  const call = precedingCall(messages);
-  if (!call || call.name === feedbackAskToolId) {
-    return undefined;
-  }
-  if (call.name === addToolId) {
-    const kind = isRecord(call.input) && typeof call.input.kind === "string" ? call.input.kind : "solid";
-    return `Added a ${kind}.`;
-  }
-  if (call.name === placeToolId) {
-    return placedSentence(messages, call.input);
-  }
-  if (call.name === deleteToolId) {
-    return "Removed the solid.";
-  }
-  if (call.name === transformToolId) {
-    return "Updated the solid.";
-  }
-  return "Solid updated.";
-}
-
-function answers(messages: readonly TurnMessage[]): string[] {
-  const found: string[] = [];
-  for (let index = 0; index < messages.length; index += 1) {
-    const message = messages[index];
-    const call = message?.toolCalls?.[0];
-    if (message?.role !== "assistant" || call?.name !== feedbackAskToolId) {
-      continue;
-    }
-    const follow = messages[index + 1];
-    if (follow?.role !== "tool") {
-      continue;
-    }
-    const text = answerText(follow.content);
-    if (text.length > 0) {
-      found.push(text);
-    }
-  }
-  return found;
-}
-
-function precedingCall(
-  messages: readonly TurnMessage[],
-): { readonly name: string; readonly input?: unknown } | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const call = messages[index]?.toolCalls?.[0];
-    if (call) {
-      return call;
-    }
-  }
-  return undefined;
-}
-
-function answerText(content: string): string {
+function parseArguments(value: unknown): ContractJsonValue | undefined {
   try {
-    const parsed: unknown = JSON.parse(content);
-    if (!isRecord(parsed) || !isRecord(parsed.answer)) {
-      return content.trim();
-    }
-    const answer = parsed.answer;
-    if (answer.kind === "choice" && typeof answer.choiceId === "string") {
-      return answer.choiceId;
-    }
-    if (answer.kind === "text" && typeof answer.text === "string") {
-      return answer.text.trim();
-    }
-    if (answer.kind === "confirm" && typeof answer.confirmed === "boolean") {
-      return answer.confirmed ? "yes" : "no";
-    }
+    const raw: unknown = typeof value === "string" ? JSON.parse(value) : value;
+    const parsed = contractJsonValueSchema.safeParse(raw);
+    return parsed.success ? parsed.data : undefined;
   } catch {
+    return undefined;
+  }
+}
+
+function messageText(
+  content: string | readonly { readonly text?: string | undefined }[] | null | undefined,
+): string {
+  if (typeof content === "string") {
     return content.trim();
   }
-  return content.trim();
+  if (!content) {
+    return "";
+  }
+  return content.map((part) => part.text ?? "").join("").trim();
 }
 
-function mentionedShape(text: string): "cube" | "box" | "cylinder" | "sphere" | "cone" | undefined {
-  const mentions: { index: number; kind: "cube" | "box" | "cylinder" | "sphere" | "cone" }[] = [];
-  for (const [word, kind] of [
-    ["cube", "cube"],
-    ["box", "box"],
-    ["block", "box"],
-    ["cylinder", "cylinder"],
-    ["tube", "cylinder"],
-    ["sphere", "sphere"],
-    ["ball", "sphere"],
-    ["cone", "cone"],
-  ] as const) {
-    const index = text.indexOf(word);
-    if (index >= 0) {
-      mentions.push({ index, kind });
-    }
+function readType(item: unknown): string | undefined {
+  if (typeof item !== "object" || item === null || !("type" in item)) {
+    return undefined;
   }
-  mentions.sort((left, right) => left.index - right.index);
-  return mentions[0]?.kind;
+  return typeof item.type === "string" ? item.type : undefined;
 }
 
-function dimensionQuestion(shape: string): string {
-  if (shape === "sphere") {
-    return "What radius should the sphere have, in millimetres?";
+function statusMessage(status: number): string {
+  if (status === 401 || status === 403) {
+    return rejectedKeyMessage;
   }
-  if (shape === "cylinder") {
-    return "What radius and height should the cylinder have, in millimetres?";
+  if (status === 429) {
+    return busyMessage;
   }
-  if (shape === "cone") {
-    return "What radius and height should the cone have, in millimetres?";
+  if (status === 408) {
+    return timedOutMessage;
   }
-  if (shape === "cube") {
-    return "What size should the cube be, in millimetres?";
+  if (status >= 500) {
+    return unreachableMessage;
   }
-  return "What width, depth, and height should the box have, in millimetres?";
+  return rejectedMessage;
 }
 
-function editQuestion(lower: string): string {
-  if (/\bscale\b/u.test(lower)) {
-    return "What scale factor should I use?";
-  }
-  if (/\b(rotate|turn)\b/u.test(lower)) {
-    return "How many degrees should I rotate it?";
-  }
-  return "How far should I move it, in millimetres? Give x, y, and z.";
+function timeoutError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
 }
 
-function askText(prompt: string): DesignerStep {
-  return { name: feedbackAskToolId, input: { title: "Designer", prompt, form: "text" } };
-}
-
-function readGearSpec(text: string): GearSpec {
-  const lower = text.toLowerCase();
-  const teeth = firstNumber(lower, /(\d+(?:\.\d+)?)\s*-?\s*(?:teeth|tooth)\b/u);
-  const thickness = firstNumber(lower, /(\d+(?:\.\d+)?)\s*(?:mm\s+)?(?:thick|thickness)\b/u);
-  const withoutCounts = lower
-    .replace(/\d+(?:\.\d+)?\s*-?\s*(?:teeth|tooth)\b/gu, " ")
-    .replace(/\d+(?:\.\d+)?\s*(?:mm\s+)?(?:thick|thickness)\b/gu, " ");
-  const diameter =
-    firstNumber(withoutCounts, /\b(?:diameter|across|wide)\s+(\d+(?:\.\d+)?)/u) ??
-    firstNumber(withoutCounts, /(\d+(?:\.\d+)?)\s*(?:mm|millimetres|millimeters)\b/u);
+function failed(message: string): ModelCompletionResult {
   return {
-    teeth: teeth ?? 8,
-    diameterMm: diameter ?? 40,
-    thicknessMm: thickness ?? 8,
+    content: message,
+    usage: { inputTokens: 0, outputTokens: 0 },
   };
 }
 
-function firstNumber(text: string, pattern: RegExp): number | undefined {
-  const match = text.match(pattern);
-  const raw = match?.[1];
-  if (raw === undefined) {
-    return undefined;
+function whole(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value < 0) {
+    return 0;
   }
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : undefined;
+  return Math.floor(value);
 }
 
-function placedSentence(messages: readonly TurnMessage[], input: unknown): string {
-  const user = messages.find((message) => message.role === "user")?.content ?? "";
-  const gear = gearSentence(input);
-  if (/\bgears?\b/u.test(user) && gear) {
-    return gear;
+async function discard(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    return;
   }
-  const count = isRecord(input) && Array.isArray(input.parts) ? input.parts.length : 0;
-  return count === 1 ? "Placed the solid." : `Placed ${count} solids.`;
 }
 
-function gearSentence(input: unknown): string | undefined {
-  if (!isRecord(input) || !Array.isArray(input.parts)) {
-    return undefined;
+async function errorDetail(response: Response): Promise<string> {
+  try {
+    const text = (await response.text()).replace(/\s+/gu, " ").trim();
+    const parsed: unknown = text.startsWith("{") ? JSON.parse(text) : undefined;
+    const message = errorMessage(parsed) || text;
+    return message.slice(0, 240);
+  } catch {
+    return "";
   }
-  const parts = input.parts.filter(isRecord);
-  const teeth = parts.filter((part) => part.kind === "box").length;
-  const disc = parts.find((part) => part.kind === "cylinder");
-  if (!disc || teeth === 0 || typeof disc.radiusMm !== "number") {
-    return undefined;
-  }
-  return `Drew a gear with ${teeth} teeth, ${Math.round(disc.radiusMm * 2)} mm across.`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function errorMessage(value: unknown): string {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "";
+  }
+  if ("message" in value && typeof value.message === "string") {
+    return value.message;
+  }
+  if (
+    "error" in value &&
+    typeof value.error === "object" &&
+    value.error !== null &&
+    "message" in value.error &&
+    typeof value.error.message === "string"
+  ) {
+    return value.error.message;
+  }
+  return "";
 }

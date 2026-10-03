@@ -2,6 +2,7 @@ import { Panel, Select } from "@borg/ui-kit";
 import { For, Show } from "solid-js";
 import { SHOP } from "../domain.js";
 import {
+  designerModelId,
   designerPersonaId,
   frontDeskPersonaId,
   operatorPersonaId,
@@ -22,7 +23,7 @@ const seatTools: Record<string, readonly string[]> = {
     "Add a box, cylinder, sphere, or cone",
     "Move, rotate, and scale the selection",
     "Delete the selection",
-    "Talk to the designer. It draws a gear or a solid, and asks when a size is missing",
+    "Talk to the designer. It calls tools to change the model, and asks when a size is missing",
     "Change seat",
   ],
   [frontDeskPersonaId]: ["Send the quote", "Change seat"],
@@ -121,13 +122,13 @@ export function SettingsView(
           <Show when={props.section === "model"}>
             <h2 class="mb-2 text-2xl font-semibold">Model</h2>
             <p class="mb-5 text-sm text-[var(--text-muted)]">
-              Send on Design starts a designer turn on this model. It can draw a gear, or add, move, and delete solids, and it asks when a size is missing. The palette calls the same solid tools without the model.
+              Send on Design starts a turn with this model. The model changes the solid by calling tools, and it asks when a size or a count is missing. Set XAI_API_KEY before launching. The palette calls the same tools without the model.
             </p>
             <Panel>
               <dl class="grid gap-3 text-sm">
                 <Row label="Provider" value="example.print-bench" />
-                <Row label="Model" value="scripted" />
-                <Row label="Tools it may call" value="Add, move, delete, and ask" />
+                <Row label="Model" value={designerModelId} />
+                <Row label="Tools it may call" value="Add, place, move, delete, and ask" />
               </dl>
             </Panel>
           </Show>
