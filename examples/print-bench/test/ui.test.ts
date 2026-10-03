@@ -3,7 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect } from "@playwright/test";
 import { afterEach, describe, it } from "vitest";
-import { addedReply, GEAR_QUESTION, startDesignerServer } from "./model-double.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { addedReply, designerModelPreference, GEAR_QUESTION, startDesignerServer } from "./model-double.js";
 
 const exampleDirectory = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(path.join(exampleDirectory, "package.json"));
@@ -11,17 +13,23 @@ const electronPath = require("electron") as string;
 
 let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
 let designer: Awaited<ReturnType<typeof startDesignerServer>> | undefined;
+let home: string | undefined;
 
 afterEach(async () => {
   await application?.close();
   application = undefined;
   await designer?.close();
   designer = undefined;
+  if (home) {
+    await rm(home, { recursive: true, force: true });
+    home = undefined;
+  }
 });
 
 describe("print bench window", () => {
   it("builds any solid from the palette or a prompt, then gates quote and print", async () => {
     designer = await startDesignerServer();
+    home = await mkdtemp(path.join(tmpdir(), "print-bench-ui-"));
     application = await electron.launch({
       executablePath: electronPath,
       cwd: exampleDirectory,
@@ -29,8 +37,9 @@ describe("print bench window", () => {
       timeout: 60_000,
       env: {
         ...process.env,
-        XAI_API_KEY: "test-key",
-        BORG_PRINT_BENCH_MODEL_URL: designer.url,
+        BORG_E2E: "1",
+        BORG_OPENAI_ENDPOINT: designer.url,
+        BORG_PRINT_BENCH_HOME: home,
       },
     });
     const page = await application.firstWindow();
@@ -47,7 +56,23 @@ describe("print bench window", () => {
     await expect(page.getByTestId("surface-settings")).toContainText("Machine");
     await expect(page.getByTestId("settings-page")).toContainText("Prusa MK4");
     await page.getByTestId("settings-section-model").click();
-    await expect(page.getByTestId("settings-page")).toContainText("grok-4.7");
+    await expect(page.getByTestId("openai-setup-step")).toBeVisible();
+    await expect(page.getByTestId("anthropic-setup-step")).toBeVisible();
+    await expect(page.getByTestId("azure-setup-step")).toBeVisible();
+    await expect(page.getByTestId("copilot-setup-step")).toBeVisible();
+    await expect(page.getByTestId("ollama-setup-step")).toBeVisible();
+    await expect(page.getByTestId("openrouter-setup-step")).toBeVisible();
+    await expect(page.getByTestId("settings-page")).not.toContainText("grok-4.7");
+    await expect(page.getByTestId("settings-page")).not.toContainText("XAI_API_KEY");
+    await page.getByTestId("openai-api-key").fill("sk-test");
+    await page.getByTestId("openai-save-key").click();
+    await page.getByTestId("openai-connect").click();
+    await expect(page.getByTestId("openai-status")).toContainText("connected", { timeout: 20_000 });
+    await expect
+      .poll(async () => page.getByTestId("print-bench-model").locator("option").count(), { timeout: 20_000 })
+      .toBeGreaterThan(1);
+    await page.getByTestId("print-bench-model").selectOption(designerModelPreference);
+    await expect(page.getByTestId("print-bench-model")).toHaveValue(designerModelPreference);
     await page.getByTestId("workspace-view-tab-print-bench.design").click();
 
     const findings = page.getByTestId("print-bench-findings");
@@ -124,5 +149,5 @@ describe("print bench window", () => {
     await expect(page.getByTestId("print-bench-question")).toHaveCount(0);
     await expect(page.getByTestId("print-bench-choice-box")).toHaveCount(0);
     await expect(page.getByText("The bed is empty")).toHaveCount(0);
-  }, 60_000);
+  }, 90_000);
 });

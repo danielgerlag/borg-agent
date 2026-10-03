@@ -5,10 +5,12 @@ import type { Kernel } from "@borg-agent/kernel";
 import type { PendingInteraction } from "@borg-agent/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startPrintBench } from "../src/boot.js";
-import { missingDesignerKeyMessage } from "../src/provider.js";
+import { handleProviderCall } from "../src/provider-bridge.js";
+import { connectModelMessage } from "../src/contract.js";
 import {
   addedReply,
   cylinderFromGearAnswer,
+  designerModelPreference,
   GEAR_QUESTION,
   installDesignerFetch,
 } from "./model-double.js";
@@ -18,6 +20,7 @@ import {
   designerPersonaId,
   frontDeskPersonaId,
   operatorPersonaId,
+  preferModelToolId,
   printBenchAct,
   printBenchSnapshot,
   promptToolId,
@@ -67,6 +70,7 @@ describe("print bench", () => {
     }
     expect(added.snapshot.inspection.quote.price.amount).toBeGreaterThan(0);
 
+    await connectDesigner(kernel);
     const prompted = await kernel.bus.invoke(printBenchAct, {
       tool: promptToolId,
       text: "add a sphere radius 15",
@@ -155,6 +159,7 @@ describe("print bench", () => {
   it("asks for a missing size, then adds the solid", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);
+    await connectDesigner(kernel);
     const asked = kernel.bus.invoke(printBenchAct, {
       tool: promptToolId,
       text: "a sphere",
@@ -175,6 +180,7 @@ describe("print bench", () => {
   it("asks about a gear, then adds the solid the model returns", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);
+    await connectDesigner(kernel);
     const drawn = kernel.bus.invoke(printBenchAct, {
       tool: promptToolId,
       text: "draw a gear",
@@ -194,12 +200,13 @@ describe("print bench", () => {
     expect(done.snapshot.turns.map((turn) => turn.role)).toEqual(["user", "designer"]);
     expect(JSON.stringify(fetchDouble?.requests[0])).toContain("draw a gear");
     expect(JSON.stringify(fetchDouble?.requests[0])).toContain("feedback_ask");
-    expect(JSON.stringify(fetchDouble?.requests[0])).toContain("example_print_bench_add");
+    expect(JSON.stringify(fetchDouble?.requests[0])).toContain("example_print-bench_add");
   }, 60_000);
 
   it("asks about a gear after an earlier designer turn", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);
+    await connectDesigner(kernel);
     const first = await kernel.bus.invoke(printBenchAct, {
       tool: promptToolId,
       text: "add a sphere radius 15",
@@ -222,28 +229,54 @@ describe("print bench", () => {
     );
   }, 60_000);
 
-  it("says when the designer key is missing and does not invent a solid", async () => {
-    const previous = process.env.XAI_API_KEY;
-    delete process.env.XAI_API_KEY;
-    try {
-      dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
-      kernel = await startPrintBench(dataDirectory);
-      const result = await kernel.bus.invoke(printBenchAct, {
-        tool: promptToolId,
-        text: "draw a gear",
-      });
-      expect(result.snapshot.reply).toBe(missingDesignerKeyMessage);
-      expect(result.snapshot.scene.bodies).toEqual([]);
-      expect(fetchDouble?.requests).toEqual([]);
-    } finally {
-      if (previous === undefined) {
-        delete process.env.XAI_API_KEY;
-      } else {
-        process.env.XAI_API_KEY = previous;
-      }
-    }
+  it("says when no model is chosen and does not invent a solid", async () => {
+    dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
+    kernel = await startPrintBench(dataDirectory);
+    const result = await kernel.bus.invoke(printBenchAct, {
+      tool: promptToolId,
+      text: "draw a gear",
+    });
+    expect(result.snapshot.designerModel).toBeNull();
+    expect(result.snapshot.reply).toBe(connectModelMessage);
+    expect(result.snapshot.scene.bodies).toEqual([]);
+    expect(fetchDouble?.requests).toEqual([]);
+  });
+
+  it("lists the provider plugins and keeps their secrets on that plugin", async () => {
+    dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
+    kernel = await startPrintBench(dataDirectory);
+    const plugins = await handleProviderCall(kernel, { method: "plugins" });
+    expect(plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "borg.openai" }),
+        expect.objectContaining({ id: "borg.anthropic" }),
+        expect.objectContaining({ id: "borg.ollama" }),
+      ]),
+    );
+    await expect(
+      handleProviderCall(kernel, {
+        method: "secrets.has",
+        pluginId: "example.print-bench",
+        key: "apiKey",
+      }),
+    ).rejects.toThrow("Plugin example.print-bench cannot read secrets");
+    const models = await handleProviderCall(kernel, { method: "models.list" });
+    expect(models).toEqual([
+      expect.objectContaining({ preferenceId: "borg.mock-llm:mock:scripted" }),
+    ]);
   });
 });
+
+async function connectDesigner(running: Kernel): Promise<void> {
+  await running.secrets.set("borg.openai", "apiKey", "sk-test");
+  await running.bus.invokeById("borg.openai.connect", {});
+  const chosen = await running.bus.invoke(printBenchAct, {
+    tool: preferModelToolId,
+    preferenceId: designerModelPreference,
+  });
+  expect(chosen.effect.type).toBe("model");
+  expect(chosen.snapshot.designerModel).toBe(designerModelPreference);
+}
 
 async function waitForKind(
   runningKernel: Kernel,

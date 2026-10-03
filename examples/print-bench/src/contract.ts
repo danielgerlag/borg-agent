@@ -11,13 +11,17 @@ export const feedbackAskToolId = "feedback.ask";
 export const sendQuoteToolId = "example.print-bench.send-quote";
 export const startMachineToolId = "example.print-bench.start-machine";
 export const usePersonaToolId = "example.print-bench.use-persona";
+export const preferModelToolId = "example.print-bench.prefer-model";
 
 export const designerPersonaId = "print-bench/designer";
 export const frontDeskPersonaId = "print-bench/front-desk";
 export const operatorPersonaId = "print-bench/operator";
 
-export const designerProviderId = "example.print-bench";
-export const designerModelId = "grok-4.7";
+/** Persona preference until Settings chooses a connected model. */
+export const unconfiguredModelPreference = "example.print-bench:unconfigured";
+
+export const connectModelMessage =
+  "Connect a model in Settings, then choose it for the designer.";
 
 const vecSchema = z
   .object({
@@ -255,6 +259,7 @@ export const snapshotSchema = z
       .strict()
       .nullable(),
     bedMm: vecSchema,
+    designerModel: z.string().min(1).nullable(),
   })
   .strict();
 
@@ -268,6 +273,7 @@ export const effectSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("denied"), reasons: z.array(z.string()) }).strict(),
   z.object({ type: z.literal("not-printable") }).strict(),
   z.object({ type: z.literal("running") }).strict(),
+  z.object({ type: z.literal("model") }).strict(),
 ]);
 
 export const actInputSchema = z.discriminatedUnion("tool", [
@@ -277,6 +283,12 @@ export const actInputSchema = z.discriminatedUnion("tool", [
   z.object({ tool: z.literal(selectToolId), id: z.string().uuid().nullable() }).strict(),
   z.object({ tool: z.literal(promptToolId), text: z.string().min(1) }).strict(),
   z.object({ tool: z.literal(usePersonaToolId), personaId: z.string().min(1) }).strict(),
+  z
+    .object({
+      tool: z.literal(preferModelToolId),
+      preferenceId: z.string().regex(/^[a-z0-9]+(?:[.-][a-z0-9-]+)+:\S+$/),
+    })
+    .strict(),
   z.object({ tool: z.literal(sendQuoteToolId) }).strict(),
   z.object({ tool: z.literal(startMachineToolId) }).strict(),
 ]);

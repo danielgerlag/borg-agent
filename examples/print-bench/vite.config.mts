@@ -9,6 +9,9 @@ const appDirectory = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   root: path.resolve(appDirectory, "src/renderer"),
   base: "./",
+  resolve: {
+    dedupe: ["solid-js", "@borg/ui-kit"],
+  },
   plugins: [solid(), tailwindcss()],
   build: {
     outDir: path.resolve(appDirectory, "dist/renderer"),

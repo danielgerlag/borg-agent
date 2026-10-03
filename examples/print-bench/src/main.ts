@@ -7,9 +7,8 @@ import {
   addToolId,
   bodySchema,
   deleteToolId,
-  designerModelId,
+  connectModelMessage,
   designerPersonaId,
-  designerProviderId,
   feedbackAskToolId,
   effectSchema,
   placeInputSchema,
@@ -17,19 +16,20 @@ import {
   primitiveSchema,
   printBenchAct,
   printBenchSnapshot,
+  preferModelToolId,
   promptToolId,
   selectToolId,
   sendQuoteToolId,
   snapshotSchema,
   startMachineToolId,
   transformToolId,
+  unconfiguredModelPreference,
   usePersonaToolId,
   type PlacedPart,
   type Primitive,
 } from "./contract.js";
 import { createJobWriter, withScene, type Job, type JobWriter } from "./job.js";
 import { benchPersonas } from "./personas.js";
-import { missingDesignerKeyMessage, registerDesignerModel } from "./provider.js";
 
 type Effect = z.output<typeof effectSchema>;
 
@@ -49,7 +49,6 @@ export default definePlugin({
   permissions: [
     "tools.register",
     "tools.invoke",
-    "models.register",
     "loops.start",
     "channels.send",
     "personas.read",
@@ -58,7 +57,7 @@ export default definePlugin({
   ],
   contributes: {
     commands: [printBenchSnapshot.id, printBenchAct.id],
-    kinds: ["tool", "llmProvider", "workspaceView"],
+    kinds: ["tool", "workspaceView"],
   },
   async activate(context) {
     const jobs = createJobWriter(context.store);
@@ -73,7 +72,6 @@ export default definePlugin({
       startTool(jobs),
       personaTool(context, jobs),
     ].map((tool) => context.tools.register(tool));
-    const model = registerDesignerModel(context);
     for (const persona of benchPersonas) {
       if (!context.personas.get(persona.id)) {
         await context.personas.create({
@@ -92,6 +90,15 @@ export default definePlugin({
     const actCommand = context.bus.handle(printBenchAct, async (input, signal) => {
       signal.throwIfAborted();
       const action = actInputSchema.parse(input);
+      if (action.tool === preferModelToolId) {
+        await context.personas.update(designerPersonaId, {
+          preferredModels: [action.preferenceId],
+        });
+        return {
+          snapshot: await project(context, await jobs.read()),
+          effect: { type: "model" as const },
+        };
+      }
       const effect = await apply(context, jobs, action);
       return {
         snapshot: await project(context, await jobs.read()),
@@ -102,7 +109,6 @@ export default definePlugin({
       async dispose() {
         snapshotCommand.dispose();
         actCommand.dispose();
-        model.dispose();
         for (const tool of tools) {
           tool.dispose();
         }
@@ -252,8 +258,9 @@ function promptTool(context: PluginContext, jobs: JobWriter) {
           turns: [...session.job.turns, { role: "user", text: input.text }],
         });
       });
-      if ((process.env.XAI_API_KEY ?? "").trim().length === 0) {
-        await remember(jobs, missingDesignerKeyMessage);
+      const preference = context.personas.get(designerPersonaId)?.preferredModels[0];
+      if (preference === undefined || preference === unconfiguredModelPreference) {
+        await remember(jobs, connectModelMessage);
         return { type: "asked" };
       }
       const job = await jobs.read();
@@ -273,8 +280,6 @@ function promptTool(context: PluginContext, jobs: JobWriter) {
           selectToolId,
           feedbackAskToolId,
         ],
-        providerId: designerProviderId,
-        modelId: designerModelId,
         security: {
           kind: "root",
           // A repeated subject resumes the same root, and the loop closes that root when the turn ends.
@@ -505,7 +510,16 @@ async function project(context: PluginContext, job: Job) {
       ? { revision: job.quoteSent.revision, messageId: job.quoteSent.messageId }
       : null,
     bedMm: SHOP.bedMm,
+    designerModel: chosenModel(context),
   });
+}
+
+function chosenModel(context: PluginContext): string | null {
+  const preference = context.personas.get(designerPersonaId)?.preferredModels[0];
+  if (preference === undefined || preference === unconfiguredModelPreference) {
+    return null;
+  }
+  return preference;
 }
 
 function wire(inspection: Inspection) {

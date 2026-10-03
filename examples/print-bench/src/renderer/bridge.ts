@@ -2,6 +2,9 @@ export interface PrintBenchApi {
   command: {
     invoke(id: string, input: unknown): Promise<unknown>;
   };
+  provider: {
+    call(body: unknown): Promise<unknown>;
+  };
   interactions: {
     list(): Promise<readonly BenchInteraction[]>;
     respond(id: string, response: BenchAnswer | BenchApproval): Promise<boolean>;

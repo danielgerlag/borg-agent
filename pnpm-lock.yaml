@@ -320,15 +320,36 @@ importers:
       '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+      '@borg/plugin-anthropic':
+        specifier: workspace:*
+        version: link:../../plugins/anthropic
+      '@borg/plugin-azure':
+        specifier: workspace:*
+        version: link:../../plugins/azure
       '@borg/plugin-channel-mock':
         specifier: workspace:*
         version: link:../../plugins/channel-mock
       '@borg/plugin-config-sqlite':
         specifier: workspace:*
         version: link:../../plugins/config-sqlite
+      '@borg/plugin-copilot':
+        specifier: workspace:*
+        version: link:../../plugins/copilot
       '@borg/plugin-feedback':
         specifier: workspace:*
         version: link:../../plugins/feedback
+      '@borg/plugin-mock-llm':
+        specifier: workspace:*
+        version: link:../../plugins/mock-llm
+      '@borg/plugin-ollama':
+        specifier: workspace:*
+        version: link:../../plugins/ollama
+      '@borg/plugin-openai':
+        specifier: workspace:*
+        version: link:../../plugins/openai
+      '@borg/plugin-openrouter':
+        specifier: workspace:*
+        version: link:../../plugins/openrouter
       '@borg/plugin-secrets-dev':
         specifier: workspace:*
         version: link:../../plugins/secrets-dev

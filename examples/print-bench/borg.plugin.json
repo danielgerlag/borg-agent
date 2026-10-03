@@ -8,7 +8,6 @@
   "permissions": [
     "tools.register",
     "tools.invoke",
-    "models.register",
     "loops.start",
     "channels.send",
     "personas.read",
@@ -22,7 +21,6 @@
     ],
     "kinds": [
       "tool",
-      "llmProvider",
       "workspaceView"
     ]
   }

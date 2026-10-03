@@ -1,11 +1,10 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { z } from "@borg-agent/plugin-sdk";
 import { startPrintBench } from "./boot.js";
 import { printBenchAct, printBenchSnapshot } from "./contract.js";
+import { handleProviderCall } from "./provider-bridge.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 let benchWindow: BrowserWindow | undefined;
@@ -24,11 +23,14 @@ function isTrusted(event: IpcMainInvokeEvent): boolean {
   return event.sender.id === benchWindow?.webContents.id;
 }
 
-// Electron locks userData during ready. Point it at this process first.
-const dataDirectory = mkdtempSync(join(tmpdir(), "print-bench-"));
-app.setPath("userData", dataDirectory);
+// Tests point this at an empty directory. A normal launch keeps provider keys in the app data folder.
+const isolatedHome = process.env.BORG_PRINT_BENCH_HOME?.trim();
+if (isolatedHome) {
+  app.setPath("userData", isolatedHome);
+}
 
 void app.whenReady().then(async () => {
+  const dataDirectory = app.getPath("userData");
   let kernel: Awaited<ReturnType<typeof startPrintBench>>;
   try {
     kernel = await startPrintBench(dataDirectory);
@@ -68,6 +70,17 @@ void app.whenReady().then(async () => {
         };
       }
       return failure("unavailable", `Unknown command ${parsed.data.id}`);
+    } catch (error) {
+      return failure("failed", messageOf(error));
+    }
+  });
+
+  ipcMain.handle("print-bench:provider", async (event, body: unknown) => {
+    if (!isTrusted(event)) {
+      return failure("forbidden", "Untrusted frame");
+    }
+    try {
+      return { ok: true as const, value: await handleProviderCall(kernel, body) };
     } catch (error) {
       return failure("failed", messageOf(error));
     }

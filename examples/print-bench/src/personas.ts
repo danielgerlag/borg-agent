@@ -2,9 +2,7 @@ import {
   addToolId,
   deleteToolId,
   placeToolId,
-  designerModelId,
   designerPersonaId,
-  designerProviderId,
   frontDeskPersonaId,
   operatorPersonaId,
   feedbackAskToolId,
@@ -13,10 +11,11 @@ import {
   sendQuoteToolId,
   startMachineToolId,
   transformToolId,
+  unconfiguredModelPreference,
   usePersonaToolId,
 } from "./contract.js";
 
-const model = `${designerProviderId}:${designerModelId}`;
+const model = unconfiguredModelPreference;
 
 const designerInstructions = [
   "You are the designer on a print bench.",

@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld("printBench", {
         await ipcRenderer.invoke("print-bench:command:invoke", { id, input }),
       ),
   },
+  provider: {
+    call: async (body) =>
+      readBridgeResult(await ipcRenderer.invoke("print-bench:provider", body)),
+  },
   interactions: {
     list: async () =>
       readBridgeResult(await ipcRenderer.invoke("print-bench:interactions:list")),

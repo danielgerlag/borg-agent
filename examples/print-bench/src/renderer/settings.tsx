@@ -1,14 +1,17 @@
 import { Panel, Select } from "@borg/ui-kit";
-import { For, Show } from "solid-js";
+import { z } from "@borg-agent/plugin-sdk";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { SHOP } from "../domain.js";
 import {
-  designerModelId,
   designerPersonaId,
   frontDeskPersonaId,
   operatorPersonaId,
+  preferModelToolId,
   usePersonaToolId,
 } from "../contract.js";
+import { benchApi } from "./bridge.js";
 import type { BenchControl } from "./control.js";
+import { ProviderScreens } from "./provider-setup.js";
 
 type Section = "machine" | "seats" | "model";
 
@@ -17,6 +20,42 @@ const sections: readonly { id: Section; label: string }[] = [
   { id: "seats", label: "Seats" },
   { id: "model", label: "Model" },
 ];
+
+const modelListSchema = z.array(
+  z
+    .object({
+      providerId: z.string().min(1),
+      modelId: z.string().min(1),
+      preferenceId: z.string().min(1),
+    })
+    .strict(),
+);
+
+const providerLabels: Readonly<Record<string, string>> = {
+  "borg.anthropic": "Anthropic",
+  "borg.azure": "Azure",
+  "borg.copilot": "Copilot",
+  "borg.mock-llm": "Demo",
+  "borg.ollama": "Ollama",
+  "borg.openai": "OpenAI",
+  "borg.openrouter": "OpenRouter",
+};
+
+const modelLabels: Readonly<Record<string, string>> = {
+  "mock:scripted": "Built-in demo model",
+  "claude-sonnet-5": "Claude Sonnet 5",
+  "claude-haiku-4-5": "Claude Haiku 4.5",
+  "claude-opus-5": "Claude Opus 5",
+  "gpt-5-mini": "GPT-5 Mini",
+  "gpt-5-nano": "GPT-5 Nano",
+  "gpt-5": "GPT-5",
+};
+
+function modelLabel(providerId: string, modelId: string): string {
+  const provider = providerLabels[providerId] ?? providerId.replace(/^borg\./, "");
+  const model = modelLabels[modelId] ?? modelId;
+  return `${provider} · ${model}`;
+}
 
 const seatTools: Record<string, readonly string[]> = {
   [designerPersonaId]: [
@@ -37,6 +76,37 @@ export function SettingsView(
   },
 ) {
   const allowed = () => props.snapshot.persona.allowedTools.includes(usePersonaToolId);
+  const [models, setModels] = createSignal<z.output<typeof modelListSchema>>([]);
+  const [modelError, setModelError] = createSignal<string | undefined>();
+
+  createEffect(() => {
+    if (props.section !== "model") {
+      return;
+    }
+    let stopped = false;
+    const pull = (): void => {
+      void benchApi()
+        .provider.call({ method: "models.list" })
+        .then((value) => {
+          if (!stopped) {
+            setModels(modelListSchema.parse(value));
+            setModelError(undefined);
+          }
+        })
+        .catch((caught: unknown) => {
+          if (!stopped) {
+            setModelError(caught instanceof Error ? caught.message : String(caught));
+          }
+        });
+    };
+    pull();
+    const timer = setInterval(pull, 500);
+    onCleanup(() => {
+      stopped = true;
+      clearInterval(timer);
+    });
+  });
+
   return (
     <section
       class="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)]"
@@ -122,15 +192,30 @@ export function SettingsView(
           <Show when={props.section === "model"}>
             <h2 class="mb-2 text-2xl font-semibold">Model</h2>
             <p class="mb-5 text-sm text-[var(--text-muted)]">
-              Send on Design starts a turn with this model. The model changes the solid by calling tools, and it asks when a size or a count is missing. Set XAI_API_KEY before launching. The palette calls the same tools without the model.
+              Connect a provider, then choose that model for the designer. It changes the solid by calling tools, and it asks when a size or a count is missing. The built-in demo answers in text and does not change the solid. The palette calls the same tools without a model.
             </p>
-            <Panel>
-              <dl class="grid gap-3 text-sm">
-                <Row label="Provider" value="example.print-bench" />
-                <Row label="Model" value={designerModelId} />
-                <Row label="Tools it may call" value="Add, place, move, delete, and ask" />
-              </dl>
-            </Panel>
+            <Select
+              label="Designer model"
+              aria-label="Designer model"
+              data-testid="print-bench-model"
+              placeholder="Choose a model"
+              value={props.snapshot.designerModel ?? ""}
+              options={models().map((model) => ({
+                value: model.preferenceId,
+                label: modelLabel(model.providerId, model.modelId),
+              }))}
+              onChange={(preferenceId) => {
+                if (preferenceId === (props.snapshot.designerModel ?? "")) {
+                  return;
+                }
+                props.run({ tool: preferModelToolId, preferenceId });
+              }}
+              disabled={props.busy}
+            />
+            <Show when={modelError()}>
+              {(message) => <p class="mt-3 text-sm text-[var(--danger)]">{message()}</p>}
+            </Show>
+            <ProviderScreens />
           </Show>
         </div>
       </div>

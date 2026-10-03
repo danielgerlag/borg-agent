@@ -1,9 +1,9 @@
 import { createServer, type Server } from "node:http";
-import { addToolId, deleteToolId, designerModelId, feedbackAskToolId, placeToolId } from "../src/contract.js";
-import { wireToolName } from "../src/provider.js";
+import { addToolId, feedbackAskToolId } from "../src/contract.js";
 
 export const GEAR_QUESTION = "How many teeth, and what diameter in millimetres?";
 export const SPHERE_QUESTION = "What radius should the sphere have, in millimetres?";
+export const designerModelPreference = "borg.openai:gpt-5-mini";
 
 export function addedReply(kind: string): string {
   return `Added a ${kind}.`;
@@ -19,94 +19,77 @@ export function cylinderFromGearAnswer(answer: string): {
   return { kind: "cylinder", radiusMm: diameter / 2, heightMm: 8 };
 }
 
-interface DesignerResponse {
-  readonly output: readonly Record<string, unknown>[];
-  readonly usage: { readonly input_tokens: number; readonly output_tokens: number };
-}
-
-interface WireItem {
+interface ChatMessage {
   readonly role?: string;
   readonly content?: unknown;
-  readonly type?: string;
-  readonly name?: string;
-  readonly arguments?: unknown;
-  readonly call_id?: string;
-  readonly output?: unknown;
+  readonly tool_call_id?: string;
+  readonly tool_calls?: readonly {
+    readonly id?: string;
+    readonly function?: { readonly name?: string; readonly arguments?: string };
+  }[];
 }
 
 let callSequence = 0;
 
-export function designerDouble(body: unknown): DesignerResponse {
-  const items = readItems(body);
-  const line = userLine(items);
-  const last = items.at(-1);
-  if (last?.type === "function_call_output") {
-    const call = matchingCall(items, last);
-    if (!call) {
-      return text("I could not read the tool result.");
-    }
-    if (call.name === wireToolName(feedbackAskToolId)) {
-      return afterAnswer(line, answerText(last.output));
-    }
-    return afterEdit(call);
-  }
-  return opening(line);
-}
-
 export function installDesignerFetch(): { readonly requests: unknown[]; restore(): void } {
   const requests: unknown[] = [];
   const original = globalThis.fetch;
-  const previousKey = process.env.XAI_API_KEY;
-  const previousUrl = process.env.BORG_PRINT_BENCH_MODEL_URL;
-  process.env.XAI_API_KEY = "test-key";
-  delete process.env.BORG_PRINT_BENCH_MODEL_URL;
   globalThis.fetch = async (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
-    if (!url.startsWith("https://api.x.ai/")) {
+    if (!url.includes("/v1/chat/completions") && !url.includes("/v1/models/")) {
       return original(input, init);
+    }
+    if (url.includes("/v1/models/")) {
+      return new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }
     const raw = typeof init?.body === "string" ? init.body : "{}";
     const body: unknown = JSON.parse(raw);
     requests.push(body);
-    return Response.json(designerDouble(body));
+    return sseResponse(framesFor(body));
   };
   return {
     requests,
     restore() {
       globalThis.fetch = original;
-      restoreEnv("XAI_API_KEY", previousKey);
-      restoreEnv("BORG_PRINT_BENCH_MODEL_URL", previousUrl);
     },
   };
 }
 
 export function startDesignerServer(): Promise<{
   readonly url: string;
-  readonly requests: unknown[];
-  failure(): unknown;
   close(): Promise<void>;
 }> {
-  const requests: unknown[] = [];
-  let lastError: unknown;
-  const server: Server = createServer((request, response) => {
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (request.method === "GET" && url.pathname.startsWith("/v1/models/")) {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("{}");
+      return;
+    }
+    if (request.method !== "POST" || url.pathname !== "/v1/chat/completions") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
     const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer | string) => {
-      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    request.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
     });
     request.on("end", () => {
-      try {
-        const raw: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        requests.push(raw);
-        const payload = designerDouble(raw);
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify(payload));
-      } catch (error) {
-        lastError = error;
-        response.writeHead(500);
-        response.end();
-      }
+      const raw = Buffer.concat(chunks).toString("utf8");
+      const body = parseJson(raw) ?? {};
+      const payload = `${framesFor(body).join("\n\n")}\n\n`;
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.end(payload);
     });
   });
+  return listen(server);
+}
+
+function listen(server: Server): Promise<{ readonly url: string; close(): Promise<void> }> {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -116,9 +99,7 @@ export function startDesignerServer(): Promise<{
         return;
       }
       resolve({
-        url: `http://127.0.0.1:${address.port}/responses`,
-        requests,
-        failure: () => lastError,
+        url: `http://127.0.0.1:${address.port}/v1/chat/completions`,
         close: () =>
           new Promise((done, fail) => {
             server.close((error) => (error ? fail(error) : done()));
@@ -128,7 +109,21 @@ export function startDesignerServer(): Promise<{
   });
 }
 
-function opening(line: string): DesignerResponse {
+function framesFor(body: unknown): string[] {
+  const messages = readMessages(body);
+  const line = userLine(messages);
+  const last = messages.at(-1);
+  if (last?.role === "tool") {
+    const call = matchingCall(messages, last.tool_call_id);
+    if (call?.function?.name === wire(feedbackAskToolId)) {
+      return afterAnswer(line, answerText(last.content));
+    }
+    return afterEdit(call);
+  }
+  return opening(line);
+}
+
+function opening(line: string): string[] {
   if (/\bgears?\b/iu.test(line)) {
     return ask(GEAR_QUESTION);
   }
@@ -137,104 +132,155 @@ function opening(line: string): DesignerResponse {
     if (radius === undefined) {
       return ask(SPHERE_QUESTION);
     }
-    return functionCall(addToolId, { kind: "sphere", radiusMm: radius });
+    return toolCall(addToolId, { kind: "sphere", radiusMm: radius });
   }
   return ask("Name a solid and a size in millimetres.");
 }
 
-function afterAnswer(line: string, answer: string): DesignerResponse {
+function afterAnswer(line: string, answer: string): string[] {
   if (/\bgears?\b/iu.test(line)) {
-    return functionCall(addToolId, cylinderFromGearAnswer(answer));
+    return toolCall(addToolId, cylinderFromGearAnswer(answer));
   }
   if (/\b(spheres?|balls?)\b/iu.test(line)) {
     const radius = numbers(answer)[0];
     if (radius === undefined) {
       return text("I still need a radius in millimetres.");
     }
-    return functionCall(addToolId, { kind: "sphere", radiusMm: radius });
+    return toolCall(addToolId, { kind: "sphere", radiusMm: radius });
   }
   return text("Name a solid and a size in millimetres.");
 }
 
-function afterEdit(call: WireItem): DesignerResponse {
-  const input = record(call.arguments);
+function afterEdit(
+  call: { readonly function?: { readonly name?: string; readonly arguments?: string } } | undefined,
+): string[] {
+  const input = record(call?.function?.arguments);
   const kind = input && typeof input.kind === "string" ? input.kind : "solid";
-  if (call.name === wireToolName(addToolId)) {
+  if (call?.function?.name === wire(addToolId)) {
     return text(addedReply(kind));
-  }
-  if (call.name === wireToolName(deleteToolId)) {
-    return text("Removed the solid.");
-  }
-  if (call.name === wireToolName(placeToolId)) {
-    return text("Placed the solids.");
   }
   return text("Updated the solid.");
 }
 
-function ask(prompt: string): DesignerResponse {
-  return functionCall(feedbackAskToolId, { title: "Designer", prompt, form: "text" });
+function ask(prompt: string): string[] {
+  return toolCall(feedbackAskToolId, { prompt, form: "text" });
 }
 
-function functionCall(name: string, input: unknown): DesignerResponse {
+function toolCall(name: string, input: unknown): string[] {
   callSequence += 1;
-  return {
-    output: [
-      {
-        type: "function_call",
-        name: wireToolName(name),
-        call_id: `call-${callSequence}`,
-        arguments: JSON.stringify(input),
-      },
-    ],
-    usage: { input_tokens: 11, output_tokens: 7 },
-  };
+  return [
+    frame({
+      choices: [
+        {
+          index: 0,
+          delta: {
+            role: "assistant",
+            tool_calls: [
+              {
+                index: 0,
+                id: `call-${callSequence}`,
+                type: "function",
+                function: { name: wire(name), arguments: JSON.stringify(input) },
+              },
+            ],
+          },
+          finish_reason: null,
+        },
+      ],
+    }),
+    frame({ choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] }),
+    frame({
+      choices: [],
+      usage: { prompt_tokens: 11, completion_tokens: 7 },
+    }),
+    "data: [DONE]",
+  ];
 }
 
-function text(content: string): DesignerResponse {
-  return {
-    output: [
-      {
-        type: "message",
-        content: [{ type: "output_text", text: content }],
-      },
-    ],
-    usage: { input_tokens: 11, output_tokens: 7 },
-  };
+function text(content: string): string[] {
+  return [
+    frame({
+      choices: [
+        {
+          index: 0,
+          delta: { role: "assistant", content },
+          finish_reason: null,
+        },
+      ],
+    }),
+    frame({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }),
+    frame({
+      choices: [],
+      usage: { prompt_tokens: 11, completion_tokens: 7 },
+    }),
+    "data: [DONE]",
+  ];
 }
 
-function readItems(body: unknown): WireItem[] {
-  if (!isRecord(body) || body.model !== designerModelId || !Array.isArray(body.input)) {
-    throw new Error("Designer stand-in expected a grok-4.7 responses body");
+function frame(payload: unknown): string {
+  return `data: ${JSON.stringify(payload)}`;
+}
+
+function sseResponse(frames: readonly string[]): Response {
+  return new Response(`${frames.join("\n\n")}\n\n`, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+function wire(toolId: string): string {
+  return toolId.replaceAll(".", "_");
+}
+
+function readMessages(body: unknown): ChatMessage[] {
+  if (!isRecord(body) || !Array.isArray(body.messages)) {
+    return [];
   }
-  return body.input.filter(isRecord).map((item) => ({
-    ...(typeof item.role === "string" ? { role: item.role } : {}),
-    ...(item.content !== undefined ? { content: item.content } : {}),
-    ...(typeof item.type === "string" ? { type: item.type } : {}),
-    ...(typeof item.name === "string" ? { name: item.name } : {}),
-    ...(item.arguments !== undefined ? { arguments: item.arguments } : {}),
-    ...(typeof item.call_id === "string" ? { call_id: item.call_id } : {}),
-    ...(item.output !== undefined ? { output: item.output } : {}),
+  return body.messages.filter(isRecord).map((message) => ({
+    ...(typeof message.role === "string" ? { role: message.role } : {}),
+    ...(message.content !== undefined ? { content: message.content } : {}),
+    ...(typeof message.tool_call_id === "string" ? { tool_call_id: message.tool_call_id } : {}),
+    ...(Array.isArray(message.tool_calls)
+      ? {
+          tool_calls: message.tool_calls.filter(isRecord).map((call) => ({
+            ...(typeof call.id === "string" ? { id: call.id } : {}),
+            ...(isRecord(call.function)
+              ? {
+                  function: {
+                    ...(typeof call.function.name === "string" ? { name: call.function.name } : {}),
+                    ...(typeof call.function.arguments === "string"
+                      ? { arguments: call.function.arguments }
+                      : {}),
+                  },
+                }
+              : {}),
+          })),
+        }
+      : {}),
   }));
 }
 
-function userLine(items: readonly WireItem[]): string {
-  const user = items.find((item) => item.role === "user" && typeof item.content === "string");
+function userLine(messages: readonly ChatMessage[]): string {
+  const user = messages.find((message) => message.role === "user" && typeof message.content === "string");
   const content = typeof user?.content === "string" ? user.content : "";
   return content.split("\n")[0]?.trim() ?? "";
 }
 
-function matchingCall(items: readonly WireItem[], output: WireItem): WireItem | undefined {
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item?.type === "function_call" && item.call_id === output.call_id) {
-      return item;
+function matchingCall(messages: readonly ChatMessage[], toolCallId: string | undefined) {
+  if (!toolCallId) {
+    return undefined;
+  }
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const call = messages[index]?.tool_calls?.find((item) => item.id === toolCallId);
+    if (call) {
+      return call;
     }
   }
   return undefined;
 }
 
-function answerText(output: unknown): string {
-  const raw = typeof output === "string" ? parseJson(output) : output;
+function answerText(content: unknown): string {
+  const raw = typeof content === "string" ? parseJson(content) : content;
   if (!isRecord(raw) || !isRecord(raw.answer) || typeof raw.answer.text !== "string") {
     return "";
   }
@@ -248,8 +294,7 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 function parseJson(text: string): unknown {
   try {
-    const value: unknown = JSON.parse(text);
-    return value;
+    return JSON.parse(text) as unknown;
   } catch {
     return undefined;
   }
@@ -263,12 +308,4 @@ function numbers(text: string): number[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function restoreEnv(name: "XAI_API_KEY" | "BORG_PRINT_BENCH_MODEL_URL", previous: string | undefined): void {
-  if (previous === undefined) {
-    delete process.env[name];
-    return;
-  }
-  process.env[name] = previous;
 }
