@@ -38,6 +38,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "node start.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit && tsc -p tsconfig.boot.json --noEmit"
   },
   "devDependencies": {

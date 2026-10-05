@@ -320,8 +320,16 @@ function createMainWindow(): BrowserWindow {
 }
 
 function loadMainWindow(window: BrowserWindow): void {
-  void window
-    .loadFile(rendererFile)
+  const requested = process.env.BORG_WORKSPACE;
+  const hash =
+    requested !== undefined && /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(requested)
+      ? requested
+      : undefined;
+  const loaded =
+    hash === undefined
+      ? window.loadFile(rendererFile)
+      : window.loadFile(rendererFile, { hash });
+  void loaded
     .catch(async (error: unknown) => {
       console.error("[renderer] failed to load application shell", error);
       await window.loadURL(rendererRecoveryUrl);

@@ -81,7 +81,10 @@ export async function closePersonaEditor(page: Page): Promise<void> {
   await expect(editor).not.toBeVisible();
 }
 
-export async function completeSetup(page: Page): Promise<void> {
+export async function completeSetup(
+  page: Page,
+  openedWorkspace: "chat" | "example.print-bench.design" = "chat",
+): Promise<void> {
   await expect(page.getByTestId("surface-wizard")).toBeVisible();
   await expect(page.getByTestId("setup-welcome")).toBeVisible();
   await page.getByTestId("setup-continue").click();
@@ -102,5 +105,9 @@ export async function completeSetup(page: Page): Promise<void> {
 
   await expect(page.getByTestId("setup-ready")).toBeVisible();
   await page.getByTestId("setup-complete").click();
+  if (openedWorkspace === "example.print-bench.design") {
+    await expect(page.getByTestId("print-bench-design-title")).toBeVisible();
+    return;
+  }
   await expect(page.getByTestId("chat-workspace")).toBeVisible();
 }

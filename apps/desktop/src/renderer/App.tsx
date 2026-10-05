@@ -83,6 +83,10 @@ export const App: Component<AppProps> = (props) => {
   const [settingsSection, setSettingsSection] = createSignal("system.plugins");
 
   onMount(() => {
+    const requested = window.location.hash.replace(/^#/, "");
+    if (primaryViews().some((view) => view.id === requested)) {
+      setWorkspaceId(requested);
+    }
     const restoreSurface = sessionStorage.getItem("borg.restore.surface");
     const restoreSection = sessionStorage.getItem(
       "borg.restore.settingsSection",

@@ -9,9 +9,13 @@ const require = createRequire(import.meta.url);
 
 const packageJson = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-) as { dependencies?: Record<string, string> };
+) as { dependencies?: Record<string, string>; scripts?: { start?: string } };
 
 describe("print bench plugin catalog", () => {
+  it("opens Design from npm start in this folder", () => {
+    expect(packageJson.scripts?.start).toBe("node start.cjs");
+  });
+
   it("boots the catalog ids and then the bench itself", () => {
     expect(printBenchPluginIds()).toEqual([
       "borg.config.sqlite",
