@@ -12,7 +12,6 @@ import {
   type Primitive,
 } from "../contract.js";
 import type { Body } from "../domain.js";
-import type { BenchAnswer, BenchInteraction } from "./bridge.js";
 import type { BenchControl } from "./control.js";
 import { Viewport } from "./viewport.js";
 
@@ -26,45 +25,12 @@ const palette: readonly { label: string; testid: string; solid: Primitive }[] = 
   { label: "Cone", testid: "print-bench-tool-cone", solid: { kind: "cone", radiusMm: 16, heightMm: 28 } },
 ];
 
-export function DesignView(
-  props: BenchControl & {
-    readonly pending: BenchInteraction | null;
-    onAnswer(response: BenchAnswer): Promise<boolean>;
-  },
-) {
+export function DesignView(props: BenchControl) {
   const [mode, setMode] = createSignal<Mode>("translate");
   const [prompt, setPrompt] = createSignal("");
-  const [heldId, setHeldId] = createSignal<string | null>(null);
   const [pendingDelete, setPendingDelete] = createSignal<string | null>(null);
   const allowed = (toolId: string): boolean => props.snapshot.persona.allowedTools.includes(toolId);
-  const question = (): BenchInteraction | undefined =>
-    props.pending?.kind === "human_input" ? props.pending : undefined;
-  const holding = (): boolean => heldId() !== null && heldId() === question()?.id;
-  const asking = (): boolean => {
-    const form = question()?.form;
-    return form === "text" || form === "choice";
-  };
-  const lock = (): boolean => {
-    if (asking() && !holding()) {
-      return false;
-    }
-    return props.busy || !allowed(promptToolId) || holding();
-  };
-  const answer = (response: BenchAnswer): void => {
-    const current = question();
-    if (!current || holding()) {
-      return;
-    }
-    setHeldId(current.id);
-    void props.onAnswer(response).then(
-      (accepted) => {
-        if (!accepted) {
-          setHeldId(null);
-        }
-      },
-      () => setHeldId(null),
-    );
-  };
+  const promptLocked = (): boolean => props.busy || !allowed(promptToolId);
   const selected = (): Body | undefined =>
     props.snapshot.scene.bodies.find((body) => body.id === props.snapshot.scene.selectedId);
   const replace = (body: Body): void => {
@@ -212,56 +178,7 @@ export function DesignView(
                 </p>
               )}
             </For>
-            <Show when={question()}>
-              {(item) => (
-                <div data-testid="print-bench-question" class="grid gap-2">
-                  <p>
-                    <span class="mr-2 text-xs uppercase tracking-[0.14em] text-[var(--text-subtle)]">Designer</span>
-                    {item().prompt}
-                  </p>
-                  <Show when={item().form === "choice" ? item().choices : undefined}>
-                    {(choices) => (
-                      <div class="flex flex-wrap gap-2">
-                        <For each={choices()}>
-                          {(choice) => (
-                            <Button
-                              type="button"
-                              data-testid={`print-bench-choice-${choice.id}`}
-                              {...(holding() ? { disabled: true } : {})}
-                              onClick={() => answer({ kind: "choice", choiceId: choice.id })}
-                            >
-                              {choice.label}
-                            </Button>
-                          )}
-                        </For>
-                      </div>
-                    )}
-                  </Show>
-                  <Show when={item().form === "confirm"}>
-                    <div class="flex gap-2">
-                      <Button
-                        type="button"
-                        data-testid="print-bench-confirm-yes"
-                        {...(holding() ? { disabled: true } : {})}
-                        onClick={() => answer({ kind: "confirm", confirmed: true })}
-                      >
-                        Yes
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        data-testid="print-bench-confirm-no"
-                        {...(holding() ? { disabled: true } : {})}
-                        onClick={() => answer({ kind: "confirm", confirmed: false })}
-                      >
-                        No
-                      </Button>
-                    </div>
-                  </Show>
-                </div>
-              )}
-            </Show>
-            <Show when={props.busy && !question()}>
+            <Show when={props.busy}>
               <p data-testid="print-bench-working" class="text-[var(--text-muted)]">Designer is working.</p>
             </Show>
           </div>
@@ -270,28 +187,7 @@ export function DesignView(
             onSubmit={(event) => {
               event.preventDefault();
               const text = prompt().trim();
-              const current = question();
-              if (current?.form === "text") {
-                if (text.length === 0 || holding()) {
-                  return;
-                }
-                setPrompt("");
-                answer({ kind: "text", text });
-                return;
-              }
-              if (current?.form === "choice") {
-                const typed = text.toLowerCase();
-                const match = current.choices?.find(
-                  (choice) => choice.id.toLowerCase() === typed || choice.label.toLowerCase() === typed,
-                );
-                if (!match || text.length === 0 || holding()) {
-                  return;
-                }
-                setPrompt("");
-                answer({ kind: "choice", choiceId: match.id });
-                return;
-              }
-              if (text.length === 0 || props.busy || !allowed(promptToolId)) {
+              if (text.length === 0 || promptLocked()) {
                 return;
               }
               setPrompt("");
@@ -302,13 +198,13 @@ export function DesignView(
               class="min-w-0 flex-1"
               value={prompt()}
               onChange={setPrompt}
-              placeholder={asking() ? "Your answer" : "Tell the designer what to change"}
+              placeholder="Tell the designer what to change"
               aria-label="Prompt"
               data-testid="print-bench-prompt"
-              {...(lock() ? { disabled: true } : {})}
+              disabled={promptLocked()}
             />
-            <Button type="submit" data-testid="print-bench-build" {...(lock() ? { disabled: true } : {})}>
-              {asking() ? "Answer" : "Send"}
+            <Button type="submit" data-testid="print-bench-build" disabled={promptLocked()}>
+              Send
             </Button>
           </form>
         </div>

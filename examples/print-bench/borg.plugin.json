@@ -5,6 +5,7 @@
     "borg": "^0.1.0"
   },
   "main": "@borg/example-print-bench/main",
+  "ui": "@borg/example-print-bench/ui",
   "permissions": [
     "tools.register",
     "tools.invoke",

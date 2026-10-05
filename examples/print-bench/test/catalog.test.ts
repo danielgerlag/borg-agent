@@ -4,7 +4,6 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { benchPlugins } from "../src/catalog.js";
 import { printBenchPluginIds } from "../src/boot.js";
-import { settingsLoaders } from "../src/renderer/settings-plugins.js";
 
 const require = createRequire(import.meta.url);
 
@@ -42,19 +41,7 @@ describe("print bench plugin catalog", () => {
     }
   });
 
-  it("reads each manifest from the package export and mounts settings for the providers", () => {
-    const settingsPackages = benchPlugins
-      .filter((plugin) => plugin.settings)
-      .map((plugin) => plugin.packageName);
-    expect(Object.keys(settingsLoaders).sort()).toEqual([...settingsPackages].sort());
-    expect(settingsPackages).toEqual([
-      "@borg/plugin-anthropic",
-      "@borg/plugin-azure",
-      "@borg/plugin-copilot",
-      "@borg/plugin-ollama",
-      "@borg/plugin-openai",
-      "@borg/plugin-openrouter",
-    ]);
+  it("reads each manifest from the package export", () => {
     for (const plugin of benchPlugins) {
       const mainPath = require.resolve(`${plugin.packageName}/main`);
       const declared = JSON.parse(

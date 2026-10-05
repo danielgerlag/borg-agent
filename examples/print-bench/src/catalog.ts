@@ -14,44 +14,27 @@ import ollamaManifest from "@borg/plugin-ollama/borg.plugin.json" with { type: "
 import openaiManifest from "@borg/plugin-openai/borg.plugin.json" with { type: "json" };
 import openrouterManifest from "@borg/plugin-openrouter/borg.plugin.json" with { type: "json" };
 
-function hosted<
-  const TName extends string,
-  const TSettings extends boolean,
-  TManifest extends BorgPluginManifest,
->(packageName: TName, manifest: TManifest, settings: TSettings) {
+function hosted<const TName extends string, TManifest extends BorgPluginManifest>(
+  packageName: TName,
+  manifest: TManifest,
+) {
   pluginManifestSchema.parse(manifest);
-  return { packageName, manifest, settings };
+  return { packageName, manifest };
 }
 
 // Config and secrets activate before the rest. The remaining plugins run in this order.
 export const benchPlugins = [
-  hosted("@borg/plugin-config-sqlite", configSqliteManifest, false),
-  hosted("@borg/plugin-secrets-dev", secretsDevManifest, false),
-  hosted("@borg/plugin-security-prompt-injection", promptInjectionManifest, false),
-  hosted("@borg/plugin-feedback", feedbackManifest, false),
-  hosted("@borg/plugin-anthropic", anthropicManifest, true),
-  hosted("@borg/plugin-azure", azureManifest, true),
-  hosted("@borg/plugin-copilot", copilotManifest, true),
-  hosted("@borg/plugin-mock-llm", mockLlmManifest, false),
-  hosted("@borg/plugin-ollama", ollamaManifest, true),
-  hosted("@borg/plugin-openai", openaiManifest, true),
-  hosted("@borg/plugin-openrouter", openrouterManifest, true),
+  hosted("@borg/plugin-config-sqlite", configSqliteManifest),
+  hosted("@borg/plugin-secrets-dev", secretsDevManifest),
+  hosted("@borg/plugin-security-prompt-injection", promptInjectionManifest),
+  hosted("@borg/plugin-feedback", feedbackManifest),
+  hosted("@borg/plugin-anthropic", anthropicManifest),
+  hosted("@borg/plugin-azure", azureManifest),
+  hosted("@borg/plugin-copilot", copilotManifest),
+  hosted("@borg/plugin-mock-llm", mockLlmManifest),
+  hosted("@borg/plugin-ollama", ollamaManifest),
+  hosted("@borg/plugin-openai", openaiManifest),
+  hosted("@borg/plugin-openrouter", openrouterManifest),
 ] as const;
 
-type BenchPlugin = (typeof benchPlugins)[number];
-type SettingsPlugin = Extract<BenchPlugin, { settings: true }>;
-
-export type BenchPackageName = BenchPlugin["packageName"];
-export type SettingsPackageName = SettingsPlugin["packageName"];
-export type SettingsPluginId = SettingsPlugin["manifest"]["id"];
-export type DemoPluginId = Extract<
-  BenchPlugin,
-  { packageName: "@borg/plugin-mock-llm" }
->["manifest"]["id"];
-
-export function settingsPackageFor(pluginId: string): SettingsPackageName | undefined {
-  const match = benchPlugins.find(
-    (plugin): plugin is SettingsPlugin => plugin.settings && plugin.manifest.id === pluginId,
-  );
-  return match?.packageName;
-}
+export type BenchPackageName = (typeof benchPlugins)[number]["packageName"];

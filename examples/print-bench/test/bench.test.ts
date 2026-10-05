@@ -7,7 +7,6 @@ import { z } from "@borg-agent/plugin-sdk";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startPrintBench } from "../src/boot.js";
 import { meshSpan, SHOP } from "../src/domain.js";
-import { handleProviderCall } from "../src/provider-bridge.js";
 import { connectModelMessage } from "../src/contract.js";
 import {
   createJobWriter,
@@ -356,27 +355,19 @@ describe("print bench", () => {
     expect(emptied.snapshot.scene.bodies).toEqual([]);
   }, 60_000);
 
-  it("lists the provider plugins and keeps their secrets on that plugin", async () => {
+  it("activates the provider plugins and the built-in demo model", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);
-    const plugins = await handleProviderCall(kernel, { method: "plugins" });
-    expect(plugins).toEqual(
+    expect(kernel.plugins.getActivePluginIds()).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "borg.openai" }),
-        expect.objectContaining({ id: "borg.anthropic" }),
-        expect.objectContaining({ id: "borg.ollama" }),
+        "borg.openai",
+        "borg.anthropic",
+        "borg.ollama",
+        "example.print-bench",
       ]),
     );
-    await expect(
-      handleProviderCall(kernel, {
-        method: "secrets.has",
-        pluginId: "example.print-bench",
-        key: "apiKey",
-      }),
-    ).rejects.toThrow("Plugin example.print-bench cannot read secrets");
-    const models = await handleProviderCall(kernel, { method: "models.list" });
-    expect(models).toEqual([
-      expect.objectContaining({ preferenceId: "borg.mock-llm:mock:scripted" }),
+    expect(kernel.models.listModels().map((model) => model.preferenceId)).toEqual([
+      "borg.mock-llm:mock:scripted",
     ]);
   });
 });

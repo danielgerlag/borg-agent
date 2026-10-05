@@ -4,7 +4,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const pluginsDirectory = path.join(projectRoot, "plugins");
 const desktopPackageJsonPath = path.join(projectRoot, "apps/desktop/package.json");
 
 const requireFromDesktop = createRequire(desktopPackageJsonPath);
@@ -31,58 +30,74 @@ const declaredIds = desktopDistribution.plugins.map((entry) => {
 });
 const declaredIdSet = new Set(declaredIds);
 
-const entries = await readdir(pluginsDirectory, { withFileTypes: true });
-const plugins = [];
-
-for (const entry of entries) {
-  if (!entry.isDirectory()) {
-    continue;
+async function discoverPackages(directory) {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
   }
 
-  const pluginDirectory = path.join(pluginsDirectory, entry.name);
-  const packagePath = path.join(pluginDirectory, "package.json");
-  const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
-  if (!packageJson.borg) {
-    continue;
-  }
+  const found = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
 
-  const { name, borg } = packageJson;
-  if (
-    typeof name !== "string" ||
-    typeof borg.id !== "string" ||
-    typeof borg.manifest !== "string" ||
-    typeof borg.main !== "string" ||
-    (borg.ui !== undefined && typeof borg.ui !== "string")
-  ) {
-    throw new Error(`Invalid Borg plugin metadata in ${packagePath}`);
-  }
+    const pluginDirectory = path.join(directory, entry.name);
+    const packagePath = path.join(pluginDirectory, "package.json");
+    const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
+    if (!packageJson.borg) {
+      continue;
+    }
 
-  const manifestPath = path.resolve(pluginDirectory, borg.manifest);
-  if (!manifestPath.startsWith(`${pluginDirectory}${path.sep}`)) {
-    throw new Error(`Plugin manifest escapes its package directory: ${manifestPath}`);
-  }
+    const { name, borg } = packageJson;
+    if (
+      typeof name !== "string" ||
+      typeof borg.id !== "string" ||
+      typeof borg.manifest !== "string" ||
+      typeof borg.main !== "string" ||
+      (borg.ui !== undefined && typeof borg.ui !== "string")
+    ) {
+      throw new Error(`Invalid Borg plugin metadata in ${packagePath}`);
+    }
 
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  const main = `${name}${borg.main}`;
-  const ui = borg.ui === undefined ? undefined : `${name}${borg.ui}`;
-  if (
-    manifest.id !== borg.id ||
-    manifest.main !== main ||
-    manifest.ui !== ui
-  ) {
-    throw new Error(
-      `Borg metadata and static manifest disagree in ${packagePath}`,
-    );
-  }
+    const manifestPath = path.resolve(pluginDirectory, borg.manifest);
+    if (!manifestPath.startsWith(`${pluginDirectory}${path.sep}`)) {
+      throw new Error(`Plugin manifest escapes its package directory: ${manifestPath}`);
+    }
 
-  plugins.push({
-    id: borg.id,
-    name,
-    manifest,
-    main,
-    ui,
-  });
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    const main = `${name}${borg.main}`;
+    const ui = borg.ui === undefined ? undefined : `${name}${borg.ui}`;
+    if (
+      manifest.id !== borg.id ||
+      manifest.main !== main ||
+      manifest.ui !== ui
+    ) {
+      throw new Error(
+        `Borg metadata and static manifest disagree in ${packagePath}`,
+      );
+    }
+
+    found.push({
+      id: borg.id,
+      name,
+      manifest,
+      main,
+      ui,
+    });
+  }
+  return found;
 }
+
+const plugins = [
+  ...(await discoverPackages(path.join(projectRoot, "plugins"))),
+  ...(await discoverPackages(path.join(projectRoot, "examples"))),
+];
 
 plugins.sort((left, right) => left.id.localeCompare(right.id));
 const packagesById = new Map();

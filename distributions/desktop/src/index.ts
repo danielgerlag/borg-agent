@@ -41,6 +41,7 @@ export const desktopDistribution = defineDistribution({
     "borg.tools.core",
     "borg.tools.echo",
     "borg.usage",
+    "example.print-bench",
   ],
   defaults: {
     models: ["borg.mock-llm:mock:scripted"],

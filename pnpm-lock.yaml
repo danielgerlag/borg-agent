@@ -151,6 +151,9 @@ importers:
       '@borg/distribution-desktop':
         specifier: workspace:*
         version: link:../../distributions/desktop
+      '@borg/example-print-bench':
+        specifier: workspace:*
+        version: link:../../examples/print-bench
       '@borg/plugin-a2a':
         specifier: workspace:*
         version: link:../../plugins/a2a
@@ -356,27 +359,12 @@ importers:
       '@borg/ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui-kit
-      '@tailwindcss/vite':
-        specifier: ^4.3.3
-        version: 4.3.3(vite@8.2.2(@types/node@26.3.0)(jiti@2.7.0))
-      electron:
-        specifier: ^44.0.0
-        version: 44.0.0(supports-color@7.2.0)
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
-      tailwindcss:
-        specifier: ^4.3.3
-        version: 4.3.3
       three:
         specifier: ^0.170.0
         version: 0.170.0
-      vite:
-        specifier: ^8.2.2
-        version: 8.2.2(@types/node@26.3.0)(jiti@2.7.0)
-      vite-plugin-solid:
-        specifier: ^2.11.14
-        version: 2.11.14(solid-js@1.9.15)(supports-color@7.2.0)(vite@8.2.2(@types/node@26.3.0)(jiti@2.7.0))
     devDependencies:
       '@types/three':
         specifier: 0.170.0

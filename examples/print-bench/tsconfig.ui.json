@@ -9,5 +9,5 @@
     "noEmit": true,
     "types": []
   },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"]
+  "include": ["src/ui.tsx", "src/renderer/**/*.ts", "src/renderer/**/*.tsx"]
 }

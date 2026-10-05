@@ -2,7 +2,7 @@
 
 The desktop app in `apps/desktop` is the Electron host for the `borg.desktop` distribution. This page has the setup and feature detail. The overview is in the [README](../README.md#desktop-app).
 
-`borg.desktop` names 35 plugin ids in `distributions/desktop/src/index.ts`. All of them are enabled. `scripts/generate-bundled-plugins.mjs` writes those packages into `apps/desktop/src/main/bundled-plugins.ts` and writes UI loaders into `apps/desktop/src/renderer/bundled-ui-plugins.ts`. Both generated files are tracked in git. The distribution's model fallback is `borg.mock-llm:mock:scripted`.
+`borg.desktop` names 36 plugin ids in `distributions/desktop/src/index.ts`, including `example.print-bench`. All of them are enabled. `scripts/generate-bundled-plugins.mjs` writes those packages into `apps/desktop/src/main/bundled-plugins.ts` and writes UI loaders into `apps/desktop/src/renderer/bundled-ui-plugins.ts`. Both generated files are tracked in git. The distribution's model fallback is `borg.mock-llm:mock:scripted`.
 
 Closing the window hides Borg. The tray menu shows the window again or quits the kernel.
 

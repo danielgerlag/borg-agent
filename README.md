@@ -127,7 +127,7 @@ corepack pnpm test:e2e
 
 **Desktop app** (`apps/desktop`). The Electron host that runs `borg.desktop`. `tests/e2e` holds its Playwright specs.
 
-**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above. `examples/print-bench` opens a print design bench. From that folder, `npm start` builds it and opens the window.
+**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above. `examples/print-bench` is the print design bench. Open the desktop app and choose Design.
 
 ## Boundaries
 
@@ -139,7 +139,7 @@ corepack pnpm test:e2e
 
 ## Desktop app
 
-The desktop app runs the `borg.desktop` distribution, which bundles all 35 plugins. Closing the window hides it to the tray. Setup and feature detail is in [docs/desktop.md](docs/desktop.md).
+The desktop app runs the `borg.desktop` distribution, which bundles the 35 plugins and the print design bench. Closing the window hides it to the tray. Setup and feature detail is in [docs/desktop.md](docs/desktop.md).
 
 - **First run.** A guided setup verifies secure storage, takes optional provider keys, and picks an assistant. You can skip the cloud providers and use the built-in scripted model. Setup ends in Chat, which shows token and cost totals per conversation. **Settings → Plugins** turns bundled plugins off.
 - **MCP and MCP Apps.** MCP servers are configured per persona under **Settings → MCP**, over stdio or HTTP. Every MCP tool call asks for approval. MCP App HTML renders in a sandbox that blocks undeclared network access, nested frames, forms, downloads, and Node access.

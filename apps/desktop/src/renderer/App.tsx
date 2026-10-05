@@ -14,6 +14,7 @@ import { Button, Panel } from "@borg/ui-kit";
 import {
   Activity,
   Bot,
+  Box,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -744,6 +745,9 @@ const SetupWizard: Component<{
 );
 
 function workspaceIcon(id: string): typeof MessageCircle {
+  if (id.includes("print-bench")) {
+    return Box;
+  }
   if (id.includes(".graphs.")) {
     return GitBranch;
   }

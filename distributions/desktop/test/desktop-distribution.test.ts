@@ -38,6 +38,7 @@ const baselinePluginIds = [
   "borg.tools.core",
   "borg.tools.echo",
   "borg.usage",
+  "example.print-bench",
 ] as const;
 
 describe("desktop distribution", () => {

@@ -32,6 +32,7 @@ const baselineUiIds = [
   "borg.secrets.os",
   "borg.themes",
   "borg.usage",
+  "example.print-bench",
 ] as const;
 
 function manifestId(manifest: unknown): string {

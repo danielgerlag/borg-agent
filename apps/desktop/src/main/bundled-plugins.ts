@@ -1100,4 +1100,35 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     loadMain: async () =>
       (require("@borg/plugin-usage/main") as { default: PluginDefinition }).default,
   },
+  {
+    manifest: {
+      "id": "example.print-bench",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/example-print-bench/main",
+      "ui": "@borg/example-print-bench/ui",
+      "permissions": [
+        "tools.register",
+        "tools.invoke",
+        "loops.start",
+        "personas.read",
+        "personas.write",
+        "ui.workspace"
+      ],
+      "contributes": {
+        "commands": [
+          "example.print-bench.snapshot",
+          "example.print-bench.act"
+        ],
+        "kinds": [
+          "tool",
+          "workspaceView"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/example-print-bench/main") as { default: PluginDefinition }).default,
+  },
 ];
