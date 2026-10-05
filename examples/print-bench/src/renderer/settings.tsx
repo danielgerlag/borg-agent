@@ -1,6 +1,7 @@
 import { Panel, Select } from "@borg/ui-kit";
 import { z } from "@borg-agent/plugin-sdk";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import type { DemoPluginId, SettingsPluginId } from "../catalog.js";
 import { SHOP } from "../domain.js";
 import { preferModelToolId } from "../contract.js";
 import { benchApi } from "./bridge.js";
@@ -24,7 +25,7 @@ const modelListSchema = z.array(
     .strict(),
 );
 
-const providerLabels: Readonly<Record<string, string>> = {
+const providerLabels = {
   "borg.anthropic": "Anthropic",
   "borg.azure": "Azure",
   "borg.copilot": "Copilot",
@@ -32,7 +33,7 @@ const providerLabels: Readonly<Record<string, string>> = {
   "borg.ollama": "Ollama",
   "borg.openai": "OpenAI",
   "borg.openrouter": "OpenRouter",
-};
+} satisfies Record<SettingsPluginId | DemoPluginId, string>;
 
 const modelLabels: Readonly<Record<string, string>> = {
   "mock:scripted": "Built-in demo model",
@@ -45,7 +46,8 @@ const modelLabels: Readonly<Record<string, string>> = {
 };
 
 function modelLabel(providerId: string, modelId: string): string {
-  const provider = providerLabels[providerId] ?? providerId.replace(/^borg\./, "");
+  const labels: Readonly<Record<string, string>> = providerLabels;
+  const provider = labels[providerId] ?? providerId.replace(/^borg\./, "");
   const model = modelLabels[modelId] ?? modelId;
   return `${provider} · ${model}`;
 }

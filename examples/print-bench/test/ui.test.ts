@@ -8,6 +8,7 @@ import { _electron as electron, expect, type Page } from "@playwright/test";
 import { afterEach, describe, it } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { printBenchAppName } from "../src/identity.js";
 import { addedReply, designerModelPreference, GEAR_QUESTION, startDesignerServer } from "./model-double.js";
 
 const execFileAsync = promisify(execFile);
@@ -114,6 +115,8 @@ describe("print bench window", () => {
         NODE_TLS_REJECT_UNAUTHORIZED: "0",
       },
     });
+    expect(await application.evaluate(({ app }) => app.getName())).toBe(printBenchAppName);
+    expect(await application.evaluate(({ app }) => app.getPath("userData"))).toBe(home);
     const page = await application.firstWindow();
     page.on("pageerror", (error) => {
       console.error(error);

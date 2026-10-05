@@ -8,7 +8,9 @@ import type {
 import { z } from "@borg-agent/plugin-sdk";
 import { createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { settingsPackageFor } from "../catalog.js";
 import { benchApi } from "./bridge.js";
+import { settingsLoaders } from "./settings-plugins.js";
 
 const providerPluginSchema = z
   .object({
@@ -19,17 +21,6 @@ const providerPluginSchema = z
   .strict();
 
 type ProviderPlugin = z.output<typeof providerPluginSchema>;
-
-const providerUi: Readonly<
-  Record<string, () => Promise<{ readonly default: { readonly id: string; activate(context: PluginUiContext<Component>): void | Disposable | Promise<void | Disposable> } }>>
-> = {
-  "borg.anthropic": () => import("@borg/plugin-anthropic/ui"),
-  "borg.azure": () => import("@borg/plugin-azure/ui"),
-  "borg.copilot": () => import("@borg/plugin-copilot/ui"),
-  "borg.ollama": () => import("@borg/plugin-ollama/ui"),
-  "borg.openai": () => import("@borg/plugin-openai/ui"),
-  "borg.openrouter": () => import("@borg/plugin-openrouter/ui"),
-};
 
 function unavailable(method: string): never {
   throw new Error(`Print bench does not host ${method}.`);
@@ -179,10 +170,11 @@ async function loadProviderSetup(): Promise<{
   const disposables: Disposable[] = [];
   const failures: string[] = [];
   for (const plugin of listed) {
-    const load = providerUi[plugin.id];
-    if (!load) {
+    const packageName = settingsPackageFor(plugin.id);
+    if (!packageName) {
       continue;
     }
+    const load = settingsLoaders[packageName];
     try {
       const definition = (await load()).default;
       if (definition.id !== plugin.id) {

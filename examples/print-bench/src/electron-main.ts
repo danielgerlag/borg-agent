@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { z } from "@borg-agent/plugin-sdk";
 import { startPrintBench } from "./boot.js";
 import { printBenchAct, printBenchSnapshot } from "./contract.js";
+import { preparePrintBenchHost } from "./identity.js";
 import { handleProviderCall } from "./provider-bridge.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -23,11 +24,7 @@ function isTrusted(event: IpcMainInvokeEvent): boolean {
   return event.sender.id === benchWindow?.webContents.id;
 }
 
-// Tests point this at an empty directory. A normal launch keeps provider keys in the app data folder.
-const isolatedHome = process.env.BORG_PRINT_BENCH_HOME?.trim();
-if (isolatedHome) {
-  app.setPath("userData", isolatedHome);
-}
+preparePrintBenchHost(app, process.env);
 
 void app.whenReady().then(async () => {
   const dataDirectory = app.getPath("userData");

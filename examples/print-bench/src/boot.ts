@@ -1,9 +1,6 @@
-import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createKernel, defineDistribution, type Kernel, type PluginSource } from "@borg-agent/kernel";
-import type { BorgPluginManifest } from "@borg-agent/plugin-sdk";
+import { pluginManifestSchema } from "@borg-agent/plugin-sdk";
 import configSqlite from "@borg/plugin-config-sqlite/main";
 import secretsDev from "@borg/plugin-secrets-dev/main";
 import promptInjection from "@borg/plugin-security-prompt-injection/main";
@@ -15,47 +12,37 @@ import mockLlm from "@borg/plugin-mock-llm/main";
 import ollama from "@borg/plugin-ollama/main";
 import openai from "@borg/plugin-openai/main";
 import openrouter from "@borg/plugin-openrouter/main";
+import { benchPlugins, type BenchPackageName } from "./catalog.js";
 import printBench from "./main.js";
 
-const require = createRequire(import.meta.url);
+type PluginMain = Awaited<ReturnType<PluginSource["loadMain"]>>;
 
-function manifestFromPackage(packageName: string): BorgPluginManifest {
-  const mainPath = require.resolve(`${packageName}/main`);
-  return JSON.parse(
-    readFileSync(join(dirname(dirname(mainPath)), "borg.plugin.json"), "utf8"),
-  ) as BorgPluginManifest;
+const mains = {
+  "@borg/plugin-config-sqlite": configSqlite,
+  "@borg/plugin-secrets-dev": secretsDev,
+  "@borg/plugin-security-prompt-injection": promptInjection,
+  "@borg/plugin-feedback": feedback,
+  "@borg/plugin-anthropic": anthropic,
+  "@borg/plugin-azure": azure,
+  "@borg/plugin-copilot": copilot,
+  "@borg/plugin-mock-llm": mockLlm,
+  "@borg/plugin-ollama": ollama,
+  "@borg/plugin-openai": openai,
+  "@borg/plugin-openrouter": openrouter,
+} satisfies Record<BenchPackageName, PluginMain>;
+
+function readOwnManifest(): unknown {
+  const parsed: unknown = JSON.parse(
+    readFileSync(new URL("../borg.plugin.json", import.meta.url), "utf8"),
+  );
+  return parsed;
 }
 
-function ownManifest(): BorgPluginManifest {
-  const fileDir = dirname(fileURLToPath(import.meta.url));
-  return JSON.parse(
-    readFileSync(join(dirname(fileDir), "borg.plugin.json"), "utf8"),
-  ) as BorgPluginManifest;
-}
+const ownManifest = pluginManifestSchema.parse(readOwnManifest());
 
-function packaged(
-  packageName: string,
-  main: Awaited<ReturnType<PluginSource["loadMain"]>>,
-): PluginSource {
-  return {
-    manifest: manifestFromPackage(packageName),
-    loadMain: async () => main,
-  };
+export function printBenchPluginIds(): readonly string[] {
+  return [...benchPlugins.map((plugin) => plugin.manifest.id), ownManifest.id];
 }
-
-const packagedPlugins: readonly PluginSource[] = [
-  packaged("@borg/plugin-config-sqlite", configSqlite),
-  packaged("@borg/plugin-secrets-dev", secretsDev),
-  packaged("@borg/plugin-security-prompt-injection", promptInjection),
-  packaged("@borg/plugin-feedback", feedback),
-  packaged("@borg/plugin-anthropic", anthropic),
-  packaged("@borg/plugin-azure", azure),
-  packaged("@borg/plugin-copilot", copilot),
-  packaged("@borg/plugin-mock-llm", mockLlm),
-  packaged("@borg/plugin-ollama", ollama),
-  packaged("@borg/plugin-openai", openai),
-  packaged("@borg/plugin-openrouter", openrouter),
-];
 
 export async function startPrintBench(dataDirectory: string): Promise<Kernel> {
   const distribution = defineDistribution({
@@ -63,27 +50,17 @@ export async function startPrintBench(dataDirectory: string): Promise<Kernel> {
     name: "Print bench",
     version: "0.1.0",
     kernel: "^0.1.0",
-    plugins: [
-      "borg.config.sqlite",
-      "borg.secrets.dev",
-      "borg.security.prompt-injection",
-      "borg.feedback",
-      "borg.anthropic",
-      "borg.azure",
-      "borg.copilot",
-      "borg.mock-llm",
-      "borg.ollama",
-      "borg.openai",
-      "borg.openrouter",
-      "example.print-bench",
-    ],
+    plugins: printBenchPluginIds(),
     defaults: { models: ["borg.mock-llm:mock:scripted"] },
   });
   const kernel = createKernel({
     distribution,
     plugins: [
-      ...packagedPlugins,
-      { manifest: ownManifest(), loadMain: async () => printBench },
+      ...benchPlugins.map((plugin) => ({
+        manifest: plugin.manifest,
+        loadMain: async () => mains[plugin.packageName],
+      })),
+      { manifest: ownManifest, loadMain: async () => printBench },
     ],
     host: { dataDirectory },
     resolveSecretStore: async () => "borg.secrets.dev",
