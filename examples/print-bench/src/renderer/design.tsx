@@ -1,5 +1,5 @@
 import { Button, Panel, TextField } from "@borg/ui-kit";
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal } from "solid-js";
 import {
   addToolId,
   deleteDesignToolId,
@@ -25,10 +25,36 @@ const palette: readonly { label: string; testid: string; solid: Primitive }[] = 
   { label: "Cone", testid: "print-bench-tool-cone", solid: { kind: "cone", radiusMm: 16, heightMm: 28 } },
 ];
 
+const stickThresholdPx = 24;
+
+function isNearBottom(element: HTMLElement): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= stickThresholdPx;
+}
+
 export function DesignView(props: BenchControl) {
   const [mode, setMode] = createSignal<Mode>("translate");
   const [prompt, setPrompt] = createSignal("");
   const [pendingDelete, setPendingDelete] = createSignal<string | null>(null);
+  const [followLatest, setFollowLatest] = createSignal(true);
+  let transcript: HTMLDivElement | undefined;
+  let followedDesignId = "";
+  const pinTranscript = (): void => {
+    const element = transcript;
+    if (!element || !followLatest()) {
+      return;
+    }
+    element.scrollTop = element.scrollHeight;
+  };
+  createEffect(() => {
+    const designId = props.snapshot.design.id;
+    const revision = `${props.snapshot.turns.length}:${props.snapshot.turns.at(-1)?.text ?? ""}:${String(props.busy)}`;
+    if (designId !== followedDesignId) {
+      followedDesignId = designId;
+      setFollowLatest(true);
+    }
+    void revision;
+    queueMicrotask(pinTranscript);
+  });
   const allowed = (toolId: string): boolean => props.snapshot.persona.allowedTools.includes(toolId);
   const promptLocked = (): boolean => props.busy || !allowed(promptToolId);
   const selected = (): Body | undefined =>
@@ -167,7 +193,14 @@ export function DesignView(props: BenchControl) {
           />
         </div>
         <div class="border-t border-[var(--border)] p-3">
-          <div data-testid="print-bench-transcript" class="mb-2 grid max-h-36 gap-2 overflow-y-auto text-sm">
+          <div
+            ref={(element) => {
+              transcript = element;
+            }}
+            data-testid="print-bench-transcript"
+            class="mb-2 grid max-h-36 gap-2 overflow-y-auto text-sm"
+            onScroll={(event) => setFollowLatest(isNearBottom(event.currentTarget))}
+          >
             <For each={props.snapshot.turns}>
               {(turn) => (
                 <p class={turn.role === "user" ? "text-[var(--text-muted)]" : "text-[var(--text)]"}>
@@ -191,6 +224,7 @@ export function DesignView(props: BenchControl) {
                 return;
               }
               setPrompt("");
+              setFollowLatest(true);
               props.run({ tool: promptToolId, text });
             }}
           >

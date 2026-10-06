@@ -88,6 +88,41 @@ test.describe("design workspace", () => {
     await page.getByTestId("settings-section-borg.openai.settings").click();
     await expect(page.getByTestId("openai-setup-step")).toBeVisible();
   });
+
+  test("keeps the latest transcript line in view", async () => {
+    test.setTimeout(60_000);
+    await expect(page.getByTestId("app-shell")).toBeVisible();
+    if (await page.getByTestId("surface-wizard").isVisible()) {
+      await completeSetup(page, "example.print-bench.design");
+    }
+    await expect(page.getByTestId("print-bench-design-title")).toBeVisible();
+    const transcript = page.getByTestId("print-bench-transcript");
+    const promptField = page.getByTestId("print-bench-prompt");
+    for (let index = 0; index < 6; index += 1) {
+      await expect(promptField).toBeEnabled();
+      await promptField.fill(`overflow note ${index}`);
+      await page.getByTestId("print-bench-build").click();
+      await expect(transcript).toContainText(`overflow note ${index}`);
+      await expect(promptField).toBeEnabled();
+    }
+    const position = await transcript.evaluate((element) => {
+      if (!(element instanceof HTMLElement)) {
+        return undefined;
+      }
+      return {
+        scrollTop: element.scrollTop,
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+      };
+    });
+    if (position === undefined) {
+      throw new Error("transcript element is missing");
+    }
+    expect(position.scrollHeight).toBeGreaterThan(position.clientHeight);
+    expect(position.scrollTop + position.clientHeight).toBeGreaterThanOrEqual(
+      position.scrollHeight - 2,
+    );
+  });
 });
 
 test.describe("print bench launch", () => {
