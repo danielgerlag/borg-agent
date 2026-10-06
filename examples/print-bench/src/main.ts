@@ -117,7 +117,13 @@ export default definePlugin({
         });
       }
     }
-    await context.personas.setDefault(designerPersonaId);
+    await adoptAssistantModel(context);
+    if (
+      context.personas.getDefault().id === designerPersonaId &&
+      context.personas.get("system/general")
+    ) {
+      await context.personas.setDefault("system/general");
+    }
     const snapshotCommand = context.bus.handle(printBenchSnapshot, async () =>
       project(context, jobs),
     );
@@ -366,8 +372,8 @@ function promptTool(context: PluginContext, jobs: JobWriter, pins: DesignPins) {
           turns: [...session.job.turns, { role: "user", text: input.text }],
         });
       });
-      const preference = context.personas.get(designerPersonaId)?.preferredModels[0];
-      if (preference === undefined || preference === unconfiguredModelPreference) {
+      const preference = await adoptAssistantModel(context);
+      if (preference === undefined) {
         await remember(jobs, designId, connectModelMessage);
         return { type: "asked" };
       }
@@ -523,12 +529,53 @@ async function project(context: PluginContext, jobs: JobWriter) {
   });
 }
 
-function chosenModel(context: PluginContext): string | null {
-  const preference = context.personas.get(designerPersonaId)?.preferredModels[0];
-  if (preference === undefined || preference === unconfiguredModelPreference) {
-    return null;
+const demoModelPreference = "borg.mock-llm:mock:scripted";
+
+function usableModel(preference: string): boolean {
+  return preference !== unconfiguredModelPreference && preference !== demoModelPreference;
+}
+
+function assistantModels(context: PluginContext): string[] {
+  const general = context.personas.get("system/general");
+  const rest = context.personas
+    .list()
+    .filter(
+      (persona) =>
+        persona.id !== designerPersonaId &&
+        persona.id !== "system/general" &&
+        !persona.archived,
+    );
+  const seen = new Set<string>();
+  const models: string[] = [];
+  for (const preference of [general, ...rest].flatMap(
+    (persona) => persona?.preferredModels ?? [],
+  )) {
+    if (!usableModel(preference) || seen.has(preference)) {
+      continue;
+    }
+    seen.add(preference);
+    models.push(preference);
   }
-  return preference;
+  return models;
+}
+
+async function adoptAssistantModel(context: PluginContext): Promise<string | undefined> {
+  const current = context.personas.get(designerPersonaId)?.preferredModels.filter(usableModel) ?? [];
+  if (current.length > 0) {
+    return current[0];
+  }
+  const adopted = assistantModels(context);
+  const first = adopted[0];
+  if (first === undefined) {
+    return undefined;
+  }
+  await context.personas.update(designerPersonaId, { preferredModels: adopted });
+  return first;
+}
+
+function chosenModel(context: PluginContext): string | null {
+  const preference = context.personas.get(designerPersonaId)?.preferredModels.find(usableModel);
+  return preference ?? null;
 }
 
 function wire(inspection: Inspection) {

@@ -272,6 +272,22 @@ describe("print bench", () => {
     );
   }, 60_000);
 
+  it("uses the model already chosen for the assistant", async () => {
+    dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
+    kernel = await startPrintBench(dataDirectory);
+    await kernel.personas.update("system/general", {
+      preferredModels: [designerModelPreference],
+    });
+    await kernel.stop();
+    kernel = await startPrintBench(dataDirectory);
+    expect(kernel.personas.getDefault().id).toBe("system/general");
+    expect(kernel.personas.get(designerPersonaId)?.preferredModels).toEqual([
+      designerModelPreference,
+    ]);
+    const opened = await kernel.bus.invoke(printBenchSnapshot, {});
+    expect(opened.designerModel).toBe(designerModelPreference);
+  });
+
   it("says when no model is chosen and does not invent a solid", async () => {
     dataDirectory = await mkdtemp(join(tmpdir(), "print-bench-"));
     kernel = await startPrintBench(dataDirectory);
