@@ -1,3 +1,7 @@
+/**
+ * Bed viewport. It draws the solids and applies move, rotate, and scale from the gizmo.
+ */
+
 import { createEffect, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";

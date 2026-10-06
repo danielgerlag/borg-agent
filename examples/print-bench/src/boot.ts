@@ -1,3 +1,7 @@
+/**
+ * Starts the test kernel: the hosted plugins from the catalog, then the print bench.
+ */
+
 import { readFileSync } from "node:fs";
 import { createKernel, defineDistribution, type Kernel, type PluginSource } from "@borg-agent/kernel";
 import { pluginManifestSchema } from "@borg-agent/plugin-sdk";

@@ -1,3 +1,7 @@
+/**
+ * Kernel tests for designer turns, design sessions, and scene edits.
+ */
+
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

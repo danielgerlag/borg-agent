@@ -1,3 +1,7 @@
+/**
+ * Design screen: the design list, palette, viewport, transcript, and inspector.
+ */
+
 import { Button, Panel, TextField } from "@borg/ui-kit";
 import { For, Show, createEffect, createSignal } from "solid-js";
 import {

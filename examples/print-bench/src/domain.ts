@@ -1,3 +1,7 @@
+/**
+ * Solids, the print bed, and mesh inspection. Palette edits and designer tools use these rules.
+ */
+
 const EPSILON = 1e-4;
 
 export interface Vec3 {

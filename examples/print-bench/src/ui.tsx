@@ -1,3 +1,7 @@
+/**
+ * Design workspace for the desktop shell. It loads the snapshot and sends acts to the plugin.
+ */
+
 import { defineUiPlugin } from "@borg-agent/plugin-sdk";
 import { createSignal, onCleanup, onMount, Show, type Component } from "solid-js";
 import {

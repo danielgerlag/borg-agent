@@ -1,3 +1,7 @@
+/**
+ * Design sessions stored under the plugin. Each design keeps its scene and transcript.
+ */
+
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "@borg-agent/plugin-sdk";
 import { z } from "@borg-agent/plugin-sdk";

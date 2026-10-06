@@ -1,3 +1,7 @@
+/**
+ * Hosted plugins the test kernel loads, in activation order.
+ */
+
 import {
   pluginManifestSchema,
   type BorgPluginManifest,

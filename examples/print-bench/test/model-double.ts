@@ -1,3 +1,7 @@
+/**
+ * Stand-in model for designer tests. It speaks chat completions and never calls a live API.
+ */
+
 import { createServer, type Server } from "node:http";
 import { addToolId, feedbackAskToolId, translateToolId } from "../src/contract.js";
 

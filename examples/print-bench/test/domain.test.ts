@@ -1,3 +1,7 @@
+/**
+ * Tests bed placement, object translation, and mesh inspection.
+ */
+
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import {

@@ -1,3 +1,7 @@
+/**
+ * Designer persona: instructions, allowed tools, and the starting model preference.
+ */
+
 import { bedFrame } from "./domain.js";
 import {
   addToolId,

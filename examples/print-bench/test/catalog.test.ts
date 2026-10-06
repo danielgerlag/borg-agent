@@ -1,3 +1,7 @@
+/**
+ * Checks npm start and the plugin ids the test kernel boots.
+ */
+
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";

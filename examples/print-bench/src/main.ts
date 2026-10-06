@@ -1,3 +1,7 @@
+/**
+ * Print-bench plugin. Designer tools edit the current design, and a prompt starts a designer loop.
+ */
+
 import { randomUUID } from "node:crypto";
 import { modelOperationPrefixSchema } from "@borg-agent/contracts";
 import {

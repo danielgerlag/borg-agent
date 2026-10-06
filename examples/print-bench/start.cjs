@@ -1,3 +1,7 @@
+/**
+ * Builds the plugin and the desktop app, then opens Design on the print-bench distribution.
+ */
+
 const { spawn, spawnSync } = require("node:child_process");
 const { createRequire } = require("node:module");
 const path = require("node:path");

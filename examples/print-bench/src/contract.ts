@@ -1,3 +1,7 @@
+/**
+ * Commands, tool ids, and schemas the plugin and the design screen share.
+ */
+
 import { defineCommand } from "@borg-agent/contracts";
 import { z } from "@borg-agent/plugin-sdk";
 
