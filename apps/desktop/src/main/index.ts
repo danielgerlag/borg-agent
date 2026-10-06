@@ -1,7 +1,9 @@
 import { desktopDistribution } from "@borg/distribution-desktop";
+import { printBenchDistribution } from "@borg/distribution-print-bench";
 import {
   KERNEL_VERSION,
   createKernel,
+  type Distribution,
   type Kernel,
 } from "@borg-agent/kernel";
 import { z, type Disposable } from "@borg-agent/plugin-sdk";
@@ -319,6 +321,17 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
+function hostDistribution(): Distribution {
+  const requested = process.env.BORG_DISTRIBUTION ?? desktopDistribution.id;
+  if (requested === desktopDistribution.id) {
+    return desktopDistribution;
+  }
+  if (requested === printBenchDistribution.id) {
+    return printBenchDistribution;
+  }
+  throw new Error(`Unknown Borg distribution ${requested}`);
+}
+
 function loadMainWindow(window: BrowserWindow): void {
   const requested = process.env.BORG_WORKSPACE;
   const hash =
@@ -444,7 +457,7 @@ if (!app.requestSingleInstanceLock()) {
 
     kernel = createKernel({
       plugins: bundledMainPlugins,
-      distribution: desktopDistribution,
+      distribution: hostDistribution(),
       host: {
         dataDirectory: app.getPath("userData"),
         showOsNotification: (notification) => {

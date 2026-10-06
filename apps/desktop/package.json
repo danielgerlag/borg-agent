@@ -7,6 +7,7 @@
   "dependencies": {
     "@borg-agent/contracts": "workspace:*",
     "@borg/distribution-desktop": "workspace:*",
+    "@borg/distribution-print-bench": "workspace:*",
     "@borg/example-print-bench": "workspace:*",
     "@borg-agent/kernel": "workspace:*",
     "@borg/plugin-a2a": "workspace:*",

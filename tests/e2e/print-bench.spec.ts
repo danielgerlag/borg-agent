@@ -38,6 +38,7 @@ function installLaunch(workspace?: string): void {
       ),
     );
     launchEnvironment.BORG_E2E = "1";
+    launchEnvironment.BORG_DISTRIBUTION = "borg.print-bench";
     launchEnvironment.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
     if (workspace !== undefined) {
       launchEnvironment.BORG_WORKSPACE = workspace;
@@ -73,8 +74,11 @@ test.describe("design workspace", () => {
     test.setTimeout(60_000);
     await expect(page.getByTestId("app-shell")).toBeVisible();
     if (await page.getByTestId("surface-wizard").isVisible()) {
-      await completeSetup(page);
+      await completeSetup(page, "example.print-bench.design");
     }
+    await expect(page.getByTestId("nav-chat")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-view-tab-borg.bots.manager")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-view-tab-borg.graphs.operations")).toHaveCount(0);
     await page.getByTestId("workspace-view-tab-example.print-bench.design").click();
     await expect(page.getByTestId("print-bench-design-title")).toBeVisible();
     await expect(page.getByTestId("plugin-ui-error")).toHaveCount(0);
@@ -96,6 +100,9 @@ test.describe("print bench launch", () => {
       await completeSetup(page, "example.print-bench.design");
     }
     await expect(page.getByTestId("print-bench-design-title")).toBeVisible();
+    await expect(page.getByTestId("nav-chat")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-view-tab-borg.bots.manager")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-view-tab-borg.graphs.operations")).toHaveCount(0);
     await expect(page.getByTestId("plugin-ui-error")).toHaveCount(0);
   });
 });

@@ -97,6 +97,14 @@ export async function completeSetup(
   }
   await page.getByTestId("setup-continue").click();
 
+  if (openedWorkspace === "example.print-bench.design") {
+    await expect(page.getByTestId("setup-ready")).toBeVisible();
+    await expect(page.getByTestId("wizard-persona-step")).toHaveCount(0);
+    await page.getByTestId("setup-complete").click();
+    await expect(page.getByTestId("print-bench-design-title")).toBeVisible();
+    return;
+  }
+
   await skipOptionalLlmSetupSteps(page, "persona");
   await expect(page.getByTestId("wizard-persona-step")).toBeVisible();
   await expect(page.getByTestId("wizard-model-select")).not.toHaveValue("");
@@ -105,9 +113,5 @@ export async function completeSetup(
 
   await expect(page.getByTestId("setup-ready")).toBeVisible();
   await page.getByTestId("setup-complete").click();
-  if (openedWorkspace === "example.print-bench.design") {
-    await expect(page.getByTestId("print-bench-design-title")).toBeVisible();
-    return;
-  }
   await expect(page.getByTestId("chat-workspace")).toBeVisible();
 }

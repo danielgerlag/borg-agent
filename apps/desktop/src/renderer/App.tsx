@@ -242,6 +242,7 @@ export const App: Component<AppProps> = (props) => {
             blockedStepIndex={firstIncompleteWizardIndex()}
             canContinue={canContinue()}
             completing={completingSetup()}
+            hasChat={primaryViews().some((view) => view.id === "borg.chat.workspace")}
             pluginErrors={[
               ...props.pluginErrors,
               ...wizardReadinessErrors(),
@@ -548,6 +549,7 @@ const SetupWizard: Component<{
   readonly blockedStepIndex: number | undefined;
   readonly canContinue: boolean;
   readonly completing: boolean;
+  readonly hasChat: boolean;
   readonly pluginErrors: readonly string[];
   onBack(): void;
   onContinue(): void;
@@ -618,8 +620,9 @@ const SetupWizard: Component<{
               Your local AI workspace
             </h1>
             <p class="mx-auto mt-4 max-w-lg text-base leading-7 text-[var(--text-muted)]">
-              Set up secure storage and choose your assistant. You will be ready
-              to start a conversation in about two minutes.
+              {props.hasChat
+                ? "Set up secure storage and choose your assistant. You will be ready to start a conversation in about two minutes."
+                : "Set up secure storage and connect a model. Design opens when you finish."}
             </p>
           </div>
         </Show>
@@ -660,12 +663,20 @@ const SetupWizard: Component<{
               {props.ready ? "Setup complete" : "One step needs attention"}
             </p>
             <h1 class="mt-3 text-4xl font-semibold tracking-tight">
-              {props.ready ? "You are ready to chat" : "Review your setup"}
+              {props.ready
+                ? props.hasChat
+                  ? "You are ready to chat"
+                  : "You are ready to design"
+                : "Review your setup"}
             </h1>
             <p class="mx-auto mt-4 max-w-lg text-base leading-7 text-[var(--text-muted)]">
               {props.ready
-                ? "Borg will use your selected assistant and keep credentials protected on this device. You can change either later in Settings."
-                : "A required setting is no longer ready. Use the review link below to fix it before starting a chat."}
+                ? props.hasChat
+                  ? "Borg will use your selected assistant and keep credentials protected on this device. You can change either later in Settings."
+                  : "Borg keeps credentials on this device. Provider setup stays in Settings."
+                : props.hasChat
+                  ? "A required setting is no longer ready. Use the review link below to fix it before starting a chat."
+                  : "A required setting is no longer ready. Use the review link below to fix it before opening Design."}
             </p>
           </div>
         </Show>
@@ -737,7 +748,9 @@ const SetupWizard: Component<{
           {props.completing
             ? "Opening Borg…"
             : props.currentIndex === props.finalIndex
-              ? "Start chatting"
+              ? props.hasChat
+                ? "Start chatting"
+                : "Open Design"
               : props.currentIndex === 0
                 ? "Get started"
                 : "Continue"}
@@ -773,7 +786,7 @@ const PrimarySurface: Component<{
           <div class="grid h-full place-items-center p-8">
             <Panel class="max-w-md border-dashed text-center">
               <p class="text-sm text-[var(--text-muted)]">
-                Chat is not available right now.
+                This workspace is not available right now.
               </p>
             </Panel>
           </div>

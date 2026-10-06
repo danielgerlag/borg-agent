@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { desktopDistribution } from "@borg/distribution-desktop";
+import { printBenchDistribution } from "@borg/distribution-print-bench";
 import { bundledMainPlugins } from "../src/main/bundled-plugins";
 import { bundledUiPlugins } from "../src/renderer/bundled-ui-plugins";
+
+function bundledPluginIds(): string[] {
+  return [
+    ...new Set([
+      ...desktopDistribution.plugins.map((plugin) => plugin.id),
+      ...printBenchDistribution.plugins.map((plugin) => plugin.id),
+    ]),
+  ].sort((left, right) => left.localeCompare(right));
+}
 
 const baselineUiIds = [
   "borg.a2a",
@@ -48,9 +58,9 @@ function manifestId(manifest: unknown): string {
 }
 
 describe("bundled plugins", () => {
-  it("matches the desktop distribution and the UI baseline", () => {
+  it("matches the union of the host distributions and the UI baseline", () => {
     expect(bundledMainPlugins.map((source) => manifestId(source.manifest))).toEqual(
-      desktopDistribution.plugins.map((plugin) => plugin.id),
+      bundledPluginIds(),
     );
     expect(Object.keys(bundledUiPlugins)).toEqual([...baselineUiIds]);
   });

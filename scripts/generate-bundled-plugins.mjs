@@ -7,27 +7,36 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const desktopPackageJsonPath = path.join(projectRoot, "apps/desktop/package.json");
 
 const requireFromDesktop = createRequire(desktopPackageJsonPath);
-let desktopDistribution;
-try {
-  desktopDistribution = requireFromDesktop("@borg/distribution-desktop").desktopDistribution;
-} catch (error) {
-  throw new Error(
-    "Could not load @borg/distribution-desktop. Build the distribution package before generating bundled plugins.",
-    { cause: error },
-  );
-}
-if (!desktopDistribution || !Array.isArray(desktopDistribution.plugins)) {
-  throw new Error("@borg/distribution-desktop did not export desktopDistribution.plugins");
-}
-const declaredIds = desktopDistribution.plugins.map((entry) => {
-  if (typeof entry === "string") {
-    return entry;
+
+function loadDistribution(packageName, exportName) {
+  let loaded;
+  try {
+    loaded = requireFromDesktop(packageName);
+  } catch (error) {
+    throw new Error(
+      `Could not load ${packageName}. Build the distribution package before generating bundled plugins.`,
+      { cause: error },
+    );
   }
-  if (entry && typeof entry.id === "string") {
-    return entry.id;
+  const distribution = loaded?.[exportName];
+  if (!distribution || !Array.isArray(distribution.plugins)) {
+    throw new Error(`${packageName} did not export ${exportName}.plugins`);
   }
-  throw new Error("Desktop distribution has a plugin entry without an id");
-});
+  return distribution.plugins.map((entry) => {
+    if (typeof entry === "string") {
+      return entry;
+    }
+    if (entry && typeof entry.id === "string") {
+      return entry.id;
+    }
+    throw new Error(`${packageName} has a plugin entry without an id`);
+  });
+}
+
+const declaredIds = [
+  ...loadDistribution("@borg/distribution-desktop", "desktopDistribution"),
+  ...loadDistribution("@borg/distribution-print-bench", "printBenchDistribution"),
+];
 const declaredIdSet = new Set(declaredIds);
 
 async function discoverPackages(directory) {
@@ -118,7 +127,7 @@ if (sharedIds.length > 0) {
 const missingIds = declaredIds.filter((id) => !packagesById.has(id));
 if (missingIds.length > 0) {
   throw new Error(
-    `Desktop distribution declares plugin ids with no package: ${missingIds.join(", ")}`,
+    `Bundled distributions declare plugin ids with no package: ${missingIds.join(", ")}`,
   );
 }
 
