@@ -84,7 +84,7 @@ command borg.remote.destroy timeout=120000 input=e0e08070ffb35921 output=2f462a6
 command borg.remote.getRun timeout=- input=ddf248a680ae0e22 output=6bbe1bae5d9a1579
 command borg.remote.listWorkers timeout=- input=b989db56556fc123 output=989d8a68f2a08582
 command borg.remote.provision timeout=120000 input=c37efd78bb70b357 output=c404e419599f29a9
-command borg.remote.submitRun timeout=60000 input=eca7cfe4867e27ec output=8ac3d0d22511617f
+command borg.remote.submitRun timeout=60000 input=b0f26390e4fb7672 output=8ac3d0d22511617f
 command borg.search.brave.connect timeout=- input=b989db56556fc123 output=aee9eb810fac8eea
 command borg.search.brave.disconnect timeout=- input=b989db56556fc123 output=aee9eb810fac8eea
 command borg.search.brave.getStatus timeout=- input=b989db56556fc123 output=aee9eb810fac8eea
@@ -212,10 +212,11 @@ schema interactionKindSchema 55744fd0b894e97c
 schema interactionResponseSchema 42c7d9d998313c1b
 schema interactionSourceSchema 46a186e57ab580ba
 schema loopEventSchema 93882b8370d9335d
+schema loopMaxTurnsSchema c7f3a6570d023acc
 schema loopRunSnapshotSchema 6fc606ade415dc92
 schema loopRunStatusSchema 7a8e7d54ed0e0369
 schema loopSecurityInputSchema 410dc96666b43b91
-schema loopStartInputSchema 8856ee735f211d77
+schema loopStartInputSchema 2a072598ace12e87
 schema m365ChannelStatusSchema b05f70f99ef80779
 schema mcpAppCspSchema a7fd74e217c71b48
 schema mcpAppPermissionsSchema 7d025d124958d7ad
@@ -243,14 +244,14 @@ schema openaiStatusSchema 5a3db377ed1e308e
 schema openrouterStatusSchema 5a3db377ed1e308e
 schema pendingInteractionSchema ca741f471b214cd0
 schema personaIdSchema 895ffc985db4dcfc
-schema personaSchema 0037ff1d8418a411
+schema personaSchema 936db29eb01da8f5
 schema promptScanActionSchema 3e286171050bfea1
 schema promptScanFindingSchema 489eba4436e2cbea
 schema promptScanStageSchema 8f8576ce6ff6bfb9
 schema provenanceSeedSchema 04805cf002ff97c2
 schema providerEgressSchema f39646c2dd831cfa
 schema releasedModelCompletionSchema 47252a96a1a85ecb
-schema remoteRunSpecSchema dbcf20724632af63
+schema remoteRunSpecSchema ab618e06c399c2f6
 schema remoteRunStatusDocumentSchema 6bbe1bae5d9a1579
 schema remoteRunStatusSchema 3b0cf5eb0bf909e0
 schema remoteRuntimeIdSchema 948b682362c0f5d3

@@ -2,6 +2,7 @@
  * Designer persona: instructions, allowed tools, and the starting model preference.
  */
 
+import { DEFAULT_LOOP_MAX_TURNS } from "@borg-agent/contracts";
 import { bedFrame } from "./domain.js";
 import {
   addToolId,
@@ -50,6 +51,7 @@ export const benchPersonas = [
     name: "Designer",
     instructions: designerInstructions,
     preferredModels: [model],
+    maxTurns: DEFAULT_LOOP_MAX_TURNS,
     allowedTools: [
       addToolId,
       placeToolId,

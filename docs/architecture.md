@@ -621,6 +621,7 @@ interface Persona {
   allowedTools: string[];        // exact IDs/globs, "*" means all
   mcpServers: McpServerConfig[];
   loopStrategy: "react" | "code-act";
+  maxTurns: number;              // model rounds, default 25, maximum 100
   toolExecutionMode: "sequential-partial" | "sequential-full" | "parallel";
   skillIds: string[];
   contextMapStrategy?: "general" | "code" | "advanced";
@@ -683,6 +684,8 @@ interface LoopStrategy {
 `LoopStrategyContext` exposes the selected provider through kernel adapters, conversation/prompt input, available tool definitions, structured-output schema, budgets, and a callback to the kernel tool pipeline. It never exposes plugin tool handlers directly.
 
 ReAct is required in Slice 3. CodeAct can be a stub until Slice 11. LangGraph may be used behind this interface only if it works cleanly in Electron main, does not leak into SDK contracts, and replaces rather than duplicates loop state. There must never be a LangGraph-backed loop beside an unrelated home-grown product loop.
+
+The ReAct and CodeAct cycles are LangGraph state graphs owned by `LoopManager`. The graph state is the message list and the turn count. `ModelGateway` is still the only model call, `ToolService` is still the only tool call, and run identity, pause, cancel, approval, and classification stay on `LoopManager`. The graph has no checkpointer, so Quit still drops the in-memory run. `plugins/graphs` does not import LangGraph. A loop stops after `maxTurns` model rounds. The default is 25. A persona `maxTurns` replaces that default, and `loops.start` `maxTurns` replaces the persona for that one run. The ceiling is 100. LangGraph's own recursion limit is raised above the turn budget so the product budget is the one that fires.
 
 Loop events include run state, model start/token/end, tool-call arguments/start/result, interaction wait, compaction, usage, final output, cancellation, and failure. Provider chunks do not enter this stream. A `model_token` event means the completed output passed kernel policy and is safe to display.
 
@@ -1231,7 +1234,7 @@ If durable bootstrap fails, main still opens the renderer with an explicit kerne
 
 ## Slice 3 implementation record
 
-Slice 3 installs one small kernel-owned ReAct runtime rather than adding LangGraph. The current strategy is intentionally direct: `LoopManager` owns run identity, cancellation, state, model/tool turns, and replayable per-run subscriptions; `ModelRouter` selects an active `llmProvider` contribution and records normalized usage through `CostLedger`; `ToolService` is the only route from a loop or plugin to a contributed tool handler. Renderer plugins receive the same owner-filtered event stream through the fixed preload bridge instead of polling. Plugins that need a non-agent completion use permission-scoped `ctx.models.complete` with an empty tool catalog. This keeps the public strategy boundary independent of a framework and leaves room to replace the internal implementation if later CodeAct evaluation justifies it.
+Slice 3 installs one small kernel-owned ReAct runtime rather than adding LangGraph. A later pass moved the ReAct and CodeAct cycles onto LangGraph state graphs inside that same manager. `LoopManager` still owns run identity, cancellation, state, model/tool turns, and replayable per-run subscriptions; `ModelRouter` selects an active `llmProvider` contribution and records normalized usage through `CostLedger`; `ToolService` is the only route from a loop or plugin to a contributed tool handler. Renderer plugins receive the same owner-filtered event stream through the fixed preload bridge instead of polling. Plugins that need a non-agent completion use permission-scoped `ctx.models.complete` with an empty tool catalog. The public strategy boundary stays free of framework types. Plugins still see run events, not LangGraph.
 
 The Slice 3 tool pipeline enforces canonical registration, caller host permissions, kernel-owned per-run allowlists, Zod input/output contracts, `auto | ask | deny` policy, kernel approval interactions, abort propagation, and JSON-safe results. Callers cannot replace a run's allowlist. Tool and run-policy registrations carry revocation signals, are revalidated after approval and execution, and cancel pending approvals when removed. Approval prompts identify the tool without copying raw arguments into the shell; the owner-only loop event stream still carries validated JSON arguments for trace rendering. Classification is the explicit `unlabeled` baseline for this slice; scanners, destination policy, sandboxes, and audit records thicken the same pipeline in later slices instead of creating another executor.
 
@@ -1307,7 +1310,7 @@ Slice 10 adds semantic memory recall without graph entity APIs. `MemoryFacade` s
 
 Slice 11 adds `SandboxFactory` with kinds `os`, `uv`, and `node`. Runs use `cwd` at a real directory root, a scrubbed environment, and `shell: false`. Node writes source under the root and spawns `process.execPath` with `--permission` filesystem allows limited to that root. uv is injected in tests so CI does not require a host install. `ctx.sandbox.run` requires `sandbox.run`. `borg.tools.core` adds `code.run` and `shell.exec`, which execute inside the factory using the session workspace as the root.
 
-`LoopManager` accepts persona `loopStrategy` `code-act`. That path still uses the same run IDs, pause points, and `ModelGateway`. Each turn either runs a fenced javascript/python block in the sandbox or treats unfenced content as the final answer. LangGraph is not used.
+`LoopManager` accepts persona `loopStrategy` `code-act`. That path still uses the same run IDs, pause points, and `ModelGateway`. Each turn either runs a fenced javascript/python block in the sandbox or treats unfenced content as the final answer. The cycle is the same LangGraph state graph as ReAct, with a sandbox node in place of tool calls.
 
 ## Slice 12 implementation record
 

@@ -416,6 +416,7 @@ export async function composeRuntime(options: {
       preferredModels: options.spec.persona.preferredModels,
       allowedTools: options.spec.persona.allowedTools,
       loopStrategy: options.spec.persona.loopStrategy,
+      maxTurns: options.spec.persona.maxTurns,
     });
   } else {
     await personas.create({
@@ -425,6 +426,7 @@ export async function composeRuntime(options: {
       preferredModels: options.spec.persona.preferredModels,
       allowedTools: options.spec.persona.allowedTools,
       loopStrategy: options.spec.persona.loopStrategy,
+      maxTurns: options.spec.persona.maxTurns,
       secondaryModels: [],
       mcpServers: [],
       skillIds: [],

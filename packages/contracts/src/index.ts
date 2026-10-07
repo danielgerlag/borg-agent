@@ -673,6 +673,18 @@ export type LoopSecurityInput = z.infer<
   typeof loopSecurityInputSchema
 >;
 
+/** Model rounds a loop may take when the persona and the start input omit a budget. */
+export const DEFAULT_LOOP_MAX_TURNS = 25;
+
+/** Highest turn budget a persona or a single `loops.start` may set. */
+export const LOOP_MAX_TURNS_LIMIT = 100;
+
+export const loopMaxTurnsSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(LOOP_MAX_TURNS_LIMIT);
+
 export const loopStartInputSchema = z
   .object({
     prompt: z.string().min(1),
@@ -681,6 +693,7 @@ export const loopStartInputSchema = z
     allowedTools: z.array(z.string().min(1)).optional(),
     personaId: z.string().min(1).optional(),
     sessionId: z.string().uuid().optional(),
+    maxTurns: loopMaxTurnsSchema.optional(),
     conversation: z
       .array(
         z
@@ -804,6 +817,7 @@ export const remoteRunSpecSchema = z
         preferredModels: z.array(z.string().min(1)).min(1),
         allowedTools: z.array(unattendedToolIdSchema).min(1),
         loopStrategy: z.literal("react").default("react"),
+        maxTurns: loopMaxTurnsSchema.default(DEFAULT_LOOP_MAX_TURNS),
       })
       .strict(),
     deadlineMs: z
@@ -1130,6 +1144,7 @@ export const personaSchema = z
     allowedTools: z.array(z.string().min(1)).default(["*"]),
     mcpServers: z.array(mcpServerConfigSchema).max(64).default([]),
     loopStrategy: z.enum(["react", "code-act"]).default("react"),
+    maxTurns: loopMaxTurnsSchema.default(DEFAULT_LOOP_MAX_TURNS),
     toolExecutionMode: z
       .enum(["sequential-partial", "sequential-full", "parallel"])
       .default("sequential-partial"),

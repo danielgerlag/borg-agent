@@ -352,6 +352,16 @@ test("edits a persona in a dialog without growing the settings page", async () =
   await page.getByTestId("persona-row-system/general").click();
   await expect(page.getByTestId("persona-editor")).toBeVisible();
   await expect(page.getByTestId("persona-save")).toBeAttached();
+  await expect(page.getByTestId("persona-max-turns")).toHaveValue("25");
+  await page.getByTestId("persona-max-turns").fill("12");
+  await page.getByTestId("persona-save").click();
+  await expect(page.getByText("Saved General.")).toBeVisible();
+  await closePersonaEditor(page);
+  await page.getByTestId("persona-row-system/general").click();
+  await expect(page.getByTestId("persona-max-turns")).toHaveValue("12");
+  await page.getByTestId("persona-max-turns").fill("25");
+  await page.getByTestId("persona-save").click();
+  await expect(page.getByText("Saved General.")).toBeVisible();
 
   const metrics = await page.evaluate(() => {
     const measure = (element: Element | null | undefined) => {

@@ -1,4 +1,6 @@
 import {
+  DEFAULT_LOOP_MAX_TURNS,
+  LOOP_MAX_TURNS_LIMIT,
   modelOperationKeySchema,
   type LoopStartInput,
 } from "@borg-agent/contracts";
@@ -1272,6 +1274,257 @@ describe("LoopManager", () => {
     await expect(
       readFile(path.join(workspace.rootPath, "ok.txt"), "utf8"),
     ).resolves.toBe("done");
+  });
+
+  it("continues past eight model rounds under the default budget", async () => {
+    const runtime = createLoopRuntime();
+    const toolRounds = 14;
+    let calls = 0;
+    runtime.tools.register(
+      "borg.tools.echo",
+      defineTool({
+        id: "tools.ping",
+        description: "Ping",
+        input: z.object({}).strict(),
+        output: z.object({ ok: z.literal(true) }),
+        approval: "auto",
+        sideEffect: false,
+        execute: () => ({ ok: true as const }),
+      }),
+    );
+    registerModelProvider(runtime.models, "borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(request, permit) {
+        await permit.commit();
+        calls += 1;
+        const answered = request.messages.filter(
+          ({ role }) => role === "tool",
+        ).length;
+        if (answered >= toolRounds) {
+          return {
+            content: `done after ${answered}`,
+            usage: { inputTokens: 1, outputTokens: 1 },
+          };
+        }
+        return {
+          toolCalls: [
+            {
+              id: `call-${calls}`,
+              name: "tools.ping",
+              input: {},
+            },
+          ],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+    const run = await runtime.loops.start(
+      loopStartInput("default-turn-budget", {
+        prompt: "keep going",
+        allowedTools: ["tools.ping"],
+      }),
+    );
+    await vi.waitFor(
+      () => expect(runtime.loops.get(run.id)?.status).toBe("completed"),
+      { timeout: 10_000 },
+    );
+    expect(calls).toBe(toolRounds + 1);
+    expect(calls).toBeGreaterThan(8);
+    expect(runtime.loops.get(run.id)?.output).toBe(`done after ${toolRounds}`);
+  });
+
+  it("stops at the turn budget from the start input", async () => {
+    const runtime = createLoopRuntime();
+    let calls = 0;
+    runtime.tools.register(
+      "borg.tools.echo",
+      defineTool({
+        id: "tools.ping",
+        description: "Ping",
+        input: z.object({}).strict(),
+        output: z.object({ ok: z.literal(true) }),
+        approval: "auto",
+        sideEffect: false,
+        execute: () => ({ ok: true as const }),
+      }),
+    );
+    registerModelProvider(runtime.models, "borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
+        calls += 1;
+        return {
+          toolCalls: [
+            { id: `call-${calls}`, name: "tools.ping", input: {} },
+          ],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+    const run = await runtime.loops.start(
+      loopStartInput("short-turn-budget", {
+        prompt: "keep going",
+        allowedTools: ["tools.ping"],
+        maxTurns: 2,
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(runtime.loops.get(run.id)?.status).toBe("failed"),
+    );
+    expect(runtime.loops.get(run.id)?.error).toBe(
+      "ReAct loop exceeded its 2-turn budget",
+    );
+    expect(calls).toBe(2);
+  });
+
+  it("uses the persona turn budget unless the start input overrides it", async () => {
+    const runtime = createSecurityRuntime();
+    const personas = new PersonaService(runtime.store);
+    await personas.initialize();
+    const created = await personas.create({
+      id: "user/short",
+      name: "Short",
+      instructions: "Stop soon.",
+      preferredModels: ["borg.mock-llm:mock:scripted"],
+      maxTurns: 3,
+    });
+    expect(created.maxTurns).toBe(3);
+    const general = personas.get(DEFAULT_PERSONA_ID);
+    expect(general?.maxTurns).toBe(DEFAULT_LOOP_MAX_TURNS);
+    let calls = 0;
+    runtime.tools.register(
+      "borg.tools.echo",
+      defineTool({
+        id: "tools.ping",
+        description: "Ping",
+        input: z.object({}).strict(),
+        output: z.object({ ok: z.literal(true) }),
+        approval: "auto",
+        sideEffect: false,
+        execute: () => ({ ok: true as const }),
+      }),
+    );
+    registerModelProvider(runtime.models, "borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
+        calls += 1;
+        return {
+          toolCalls: [{ id: `call-${calls}`, name: "tools.ping", input: {} }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+    const loops = new LoopManager(
+      runtime.models,
+      runtime.executions,
+      runtime.tools,
+      runtime.costs,
+      () => true,
+      personas,
+    );
+    const personaRun = await loops.start(
+      loopStartInput("persona-turn-budget", {
+        prompt: "keep going",
+        personaId: "user/short",
+      }),
+      "borg.chat",
+    );
+    await vi.waitFor(() =>
+      expect(loops.get(personaRun.id)?.status).toBe("failed"),
+    );
+    expect(loops.get(personaRun.id)?.error).toBe(
+      "ReAct loop exceeded its 3-turn budget",
+    );
+    expect(calls).toBe(3);
+
+    calls = 0;
+    const override = await loops.start(
+      loopStartInput("override-turn-budget", {
+        prompt: "keep going",
+        personaId: "user/short",
+        maxTurns: 1,
+      }),
+      "borg.chat",
+    );
+    await vi.waitFor(() =>
+      expect(loops.get(override.id)?.status).toBe("failed"),
+    );
+    expect(loops.get(override.id)?.error).toBe(
+      "ReAct loop exceeded its 1-turn budget",
+    );
+    expect(calls).toBe(1);
+    await expect(
+      loops.start(
+        loopStartInput("illegal-turn-budget", {
+          prompt: "keep going",
+          maxTurns: LOOP_MAX_TURNS_LIMIT + 1,
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("stops CodeAct at its configured turn budget", async () => {
+    const runtime = createSecurityRuntime();
+    const personas = new PersonaService(runtime.store);
+    await personas.initialize();
+    await personas.create({
+      id: "user/coder",
+      name: "Coder",
+      instructions: "Write files by emitting javascript fences.",
+      preferredModels: ["borg.mock-llm:mock:scripted"],
+      loopStrategy: "code-act",
+      maxTurns: 1,
+    });
+    const root = await mkdtemp(path.join(os.tmpdir(), "borg-codeact-budget-"));
+    const workspaces = new WorkspaceService(root);
+    const sessionId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    workspaces.allocate("borg.chat", sessionId);
+    let calls = 0;
+    registerModelProvider(runtime.models, "borg.mock-llm", {
+      id: "borg.mock-llm",
+      models: ["mock:scripted"],
+      egress: TEST_PROVIDER_EGRESS,
+      async complete(_request, permit) {
+        await permit.commit();
+        calls += 1;
+        return {
+          content:
+            "```javascript\nimport { writeFileSync } from 'node:fs'; writeFileSync('again.txt', 'x');\n```",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    });
+    const loops = new LoopManager(
+      runtime.models,
+      runtime.executions,
+      runtime.tools,
+      runtime.costs,
+      () => false,
+      personas,
+      undefined,
+      workspaces,
+      new SandboxFactory(),
+    );
+    const run = await loops.start(
+      loopStartInput("code-act-budget", {
+        prompt: "Write again.txt",
+        personaId: "user/coder",
+        sessionId,
+      }),
+      "borg.chat",
+    );
+    await vi.waitFor(() => expect(loops.get(run.id)?.status).toBe("failed"));
+    expect(loops.get(run.id)?.error).toBe(
+      "CodeAct loop exceeded its 1-turn budget",
+    );
+    expect(calls).toBe(1);
   });
 });
 

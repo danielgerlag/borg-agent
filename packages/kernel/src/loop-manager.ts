@@ -1,4 +1,5 @@
 import {
+  DEFAULT_LOOP_MAX_TURNS,
   loopEventSchema,
   loopRunSnapshotSchema,
   loopStartInputSchema,
@@ -6,8 +7,14 @@ import {
   type LoopEvent,
   type LoopRunSnapshot,
   type LoopStartInput,
+  type ReleasedModelCompletion,
 } from "@borg-agent/contracts";
-import type { Disposable, JsonValue, ModelMessage } from "@borg-agent/plugin-sdk";
+import type {
+  Disposable,
+  JsonValue,
+  ModelMessage,
+  ModelToolCall,
+} from "@borg-agent/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import { CostLedger } from "./cost-ledger";
 import {
@@ -18,6 +25,7 @@ import { ModelGateway } from "./model-gateway";
 import type { PersonaService } from "./persona-service";
 import type { PromptAssembler } from "./prompt-assembler";
 import { ToolInvocationError, ToolService } from "./tool-service";
+import { runCodeActCycle, runReactCycle } from "./loop-graph";
 import type { SandboxFactory } from "./sandbox-factory";
 import type { WorkspaceService } from "./workspace-service";
 
@@ -48,9 +56,14 @@ interface LoopEventSubscription {
 type ParsedLoopStartInput = ReturnType<typeof loopStartInputSchema.parse>;
 type ResolvedLoopStartInput = ParsedLoopStartInput & {
   readonly allowedTools: readonly string[];
+  readonly maxTurns: number;
   readonly additionalAllowedTools?: readonly string[] | undefined;
   readonly systemPrompt?: string | undefined;
 };
+interface ModelSelection {
+  providerId?: string | undefined;
+  modelId?: string | undefined;
+}
 type WithoutTimestamp<T> = T extends { readonly timestamp: string }
   ? Omit<T, "timestamp">
   : never;
@@ -58,22 +71,6 @@ type LoopEventCandidate = WithoutTimestamp<LoopEvent>;
 const APPROVED_TOKEN_REPLAY_INTERVAL_MS = 20;
 const CODEACT_INSTRUCTION =
   "Act by emitting one fenced javascript or python block. When the task is done, reply with the final answer and no code fence.";
-
-function parseCodeFence(
-  content: string,
-): { language: "javascript" | "python"; source: string } | undefined {
-  const match = content.match(
-    /```(javascript|js|python|py)[ \t]*\n([\s\S]*?)```/i,
-  );
-  if (!match) {
-    return undefined;
-  }
-  const tag = match[1]!.toLowerCase();
-  return {
-    language: tag === "python" || tag === "py" ? "python" : "javascript",
-    source: match[2] ?? "",
-  };
-}
 
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -249,6 +246,10 @@ export class LoopManager {
           ? undefined
           : resolvedPreference?.modelId ?? preferredModelId),
       allowedTools: persona?.allowedTools ?? parsedInput.allowedTools ?? ["*"],
+      maxTurns:
+        parsedInput.maxTurns ??
+        persona?.maxTurns ??
+        DEFAULT_LOOP_MAX_TURNS,
       additionalAllowedTools:
         persona && parsedInput.allowedTools
           ? parsedInput.allowedTools
@@ -453,8 +454,10 @@ export class LoopManager {
       ...(input.conversation ?? []),
       { role: "user", content: input.prompt },
     ];
-    let providerId = input.providerId;
-    let modelId = input.modelId;
+    const selection: ModelSelection = {
+      providerId: input.providerId,
+      modelId: input.modelId,
+    };
     try {
       const execution =
         input.security.kind === "root"
@@ -509,194 +512,30 @@ export class LoopManager {
           execution,
           workspaceRoot: workspace?.rootPath,
           messages,
-          providerId,
-          modelId,
+          selection,
         });
         return;
       }
-      for (let turn = 0; turn < 8; turn += 1) {
-        run.controller.signal.throwIfAborted();
-        await this.#waitAtSafePoint(run);
-        this.#update(run, { status: "running" });
-        this.#emit({
-          type: "model_start",
-          runId: run.snapshot.id,
-          providerId,
-          modelId,
-        });
-        let streamed = false;
-        const completion = await this.models.complete(
-          {
-            ownerPluginId: run.ownerPluginId,
-            feature: "loop",
-            runId: run.snapshot.id,
-          },
-          {
-            executionId: execution.id,
-            operationKey: modelOperationKeySchema.parse(
-              `${input.security.operationPrefix}/model/${turn}`,
-            ),
-            providerId,
-            modelId,
-            messages,
-            tools: run.toolInvocationAllowed
-              ? this.tools.listDefinitions(
-                  input.allowedTools,
-                  input.additionalAllowedTools,
-                  run.snapshot.id,
-                )
-              : [],
-          },
-          run.controller.signal,
-          {
-            onPolicyWait: (interactionId) => {
-              run.activePolicyInteractionId = interactionId;
-              if (!this.#announcedInteractionIds.has(interactionId)) {
-                this.#announcedInteractionIds.add(interactionId);
-                this.#update(run, { status: "waiting" });
-                this.#emit({
-                  type: "interaction_wait",
-                  runId: run.snapshot.id,
-                  interactionId,
-                  kind: "classification",
-                });
-              }
-            },
-            onApprovedToken: async (token) => {
-              streamed = true;
-              this.#emit({
-                type: "model_token",
-                runId: run.snapshot.id,
-                token,
-              });
-              await new Promise<void>((resolve) => {
-                setTimeout(resolve, APPROVED_TOKEN_REPLAY_INTERVAL_MS);
-              });
-            },
-          },
-        );
-        if (run.activePolicyInteractionId) {
-          this.#announcedInteractionIds.delete(
-            run.activePolicyInteractionId,
-          );
-          run.activePolicyInteractionId = undefined;
-        }
-        providerId = completion.providerId;
-        modelId = completion.modelId;
-        await this.#waitAtSafePoint(run);
-        if (completion.content && !streamed) {
-          this.#emit({
-            type: "model_token",
-            runId: run.snapshot.id,
-            token: completion.content,
-          });
-        }
-        this.#emit({
-          type: "model_end",
-          runId: run.snapshot.id,
-          providerId,
-          modelId,
-        });
-        this.#refreshUsage(run, completion.providerId, completion.modelId);
-
-        if (completion.toolCalls?.length) {
-          messages.push({
-            role: "assistant",
-            content: completion.content ?? "",
-            toolCalls: completion.toolCalls,
-          });
-          for (const toolCall of completion.toolCalls) {
-            await this.#waitAtSafePoint(run);
-            if (!run.toolInvocationAllowed) {
-              throw new ToolInvocationError(
-                "forbidden",
-                `Plugin ${run.ownerPluginId} cannot invoke tools from a loop`,
-              );
-            }
-            this.#emit({
-              type: "tool_start",
-              runId: run.snapshot.id,
-              toolId: toolCall.name,
-              toolCallId: toolCall.id,
-              input: toolCall.input,
-            });
-            run.activeToolCallId = toolCall.id;
-            run.activeToolPluginId = this.tools.getProviderPluginId(
-              toolCall.name,
-              run.snapshot.id,
-            );
-            let output: JsonValue;
-            const refreshExecutionClassification = async (): Promise<void> => {
-              const summary = await execution.summary();
-              this.tools.bindExecutionClassification(
-                run.snapshot.id,
-                run.ownerPluginId,
-                execution.id,
-                summary.classification,
-              );
-            };
-            try {
-              output = await this.tools.invoke(toolCall.name, toolCall.input, {
-                callerPluginId: run.ownerPluginId,
-                runId: run.snapshot.id,
-                toolCallId: toolCall.id,
-                signal: run.controller.signal,
-                beforeAuthorization: refreshExecutionClassification,
-                beforeCommit: refreshExecutionClassification,
-                onInteraction: (interactionId) => {
-                  if (!this.#announcedInteractionIds.has(interactionId)) {
-                    this.#announcedInteractionIds.add(interactionId);
-                    this.#update(run, { status: "waiting" });
-                    this.#emit({
-                      type: "interaction_wait",
-                      runId: run.snapshot.id,
-                      interactionId,
-                      kind: "tool_approval",
-                    });
-                  }
-                },
-              });
-            } finally {
-              run.activeToolCallId = undefined;
-              run.activeToolPluginId = undefined;
-            }
-            run.controller.signal.throwIfAborted();
-            this.#update(run, { status: "running" });
-            messages.push({
-              role: "tool",
-              toolCallId: toolCall.id,
-              content: JSON.stringify(output),
-            });
-            this.#emit({
-              type: "tool_result",
-              runId: run.snapshot.id,
-              toolId: toolCall.name,
-              toolCallId: toolCall.id,
-              output,
-            });
-          }
-          continue;
-        }
-
-        if (completion.content !== undefined) {
-          run.controller.signal.throwIfAborted();
-          await this.#closeOwnedExecution(run, "completed");
-          this.#update(run, {
-            status: "completed",
-            output: completion.content,
-          });
-          this.#emit({
-            type: "final",
-            runId: run.snapshot.id,
-            output: completion.content,
-          });
-          return;
-        }
-        throw new Error("Model returned neither content nor tool calls");
-      }
-      throw new Error("ReAct loop exceeded its eight-turn budget");
+      await runReactCycle({
+        maxTurns: input.maxTurns,
+        signal: run.controller.signal,
+        messages,
+        model: (turn, history) =>
+          this.#completeModelTurn({
+            run,
+            input,
+            execution,
+            turn,
+            messages: history,
+            selection,
+            tools: "allowed",
+          }),
+        tool: (toolCall) => this.#invokeLoopTool(run, execution, toolCall),
+        finish: (output) => this.#finishRun(run, output),
+      });
+      return;
     } catch (error) {
-      this.#refreshUsage(run, providerId, modelId);
+      this.#refreshUsage(run, selection.providerId, selection.modelId);
       if (run.controller.signal.aborted) {
         if (run.snapshot.status !== "cancelled") {
           this.#update(run, { status: "cancelled", error: "Cancelled" });
@@ -736,11 +575,9 @@ export class LoopManager {
     readonly execution: ExecutionBinding;
     readonly workspaceRoot: string | undefined;
     readonly messages: ModelMessage[];
-    readonly providerId?: string | undefined;
-    readonly modelId?: string | undefined;
+    readonly selection: ModelSelection;
   }): Promise<void> {
-    const { run, input, execution, messages } = args;
-    let { providerId, modelId } = args;
+    const { run, input, execution, messages, selection } = args;
     if (!args.workspaceRoot) {
       throw new Error("CodeAct requires a session workspace");
     }
@@ -757,116 +594,206 @@ export class LoopManager {
     } else {
       messages.unshift({ role: "system", content: CODEACT_INSTRUCTION });
     }
-    for (let turn = 0; turn < 8; turn += 1) {
-      run.controller.signal.throwIfAborted();
-      await this.#waitAtSafePoint(run);
-      this.#update(run, { status: "running" });
-      this.#emit({
-        type: "model_start",
-        runId: run.snapshot.id,
-        providerId,
-        modelId,
-      });
-      let streamed = false;
-      const completion = await this.models.complete(
-        {
-          ownerPluginId: run.ownerPluginId,
-          feature: "loop",
-          runId: run.snapshot.id,
-        },
-        {
-          executionId: execution.id,
-          operationKey: modelOperationKeySchema.parse(
-            `${input.security.operationPrefix}/model/${turn}`,
-          ),
-          providerId,
-          modelId,
-          messages,
-          tools: [],
-        },
-        run.controller.signal,
-        {
-          onPolicyWait: (interactionId) => {
-            run.activePolicyInteractionId = interactionId;
-            if (!this.#announcedInteractionIds.has(interactionId)) {
-              this.#announcedInteractionIds.add(interactionId);
-              this.#update(run, { status: "waiting" });
-              this.#emit({
-                type: "interaction_wait",
-                runId: run.snapshot.id,
-                interactionId,
-                kind: "classification",
-              });
-            }
-          },
-          onApprovedToken: async (token) => {
-            streamed = true;
-            this.#emit({
-              type: "model_token",
-              runId: run.snapshot.id,
-              token,
-            });
-            await new Promise<void>((resolve) => {
-              setTimeout(resolve, APPROVED_TOKEN_REPLAY_INTERVAL_MS);
-            });
-          },
-        },
-      );
-      if (run.activePolicyInteractionId) {
-        this.#announcedInteractionIds.delete(run.activePolicyInteractionId);
-        run.activePolicyInteractionId = undefined;
-      }
-      providerId = completion.providerId;
-      modelId = completion.modelId;
-      await this.#waitAtSafePoint(run);
-      if (completion.content && !streamed) {
-        this.#emit({
-          type: "model_token",
-          runId: run.snapshot.id,
-          token: completion.content,
-        });
-      }
-      this.#emit({
-        type: "model_end",
-        runId: run.snapshot.id,
-        providerId,
-        modelId,
-      });
-      this.#refreshUsage(run, completion.providerId, completion.modelId);
-      const fence = parseCodeFence(completion.content ?? "");
-      if (fence) {
-        const result = await sandboxes.run({
-          kind: fence.language === "python" ? "uv" : "node",
+    await runCodeActCycle({
+      maxTurns: input.maxTurns,
+      signal: run.controller.signal,
+      messages,
+      model: (turn, history) =>
+        this.#completeModelTurn({
+          run,
+          input,
+          execution,
+          turn,
+          messages: history,
+          selection,
+          tools: "none",
+        }),
+      sandbox: async (language, source) =>
+        sandboxes.run({
+          kind: language === "python" ? "uv" : "node",
           root: workspaceRoot,
-          source: fence.source,
+          source,
           signal: run.controller.signal,
-        });
-        messages.push({
-          role: "assistant",
-          content: completion.content ?? "",
-        });
-        messages.push({
-          role: "user",
-          content: `Sandbox exit ${result.exitCode}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
-        });
-        continue;
-      }
-      if (completion.content !== undefined) {
-        await this.#closeOwnedExecution(run, "completed");
-        this.#update(run, {
-          status: "completed",
-          output: completion.content,
-        });
-        this.#emit({
-          type: "final",
-          runId: run.snapshot.id,
-          output: completion.content,
-        });
-        return;
-      }
-      throw new Error("Model returned empty CodeAct content");
+        }),
+      finish: (output) => this.#finishRun(run, output),
+    });
+  }
+
+  async #finishRun(run: LoopRun, output: string): Promise<void> {
+    run.controller.signal.throwIfAborted();
+    await this.#closeOwnedExecution(run, "completed");
+    this.#update(run, { status: "completed", output });
+    this.#emit({
+      type: "final",
+      runId: run.snapshot.id,
+      output,
+    });
+  }
+
+  async #completeModelTurn(args: {
+    readonly run: LoopRun;
+    readonly input: ResolvedLoopStartInput;
+    readonly execution: ExecutionBinding;
+    readonly turn: number;
+    readonly messages: readonly ModelMessage[];
+    readonly selection: ModelSelection;
+    readonly tools: "allowed" | "none";
+  }): Promise<ReleasedModelCompletion> {
+    const { run, input, execution, selection } = args;
+    run.controller.signal.throwIfAborted();
+    await this.#waitAtSafePoint(run);
+    this.#update(run, { status: "running" });
+    this.#emit({
+      type: "model_start",
+      runId: run.snapshot.id,
+      providerId: selection.providerId,
+      modelId: selection.modelId,
+    });
+    let streamed = false;
+    const completion = await this.models.complete(
+      {
+        ownerPluginId: run.ownerPluginId,
+        feature: "loop",
+        runId: run.snapshot.id,
+      },
+      {
+        executionId: execution.id,
+        operationKey: modelOperationKeySchema.parse(
+          `${input.security.operationPrefix}/model/${args.turn}`,
+        ),
+        providerId: selection.providerId,
+        modelId: selection.modelId,
+        messages: args.messages,
+        tools:
+          args.tools === "allowed" && run.toolInvocationAllowed
+            ? this.tools.listDefinitions(
+                input.allowedTools,
+                input.additionalAllowedTools,
+                run.snapshot.id,
+              )
+            : [],
+      },
+      run.controller.signal,
+      {
+        onPolicyWait: (interactionId) => {
+          run.activePolicyInteractionId = interactionId;
+          if (!this.#announcedInteractionIds.has(interactionId)) {
+            this.#announcedInteractionIds.add(interactionId);
+            this.#update(run, { status: "waiting" });
+            this.#emit({
+              type: "interaction_wait",
+              runId: run.snapshot.id,
+              interactionId,
+              kind: "classification",
+            });
+          }
+        },
+        onApprovedToken: async (token) => {
+          streamed = true;
+          this.#emit({
+            type: "model_token",
+            runId: run.snapshot.id,
+            token,
+          });
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, APPROVED_TOKEN_REPLAY_INTERVAL_MS);
+          });
+        },
+      },
+    );
+    if (run.activePolicyInteractionId) {
+      this.#announcedInteractionIds.delete(run.activePolicyInteractionId);
+      run.activePolicyInteractionId = undefined;
     }
-    throw new Error("CodeAct loop exceeded its eight-turn budget");
+    selection.providerId = completion.providerId;
+    selection.modelId = completion.modelId;
+    await this.#waitAtSafePoint(run);
+    if (completion.content && !streamed) {
+      this.#emit({
+        type: "model_token",
+        runId: run.snapshot.id,
+        token: completion.content,
+      });
+    }
+    this.#emit({
+      type: "model_end",
+      runId: run.snapshot.id,
+      providerId: selection.providerId,
+      modelId: selection.modelId,
+    });
+    this.#refreshUsage(run, completion.providerId, completion.modelId);
+    return completion;
+  }
+
+  async #invokeLoopTool(
+    run: LoopRun,
+    execution: ExecutionBinding,
+    toolCall: ModelToolCall,
+  ): Promise<JsonValue> {
+    await this.#waitAtSafePoint(run);
+    if (!run.toolInvocationAllowed) {
+      throw new ToolInvocationError(
+        "forbidden",
+        `Plugin ${run.ownerPluginId} cannot invoke tools from a loop`,
+      );
+    }
+    this.#emit({
+      type: "tool_start",
+      runId: run.snapshot.id,
+      toolId: toolCall.name,
+      toolCallId: toolCall.id,
+      input: toolCall.input,
+    });
+    run.activeToolCallId = toolCall.id;
+    run.activeToolPluginId = this.tools.getProviderPluginId(
+      toolCall.name,
+      run.snapshot.id,
+    );
+    const refreshExecutionClassification = async (): Promise<void> => {
+      const summary = await execution.summary();
+      this.tools.bindExecutionClassification(
+        run.snapshot.id,
+        run.ownerPluginId,
+        execution.id,
+        summary.classification,
+      );
+    };
+    let output: JsonValue;
+    try {
+      output = await this.tools.invoke(toolCall.name, toolCall.input, {
+        callerPluginId: run.ownerPluginId,
+        runId: run.snapshot.id,
+        toolCallId: toolCall.id,
+        signal: run.controller.signal,
+        beforeAuthorization: refreshExecutionClassification,
+        beforeCommit: refreshExecutionClassification,
+        onInteraction: (interactionId) => {
+          if (!this.#announcedInteractionIds.has(interactionId)) {
+            this.#announcedInteractionIds.add(interactionId);
+            this.#update(run, { status: "waiting" });
+            this.#emit({
+              type: "interaction_wait",
+              runId: run.snapshot.id,
+              interactionId,
+              kind: "tool_approval",
+            });
+          }
+        },
+      });
+    } finally {
+      run.activeToolCallId = undefined;
+      run.activeToolPluginId = undefined;
+    }
+    run.controller.signal.throwIfAborted();
+    this.#update(run, { status: "running" });
+    this.#emit({
+      type: "tool_result",
+      runId: run.snapshot.id,
+      toolId: toolCall.name,
+      toolCallId: toolCall.id,
+      output,
+    });
+    return output;
   }
 
   async #closeOwnedExecution(

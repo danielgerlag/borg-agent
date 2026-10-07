@@ -1,4 +1,10 @@
-import type { ModelDescriptor, Persona, Skill } from "@borg-agent/contracts";
+import {
+  DEFAULT_LOOP_MAX_TURNS,
+  LOOP_MAX_TURNS_LIMIT,
+  type ModelDescriptor,
+  type Persona,
+  type Skill,
+} from "@borg-agent/contracts";
 import { Button, Checkbox, Dialog, Select, TextField } from "@borg/ui-kit";
 import type { PluginUiContext } from "@borg-agent/plugin-sdk";
 import { Plus, Star, Trash2 } from "lucide-solid";
@@ -77,6 +83,7 @@ export function createPersonasSettings(
     const [loopStrategy, setLoopStrategy] = createSignal<"react" | "code-act">(
       "react",
     );
+    const [maxTurns, setMaxTurns] = createSignal(String(DEFAULT_LOOP_MAX_TURNS));
     const [skillIds, setSkillIds] = createSignal<string[]>([]);
     const [catalogSkills, setCatalogSkills] = createSignal<readonly Skill[]>([]);
     const [allowAllTools, setAllowAllTools] = createSignal(true);
@@ -141,6 +148,7 @@ export function createPersonasSettings(
         persona.promptTemplates.map((template) => ({ ...template })),
       );
       setLoopStrategy(persona.loopStrategy);
+      setMaxTurns(String(persona.maxTurns));
       setSkillIds([...persona.skillIds]);
       setAllowAllTools(persona.allowedTools.includes("*"));
       setAllowedPatterns(
@@ -284,6 +292,17 @@ export function createPersonasSettings(
         setError("Name and instructions are required.");
         return;
       }
+      const turns = Number(maxTurns().trim());
+      if (
+        !Number.isInteger(turns) ||
+        turns < 1 ||
+        turns > LOOP_MAX_TURNS_LIMIT
+      ) {
+        setError(
+          `Turn budget must be a whole number from 1 to ${LOOP_MAX_TURNS_LIMIT}.`,
+        );
+        return;
+      }
       setBusy(true);
       setError(undefined);
       try {
@@ -298,6 +317,7 @@ export function createPersonasSettings(
           description: description().trim() || undefined,
           instructions: instructions().trim(),
           loopStrategy: loopStrategy(),
+          maxTurns: turns,
           skillIds: skillIds(),
           allowedTools: tools.length > 0 ? tools : ["*"],
           contextMapStrategy: contextMapStrategy(),
@@ -620,6 +640,18 @@ export function createPersonasSettings(
                   },
                 ]}
                 data-testid="persona-loop-strategy"
+              />
+              <TextField
+                class="mt-4"
+                label="Turn budget"
+                description={`Model rounds before the loop stops. 1 to ${LOOP_MAX_TURNS_LIMIT}.`}
+                type="number"
+                min={1}
+                max={LOOP_MAX_TURNS_LIMIT}
+                step={1}
+                value={maxTurns()}
+                onChange={setMaxTurns}
+                data-testid="persona-max-turns"
               />
 
               <div class="mt-5">
