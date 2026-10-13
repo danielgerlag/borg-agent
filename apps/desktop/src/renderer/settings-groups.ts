@@ -43,6 +43,7 @@ function inferSettingsGroup(id: string): SettingsGroupId {
   }
   if (
     id.includes("borg.chat.") ||
+    id.includes("borg.personas.") ||
     id.includes("borg.graphs.") ||
     id.includes("borg.a2a.") ||
     id.includes("borg.remote.") ||

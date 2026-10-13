@@ -9,7 +9,8 @@
     "dist"
   ],
   "dependencies": {
-    "@borg-agent/kernel": "workspace:*"
+    "@borg-agent/kernel": "workspace:*",
+    "@borg/harness": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

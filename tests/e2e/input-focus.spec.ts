@@ -91,7 +91,7 @@ test("keeps focus while typing across chat, settings, and graphs", async () => {
   });
 
   await test.step("persona name", async () => {
-    await openSettings("borg.chat.personas");
+    await openSettings("borg.personas.manage");
     await openPersonaEditor(page);
     await expectTypingKeepsFocus(page.getByTestId("persona-name"), "x");
     await closePersonaEditor(page);

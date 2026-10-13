@@ -1,5 +1,5 @@
-import { desktopDistribution } from "@borg/distribution-desktop";
-import { printBenchDistribution } from "@borg/distribution-print-bench";
+import { mkdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import {
   KERNEL_VERSION,
   createKernel,
@@ -24,9 +24,15 @@ import { pathToFileURL } from "node:url";
 import { bundledMainPlugins } from "./bundled-plugins";
 import { installEmbeddedContentProtocol } from "./embedded-content-protocol";
 import { registerIpcBridge } from "./ipc";
+import {
+  argvRequestsUserDataDir,
+  REFERENCE_DISTRIBUTION_ID,
+  userDataDirectoryForDistribution,
+} from "./user-data";
 
 const startedAt = new Date().toISOString();
 const shellCapability = randomUUID();
+const hostRequire = createRequire(__filename);
 const rendererFile = path.join(__dirname, "../renderer/index.html");
 const rendererUrl = pathToFileURL(rendererFile).href;
 const rendererRecoveryUrl = `data:text/html;charset=utf-8,${encodeURIComponent(`
@@ -283,10 +289,23 @@ function createMainWindow(): BrowserWindow {
   });
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  window.webContents.on("will-navigate", (event) => {
-    if (event.url !== window.webContents.getURL()) {
-      event.preventDefault();
+  window.webContents.on("will-navigate", (event, url) => {
+    if (url === window.webContents.getURL()) {
+      return;
     }
+    const devServer = process.env.BORG_RENDERER_URL;
+    if (devServer) {
+      const target = new URL(url);
+      const expected = new URL(devServer.endsWith("/") ? devServer : `${devServer}/`);
+      if (
+        target.protocol === expected.protocol &&
+        target.host === expected.host &&
+        target.pathname === expected.pathname
+      ) {
+        return;
+      }
+    }
+    event.preventDefault();
   });
   window.on("close", (event) => {
     if (!quitting) {
@@ -321,25 +340,59 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
+function isDistribution(value: unknown): value is Distribution {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as { id?: unknown; plugins?: unknown };
+  return typeof record.id === "string" && Array.isArray(record.plugins);
+}
+
+function loadHostDistributions(): readonly Distribution[] {
+  const manifest = JSON.parse(
+    readFileSync(path.join(__dirname, "../../package.json"), "utf8"),
+  ) as { dependencies?: Record<string, string> };
+  const found = new Map<string, Distribution>();
+  for (const name of Object.keys(manifest.dependencies ?? {})) {
+    if (!name.startsWith("@borg/distribution-")) {
+      continue;
+    }
+    const loaded = hostRequire(name) as Record<string, unknown>;
+    for (const value of Object.values(loaded)) {
+      if (isDistribution(value) && !found.has(value.id)) {
+        found.set(value.id, value);
+      }
+    }
+  }
+  return [...found.values()];
+}
+
+const hostDistributions = loadHostDistributions();
+
 function hostDistribution(): Distribution {
-  const requested = process.env.BORG_DISTRIBUTION ?? desktopDistribution.id;
-  if (requested === desktopDistribution.id) {
-    return desktopDistribution;
+  const requested = process.env.BORG_DISTRIBUTION ?? REFERENCE_DISTRIBUTION_ID;
+  const match = hostDistributions.find((distribution) => distribution.id === requested);
+  if (!match) {
+    throw new Error(`Unknown Borg distribution ${requested}`);
   }
-  if (requested === printBenchDistribution.id) {
-    return printBenchDistribution;
-  }
-  throw new Error(`Unknown Borg distribution ${requested}`);
+  return match;
+}
+
+function workspaceHash(): string | undefined {
+  const requested = process.env.BORG_WORKSPACE;
+  return requested !== undefined && /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(requested)
+    ? requested
+    : undefined;
 }
 
 function loadMainWindow(window: BrowserWindow): void {
-  const requested = process.env.BORG_WORKSPACE;
-  const hash =
-    requested !== undefined && /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(requested)
-      ? requested
-      : undefined;
-  const loaded =
-    hash === undefined
+  const hash = workspaceHash();
+  const devServer = process.env.BORG_RENDERER_URL;
+  const loaded = devServer
+    ? window.loadURL(
+        `${devServer.endsWith("/") ? devServer : `${devServer}/`}${hash ? `#${hash}` : ""}`,
+      )
+    : hash === undefined
       ? window.loadFile(rendererFile)
       : window.loadFile(rendererFile, { hash });
   void loaded
@@ -434,6 +487,20 @@ function installTestApi(): void {
     trayToolTip: () => currentTrayToolTip,
     trayIconIsEmpty: () => currentTrayIconIsEmpty,
   };
+}
+
+const isolatedUserData = userDataDirectoryForDistribution({
+  appData: app.getPath("appData"),
+  distributionId: hostDistribution().id,
+  explicitUserDataDir:
+    app.commandLine.getSwitchValue("user-data-dir") !== "" ||
+    argvRequestsUserDataDir(process.argv),
+});
+if (isolatedUserData !== undefined) {
+  // setPath throws when the directory is missing, and the single-instance lock uses it.
+  mkdirSync(isolatedUserData, { recursive: true });
+  app.setPath("userData", isolatedUserData);
+  app.setPath("sessionData", isolatedUserData);
 }
 
 if (!app.requestSingleInstanceLock()) {

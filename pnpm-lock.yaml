@@ -151,9 +151,15 @@ importers:
       '@borg/distribution-desktop':
         specifier: workspace:*
         version: link:../../distributions/desktop
+      '@borg/distribution-hello-world':
+        specifier: workspace:*
+        version: link:../../distributions/hello-world
       '@borg/distribution-print-bench':
         specifier: workspace:*
         version: link:../../distributions/print-bench
+      '@borg/example-hello-world':
+        specifier: workspace:*
+        version: link:../../examples/hello-world
       '@borg/example-print-bench':
         specifier: workspace:*
         version: link:../../examples/print-bench
@@ -232,6 +238,9 @@ importers:
       '@borg/plugin-openrouter':
         specifier: workspace:*
         version: link:../../plugins/openrouter
+      '@borg/plugin-personas':
+        specifier: workspace:*
+        version: link:../../plugins/personas
       '@borg/plugin-remote':
         specifier: workspace:*
         version: link:../../plugins/remote
@@ -297,11 +306,23 @@ importers:
         specifier: workspace:*
         version: link:../../packages/kernel
 
+  distributions/hello-world:
+    dependencies:
+      '@borg-agent/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@borg/harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
+
   distributions/print-bench:
     dependencies:
       '@borg-agent/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@borg/harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
 
   examples/headless:
     dependencies:
@@ -321,6 +342,30 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/secrets-dev
 
+  examples/hello-world:
+    dependencies:
+      '@borg-agent/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg-agent/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@borg-agent/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+
   examples/print-bench:
     dependencies:
       '@borg-agent/contracts':
@@ -332,6 +377,40 @@ importers:
       '@borg-agent/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+      '@borg/harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
+      three:
+        specifier: ^0.170.0
+        version: 0.170.0
+    devDependencies:
+      '@types/three':
+        specifier: 0.170.0
+        version: 0.170.0
+
+  packages/contracts:
+    dependencies:
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+
+  packages/harness:
+    dependencies:
+      '@borg-agent/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@borg-agent/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
       '@borg/plugin-anthropic':
         specifier: workspace:*
         version: link:../../plugins/anthropic
@@ -359,31 +438,21 @@ importers:
       '@borg/plugin-openrouter':
         specifier: workspace:*
         version: link:../../plugins/openrouter
+      '@borg/plugin-personas':
+        specifier: workspace:*
+        version: link:../../plugins/personas
       '@borg/plugin-secrets-dev':
         specifier: workspace:*
         version: link:../../plugins/secrets-dev
+      '@borg/plugin-secrets-os':
+        specifier: workspace:*
+        version: link:../../plugins/secrets-os
       '@borg/plugin-security-prompt-injection':
         specifier: workspace:*
         version: link:../../plugins/security-prompt-injection
-      '@borg/ui-kit':
+      '@borg/plugin-themes':
         specifier: workspace:*
-        version: link:../../packages/ui-kit
-      solid-js:
-        specifier: ^1.9.15
-        version: 1.9.15
-      three:
-        specifier: ^0.170.0
-        version: 0.170.0
-    devDependencies:
-      '@types/three':
-        specifier: 0.170.0
-        version: 0.170.0
-
-  packages/contracts:
-    dependencies:
-      zod:
-        specifier: 4.6.5
-        version: 4.6.5
+        version: link:../../plugins/themes
 
   packages/kernel:
     dependencies:
@@ -912,6 +981,24 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  plugins/personas:
+    dependencies:
+      '@borg-agent/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@borg-agent/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@borg/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+      lucide-solid:
+        specifier: ^1.34.0
+        version: 1.34.0(solid-js@1.9.15)
+      solid-js:
+        specifier: ^1.9.15
+        version: 1.9.15
 
   plugins/remote:
     dependencies:

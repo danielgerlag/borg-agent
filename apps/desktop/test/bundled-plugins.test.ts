@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { desktopDistribution } from "@borg/distribution-desktop";
+import { helloWorldDistribution } from "@borg/distribution-hello-world";
 import { printBenchDistribution } from "@borg/distribution-print-bench";
 import { bundledMainPlugins } from "../src/main/bundled-plugins";
 import { bundledUiPlugins } from "../src/renderer/bundled-ui-plugins";
@@ -8,6 +9,7 @@ function bundledPluginIds(): string[] {
   return [
     ...new Set([
       ...desktopDistribution.plugins.map((plugin) => plugin.id),
+      ...helloWorldDistribution.plugins.map((plugin) => plugin.id),
       ...printBenchDistribution.plugins.map((plugin) => plugin.id),
     ]),
   ].sort((left, right) => left.localeCompare(right));
@@ -35,6 +37,7 @@ const baselineUiIds = [
   "borg.ollama",
   "borg.openai",
   "borg.openrouter",
+  "borg.personas",
   "borg.remote",
   "borg.search.brave",
   "borg.search.tavily",
@@ -42,6 +45,7 @@ const baselineUiIds = [
   "borg.secrets.os",
   "borg.themes",
   "borg.usage",
+  "example.hello-world",
   "example.print-bench",
 ] as const;
 

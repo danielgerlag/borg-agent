@@ -345,7 +345,7 @@ test("answers feedback in the shared interaction UI and finishes in thread", asy
 
 test("edits a persona in a dialog without growing the settings page", async () => {
   await page.getByTestId("nav-settings").click();
-  await page.getByTestId("settings-section-borg.chat.personas").click();
+  await page.getByTestId("settings-section-borg.personas.manage").click();
   await expect(page.getByTestId("personas-settings-page")).toBeVisible();
   await expect(page.getByTestId("persona-editor")).not.toBeVisible();
 
@@ -399,7 +399,7 @@ test("edits a persona in a dialog without growing the settings page", async () =
 
 test("creates a persona and uses it for new chats", async () => {
   await page.getByTestId("nav-settings").click();
-  await page.getByTestId("settings-section-borg.chat.personas").click();
+  await page.getByTestId("settings-section-borg.personas.manage").click();
   await expect(page.getByTestId("personas-settings-page")).toBeVisible();
   await page.getByTestId("persona-new").click();
   await page.getByTestId("settings-persona-name").fill("Code reviewer");

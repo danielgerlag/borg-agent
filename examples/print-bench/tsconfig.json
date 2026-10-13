@@ -6,5 +6,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/boot.ts", "src/catalog.ts", "src/renderer/**"]
+  "exclude": ["src/boot.ts", "src/renderer/**"]
 }

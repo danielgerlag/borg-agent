@@ -64,8 +64,6 @@ import {
   type ChatLiveActivity,
 } from "./chat-activity";
 import { PersonaMark } from "./persona-mark";
-import { createPersonaWizardStep } from "./persona-setup";
-import { createPersonasSettings } from "./personas-settings";
 import { createSkillsSettings } from "./skills-settings";
 
 type ChatDocument = z.infer<typeof chatDocumentSchema>;
@@ -162,8 +160,6 @@ function embeddedContent(
 export default defineUiPlugin<Component>({
   id: "borg.chat",
   activate(context) {
-    const [personaReady, setPersonaReady] = createSignal(false);
-
     const EmbeddedContent: Component<{
       readonly content: EmbeddedContentSnapshot;
     }> = (props) => {
@@ -1780,20 +1776,6 @@ export default defineUiPlugin<Component>({
       placement: "primary",
       component: ChatWorkspace,
     });
-    const wizard = context.ui.registerWizardStep({
-      id: "borg.chat.persona",
-      label: "Choose persona",
-      order: 30,
-      required: true,
-      isComplete: personaReady,
-      component: createPersonaWizardStep(context, setPersonaReady),
-    });
-    const settings = context.ui.registerSettingsPage({
-      id: "borg.chat.personas",
-      label: "Personas",
-      order: 10,
-      component: createPersonasSettings(context),
-    });
     const skillsSettings = context.ui.registerSettingsPage({
       id: "borg.chat.skills",
       label: "Skills",
@@ -1810,8 +1792,6 @@ export default defineUiPlugin<Component>({
       dispose: async () => {
         await widget.dispose();
         await skillsSettings.dispose();
-        await settings.dispose();
-        await wizard.dispose();
         await workspace.dispose();
       },
     };

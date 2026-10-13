@@ -121,13 +121,13 @@ corepack pnpm test:e2e
 
 **Contracts** (`packages/contracts`, `@borg-agent/contracts`). The root export holds `defineCommand`, `defineEvent`, and the schemas the kernel uses, including the MCP server config that personas embed. It defines no plugin commands, and its only event is the kernel-guarded `borg.channel.inboundMessage`. Five subpaths hold schemas that several plugins share: `@borg-agent/contracts/calendar`, `/connector-accounts`, `/contacts`, `/drive`, and `/web-search`. Commands, events, and schemas that belong to one plugin ship from that plugin's `@borg/plugin-<name>/contract` export.
 
-**Plugins** (`plugins/*`). One package per plugin, 35 in total: model providers, message channels, tools, search, MCP, storage, security scanning, and UI features.
+**Plugins** (`plugins/*`). One package per plugin, 36 in total: model providers, message channels, tools, search, MCP, storage, security scanning, and UI features.
 
-**Distributions** (`distributions/*`). `defineDistribution()` definitions that a host passes to `createKernel()`. `borg.desktop` in `distributions/desktop` is the reference app. `borg.print-bench` in `distributions/print-bench` is the print design harness.
+**Distributions** (`distributions/*`). Definitions a host passes to `createKernel()`. `borg.desktop` in `distributions/desktop` is the reference app. A workplace such as `borg.print-bench` calls `defineHarness()` from `@borg/harness`, which adds the platform spine and then the domain plugins. The desktop host loads every installed `@borg/distribution-*` package.
 
-**Desktop app** (`apps/desktop`). The Electron host. With no distribution selected it runs `borg.desktop`. `examples/print-bench` starts the same host on `borg.print-bench`. `tests/e2e` holds its Playwright specs.
+**Desktop app** (`apps/desktop`). The Electron host. With no distribution selected it runs `borg.desktop`. `examples/print-bench` starts the same host on `borg.print-bench`. `examples/hello-world` starts it on `borg.hello-world`. `tests/e2e` holds its Playwright specs.
 
-**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above. `examples/print-bench` is the print design bench. From that folder, `npm start` builds it and opens Design. Chat, Bots, and Graphs stay plugins in the reference app.
+**Examples** (`examples/*`). Built and tested with the rest of the workspace. `examples/headless` is the example above. `examples/print-bench` is the print design bench. From that folder, `npm start` opens Design in the desktop host against the Vite dev server. `examples/hello-world` is a chat whose tools read and write only inside that chat's folder. From that folder, `npm start` opens Hello world. Chat, Bots, and Graphs stay plugins in the reference app.
 
 ## Boundaries
 
@@ -139,7 +139,7 @@ corepack pnpm test:e2e
 
 ## Desktop app
 
-The desktop app runs the `borg.desktop` distribution, which bundles the 35 plugins. Closing the window hides it to the tray. Setup and feature detail is in [docs/desktop.md](docs/desktop.md). The print harness runs `borg.print-bench`: Design, provider setup, storage, and feedback. It does not load Chat, Bots, or Graphs. The host bundles the union of both distributions so either one can start.
+The desktop app runs the `borg.desktop` distribution, which bundles the 36 plugins. Closing the window hides it to the tray. Setup and feature detail is in [docs/desktop.md](docs/desktop.md). The print harness runs `borg.print-bench`: Design, personas, provider setup, storage, and feedback. It does not load Chat, Bots, or Graphs. The hello world harness runs `borg.hello-world`: a chat folder, personas, provider setup, and file tools that stay inside that folder. Each distribution keeps its own profile. `borg.desktop` stays in the `@borg/desktop` user-data directory. Print bench and Hello world use `borg.print-bench` and `borg.hello-world` under the system app-data folder. The host bundles the union of the installed distributions so any of them can start.
 
 - **First run.** A guided setup verifies secure storage, takes optional provider keys, and picks an assistant. You can skip the cloud providers and use the built-in scripted model. Setup ends in Chat, which shows token and cost totals per conversation. **Settings → Plugins** turns bundled plugins off.
 - **MCP and MCP Apps.** MCP servers are configured per persona under **Settings → MCP**, over stdio or HTTP. Every MCP tool call asks for approval. MCP App HTML renders in a sandbox that blocks undeclared network access, nested frames, forms, downloads, and Node access.

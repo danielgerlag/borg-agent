@@ -28,6 +28,7 @@ export const bundledUiPlugins: Readonly<Record<string, UiPluginLoader>> = {
   "borg.ollama": async () => import("@borg/plugin-ollama/ui"),
   "borg.openai": async () => import("@borg/plugin-openai/ui"),
   "borg.openrouter": async () => import("@borg/plugin-openrouter/ui"),
+  "borg.personas": async () => import("@borg/plugin-personas/ui"),
   "borg.remote": async () => import("@borg/plugin-remote/ui"),
   "borg.search.brave": async () => import("@borg/plugin-search-brave/ui"),
   "borg.search.tavily": async () => import("@borg/plugin-search-tavily/ui"),
@@ -35,5 +36,6 @@ export const bundledUiPlugins: Readonly<Record<string, UiPluginLoader>> = {
   "borg.secrets.os": async () => import("@borg/plugin-secrets-os/ui"),
   "borg.themes": async () => import("@borg/plugin-themes/ui"),
   "borg.usage": async () => import("@borg/plugin-usage/ui"),
+  "example.hello-world": async () => import("@borg/example-hello-world/ui"),
   "example.print-bench": async () => import("@borg/example-print-bench/ui"),
 };

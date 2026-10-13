@@ -15,30 +15,23 @@
     "id": "example.print-bench",
     "manifest": "borg.plugin.json",
     "main": "/main",
-    "ui": "/ui"
+    "ui": "/ui",
+    "distribution": "borg.print-bench",
+    "workspace": "example.print-bench.design"
   },
   "dependencies": {
     "@borg-agent/contracts": "workspace:*",
     "@borg-agent/kernel": "workspace:*",
     "@borg-agent/plugin-sdk": "workspace:*",
-    "@borg/plugin-anthropic": "workspace:*",
-    "@borg/plugin-azure": "workspace:*",
-    "@borg/plugin-config-sqlite": "workspace:*",
-    "@borg/plugin-copilot": "workspace:*",
-    "@borg/plugin-feedback": "workspace:*",
-    "@borg/plugin-mock-llm": "workspace:*",
-    "@borg/plugin-ollama": "workspace:*",
-    "@borg/plugin-openai": "workspace:*",
-    "@borg/plugin-openrouter": "workspace:*",
-    "@borg/plugin-secrets-dev": "workspace:*",
-    "@borg/plugin-security-prompt-injection": "workspace:*",
+    "@borg/harness": "workspace:*",
     "@borg/ui-kit": "workspace:*",
+    "lucide-solid": "^1.34.0",
     "solid-js": "^1.9.15",
     "three": "^0.170.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node start.cjs",
+    "start": "node ../../scripts/dev-harness.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit && tsc -p tsconfig.boot.json --noEmit"
   },
   "devDependencies": {

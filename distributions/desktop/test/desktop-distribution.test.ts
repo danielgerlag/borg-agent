@@ -28,6 +28,7 @@ const baselinePluginIds = [
   "borg.ollama",
   "borg.openai",
   "borg.openrouter",
+  "borg.personas",
   "borg.remote",
   "borg.search.brave",
   "borg.search.tavily",

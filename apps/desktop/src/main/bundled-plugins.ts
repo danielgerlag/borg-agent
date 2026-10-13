@@ -847,6 +847,32 @@ export const bundledMainPlugins: readonly PluginSource[] = [
   },
   {
     manifest: {
+      "id": "borg.personas",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/plugin-personas/main",
+      "ui": "@borg/plugin-personas/ui",
+      "permissions": [
+        "models.read",
+        "personas.read",
+        "personas.write",
+        "ui.settings",
+        "ui.wizard"
+      ],
+      "contributes": {
+        "kinds": [
+          "settingsPage",
+          "wizardStep"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/plugin-personas/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
       "id": "borg.remote",
       "version": "0.1.0",
       "engines": {
@@ -1099,6 +1125,39 @@ export const bundledMainPlugins: readonly PluginSource[] = [
     },
     loadMain: async () =>
       (require("@borg/plugin-usage/main") as { default: PluginDefinition }).default,
+  },
+  {
+    manifest: {
+      "id": "example.hello-world",
+      "version": "0.1.0",
+      "engines": {
+        "borg": "^0.1.0"
+      },
+      "main": "@borg/example-hello-world/main",
+      "ui": "@borg/example-hello-world/ui",
+      "permissions": [
+        "tools.register",
+        "tools.invoke",
+        "loops.start",
+        "personas.read",
+        "personas.write",
+        "workspace.manage",
+        "fs:sessionWorkspace",
+        "ui.workspace"
+      ],
+      "contributes": {
+        "commands": [
+          "example.hello-world.snapshot",
+          "example.hello-world.act"
+        ],
+        "kinds": [
+          "tool",
+          "workspaceView"
+        ]
+      }
+    },
+    loadMain: async () =>
+      (require("@borg/example-hello-world/main") as { default: PluginDefinition }).default,
   },
   {
     manifest: {

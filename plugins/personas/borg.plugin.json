@@ -1,0 +1,22 @@
+{
+  "id": "borg.personas",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/plugin-personas/main",
+  "ui": "@borg/plugin-personas/ui",
+  "permissions": [
+    "models.read",
+    "personas.read",
+    "personas.write",
+    "ui.settings",
+    "ui.wizard"
+  ],
+  "contributes": {
+    "kinds": [
+      "settingsPage",
+      "wizardStep"
+    ]
+  }
+}

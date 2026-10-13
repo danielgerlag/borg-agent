@@ -56,7 +56,7 @@ export function createPersonaWizardStep(
       setPersonaReady(model !== undefined);
       setStatus(
         model
-          ? "This persona will be used for new chats."
+          ? "This persona will be used for new work."
           : "This persona needs a connected model.",
       );
     };
@@ -126,7 +126,7 @@ export function createPersonaWizardStep(
             <h3 class="text-xl font-semibold">Choose a persona</h3>
             <p class="mt-1 text-sm text-[var(--text-muted)]">
               A persona is who Borg is: instructions, preferred models, and
-              tools. New chats use the default persona.
+              tools. New work uses the default persona.
             </p>
           </div>
         </div>

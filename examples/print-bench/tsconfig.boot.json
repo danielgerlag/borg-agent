@@ -6,5 +6,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/boot.ts", "src/catalog.ts"]
+  "include": ["src/boot.ts"]
 }

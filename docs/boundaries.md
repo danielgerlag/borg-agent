@@ -23,7 +23,7 @@ node scripts/check-native-form-controls.mjs
 - `packages/contracts/src` may import `zod` and relative files inside that directory.
 - `packages/kernel/src` and `packages/plugin-sdk/src` may import `@borg-agent/contracts` only as the bare specifier `@borg-agent/contracts`. A capability subpath fails. Those packages may import no `@borg/plugin-*` package other than `@borg-agent/plugin-sdk`. Relative imports must stay inside that package's `src`.
 - `packages/kernel`, `packages/plugin-sdk`, and `packages/contracts` must not list or import an `@borg/distribution-*` package. The dependency check covers `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`.
-- A distribution's `src` may import `@borg-agent/kernel`, `zod`, and relative files inside that directory.
+- A distribution's `src` may import `@borg-agent/kernel`, `@borg/harness`, `zod`, and relative files inside that directory.
 
 **Contracts root.** Every `packages/contracts` export other than `.` must point at `./dist/<name>.js`. The import graph from `packages/contracts/src/index.ts` must not reach `packages/contracts/src/<name>.ts` for any of those subpaths. The subpaths are `./calendar`, `./connector-accounts`, `./contacts`, `./drive`, and `./web-search`.
 

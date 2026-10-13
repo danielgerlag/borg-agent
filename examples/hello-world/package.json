@@ -1,0 +1,35 @@
+{
+  "name": "@borg/example-hello-world",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
+  "exports": {
+    "./borg.plugin.json": "./borg.plugin.json",
+    "./main": "./dist/main.js",
+    "./ui": "./src/ui.tsx"
+  },
+  "borg": {
+    "id": "example.hello-world",
+    "manifest": "borg.plugin.json",
+    "main": "/main",
+    "ui": "/ui",
+    "distribution": "borg.hello-world",
+    "workspace": "example.hello-world.chat"
+  },
+  "dependencies": {
+    "@borg-agent/contracts": "workspace:*",
+    "@borg-agent/kernel": "workspace:*",
+    "@borg-agent/plugin-sdk": "workspace:*",
+    "@borg/harness": "workspace:*",
+    "@borg/ui-kit": "workspace:*",
+    "lucide-solid": "^1.34.0",
+    "solid-js": "^1.9.15"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node ../../scripts/dev-harness.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit && tsc -p tsconfig.boot.json --noEmit"
+  }
+}

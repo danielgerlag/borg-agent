@@ -12,6 +12,7 @@ const harnessPluginIds = [
   "borg.ollama",
   "borg.openai",
   "borg.openrouter",
+  "borg.personas",
   "borg.secrets.dev",
   "borg.secrets.os",
   "borg.security.prompt-injection",

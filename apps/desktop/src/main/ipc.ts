@@ -407,6 +407,22 @@ function failure(error: unknown): IpcFailure {
   };
 }
 
+function devRendererUrl(): URL | undefined {
+  const devServer = process.env.BORG_RENDERER_URL;
+  if (!devServer) {
+    return undefined;
+  }
+  return new URL(devServer.endsWith("/") ? devServer : `${devServer}/`);
+}
+
+function sameDocument(left: URL, right: URL): boolean {
+  return (
+    left.protocol === right.protocol &&
+    left.host === right.host &&
+    left.pathname === right.pathname
+  );
+}
+
 function assertTrustedSender(
   event: IpcMainInvokeEvent | IpcMainEvent,
   getMainWindow: () => BrowserWindow | undefined,
@@ -422,12 +438,12 @@ function assertTrustedSender(
     throw new Error("IPC request did not originate from the Borg main frame");
   }
   const senderUrl = new URL(event.senderFrame.url);
-  const expectedUrl = new URL(rendererUrl);
-  if (
-    senderUrl.protocol !== expectedUrl.protocol ||
-    senderUrl.host !== expectedUrl.host ||
-    senderUrl.pathname !== expectedUrl.pathname
-  ) {
+  const accepted = [new URL(rendererUrl)];
+  const devUrl = devRendererUrl();
+  if (devUrl) {
+    accepted.push(devUrl);
+  }
+  if (!accepted.some((expected) => sameDocument(senderUrl, expected))) {
     throw new Error("IPC request did not originate from the Borg main frame");
   }
 }

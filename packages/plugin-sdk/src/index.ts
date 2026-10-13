@@ -962,6 +962,8 @@ export interface WorkspaceViewContribution<TComponent = unknown> {
   readonly label: string;
   readonly order?: number;
   readonly placement?: "primary" | "developer";
+  /** Rail icon. The shell draws a default when this is omitted. */
+  readonly icon?: (props: { readonly size?: number }) => unknown;
   readonly component: TComponent;
 }
 

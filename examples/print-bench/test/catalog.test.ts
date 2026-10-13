@@ -6,61 +6,82 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { benchPlugins } from "../src/catalog.js";
+import { HARNESS_PLUGIN_PACKAGES } from "@borg/harness";
 import { printBenchPluginIds } from "../src/boot.js";
 
 const require = createRequire(import.meta.url);
+const harnessRequire = createRequire(require.resolve("@borg/harness/package.json"));
 
 const packageJson = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-) as { dependencies?: Record<string, string>; scripts?: { start?: string } };
+) as {
+  dependencies?: Record<string, string>;
+  scripts?: { start?: string };
+  borg?: { distribution?: string; workspace?: string };
+};
+
+const harnessPackage = JSON.parse(
+  readFileSync(
+    require.resolve("@borg/harness/package.json"),
+    "utf8",
+  ),
+) as { dependencies?: Record<string, string> };
 
 describe("print bench plugin catalog", () => {
   it("opens Design from npm start in this folder", () => {
-    expect(packageJson.scripts?.start).toBe("node start.cjs");
+    expect(packageJson.scripts?.start).toBe("node ../../scripts/dev-harness.mjs");
+    expect(packageJson.borg?.distribution).toBe("borg.print-bench");
+    expect(packageJson.borg?.workspace).toBe("example.print-bench.design");
   });
 
-  it("boots the catalog ids and then the bench itself", () => {
+  it("boots the harness spine with the dev secret store, then the bench", () => {
     expect(printBenchPluginIds()).toEqual([
-      "borg.config.sqlite",
-      "borg.secrets.dev",
-      "borg.security.prompt-injection",
-      "borg.feedback",
       "borg.anthropic",
       "borg.azure",
+      "borg.config.sqlite",
       "borg.copilot",
+      "borg.feedback",
       "borg.mock-llm",
       "borg.ollama",
       "borg.openai",
       "borg.openrouter",
+      "borg.personas",
+      "borg.secrets.dev",
+      "borg.security.prompt-injection",
+      "borg.themes",
       "example.print-bench",
     ]);
   });
 
-  it("depends on each hosted plugin and no other plugin package", () => {
+  it("leaves the platform packages on the harness and out of this example", () => {
     const dependencies = packageJson.dependencies ?? {};
-    const catalogPackages = benchPlugins.map((plugin) => plugin.packageName);
-    const pluginDependencies = Object.keys(dependencies).filter((name) =>
-      name.startsWith("@borg/plugin-"),
-    );
-    expect(pluginDependencies.sort()).toEqual([...catalogPackages].sort());
-    for (const packageName of catalogPackages) {
-      expect(dependencies[packageName]).toBe("workspace:*");
+    expect(
+      Object.keys(dependencies).filter((name) => name.startsWith("@borg/plugin-")),
+    ).toEqual([]);
+    expect(dependencies["@borg/harness"]).toBe("workspace:*");
+    const spineIds = printBenchPluginIds().filter((id) => id !== "example.print-bench");
+    for (const id of spineIds) {
+      const packageName = HARNESS_PLUGIN_PACKAGES[id];
+      expect(packageName, id).toBeTruthy();
+      expect(harnessPackage.dependencies?.[packageName ?? ""]).toBe("workspace:*");
     }
+    expect(harnessPackage.dependencies?.["@borg/plugin-chat"]).toBeUndefined();
+    expect(harnessPackage.dependencies?.["@borg/plugin-bots"]).toBeUndefined();
+    expect(harnessPackage.dependencies?.["@borg/plugin-graphs"]).toBeUndefined();
   });
 
-  it("reads each manifest from the package export", () => {
-    for (const plugin of benchPlugins) {
-      const mainPath = require.resolve(`${plugin.packageName}/main`);
-      const declared = JSON.parse(
-        readFileSync(join(dirname(mainPath), "..", "package.json"), "utf8"),
-      ) as { borg?: { id?: string }; exports?: Record<string, string> };
-      expect(declared.borg?.id).toBe(plugin.manifest.id);
-      expect(declared.exports?.["./borg.plugin.json"]).toBe("./borg.plugin.json");
-      const exported = require.resolve(`${plugin.packageName}/borg.plugin.json`);
-      expect(JSON.parse(readFileSync(exported, "utf8"))).toMatchObject({
-        id: plugin.manifest.id,
-      });
+  it("reads each spine manifest from the package", () => {
+    for (const id of printBenchPluginIds()) {
+      if (id === "example.print-bench") {
+        continue;
+      }
+      const packageName = HARNESS_PLUGIN_PACKAGES[id];
+      expect(packageName).toBeTruthy();
+      const mainPath = harnessRequire.resolve(`${packageName}/main`);
+      const manifest = JSON.parse(
+        readFileSync(join(dirname(mainPath), "..", "borg.plugin.json"), "utf8"),
+      ) as { id?: string };
+      expect(manifest.id).toBe(id);
     }
   });
 });

@@ -98,8 +98,12 @@ export async function completeSetup(
   await page.getByTestId("setup-continue").click();
 
   if (openedWorkspace === "example.print-bench.design") {
+    await skipOptionalLlmSetupSteps(page, "persona");
+    await expect(page.getByTestId("wizard-persona-step")).toBeVisible();
+    await expect(page.getByTestId("wizard-model-select")).not.toHaveValue("");
+    await page.getByTestId("setup-continue").click();
+    await skipOptionalLlmSetupSteps(page, "ready");
     await expect(page.getByTestId("setup-ready")).toBeVisible();
-    await expect(page.getByTestId("wizard-persona-step")).toHaveCount(0);
     await page.getByTestId("setup-complete").click();
     await expect(page.getByTestId("print-bench-design-title")).toBeVisible();
     return;

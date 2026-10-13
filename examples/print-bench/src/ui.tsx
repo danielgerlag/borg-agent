@@ -3,6 +3,7 @@
  */
 
 import { defineUiPlugin } from "@borg-agent/plugin-sdk";
+import { Box } from "lucide-solid";
 import { createSignal, onCleanup, onMount, Show, type Component } from "solid-js";
 import {
   printBenchAct,
@@ -99,6 +100,7 @@ export default defineUiPlugin<Component>({
       label: "Design",
       order: 20,
       placement: "primary",
+      icon: Box,
       component: DesignWorkspace,
     });
   },

@@ -1,0 +1,29 @@
+{
+  "id": "example.hello-world",
+  "version": "0.1.0",
+  "engines": {
+    "borg": "^0.1.0"
+  },
+  "main": "@borg/example-hello-world/main",
+  "ui": "@borg/example-hello-world/ui",
+  "permissions": [
+    "tools.register",
+    "tools.invoke",
+    "loops.start",
+    "personas.read",
+    "personas.write",
+    "workspace.manage",
+    "fs:sessionWorkspace",
+    "ui.workspace"
+  ],
+  "contributes": {
+    "commands": [
+      "example.hello-world.snapshot",
+      "example.hello-world.act"
+    ],
+    "kinds": [
+      "tool",
+      "workspaceView"
+    ]
+  }
+}

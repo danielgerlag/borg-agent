@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -8,35 +9,58 @@ const desktopPackageJsonPath = path.join(projectRoot, "apps/desktop/package.json
 
 const requireFromDesktop = createRequire(desktopPackageJsonPath);
 
-function loadDistribution(packageName, exportName) {
-  let loaded;
-  try {
-    loaded = requireFromDesktop(packageName);
-  } catch (error) {
-    throw new Error(
-      `Could not load ${packageName}. Build the distribution package before generating bundled plugins.`,
-      { cause: error },
-    );
-  }
-  const distribution = loaded?.[exportName];
-  if (!distribution || !Array.isArray(distribution.plugins)) {
-    throw new Error(`${packageName} did not export ${exportName}.plugins`);
-  }
-  return distribution.plugins.map((entry) => {
-    if (typeof entry === "string") {
-      return entry;
-    }
-    if (entry && typeof entry.id === "string") {
-      return entry.id;
-    }
-    throw new Error(`${packageName} has a plugin entry without an id`);
-  });
+function isDistribution(value) {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof value.id === "string" &&
+    Array.isArray(value.plugins)
+  );
 }
 
-const declaredIds = [
-  ...loadDistribution("@borg/distribution-desktop", "desktopDistribution"),
-  ...loadDistribution("@borg/distribution-print-bench", "printBenchDistribution"),
-];
+function pluginId(entry, packageName) {
+  if (typeof entry === "string") {
+    return entry;
+  }
+  if (entry && typeof entry.id === "string") {
+    return entry.id;
+  }
+  throw new Error(`${packageName} has a plugin entry without an id`);
+}
+
+function declaredPluginIds() {
+  const desktopPackage = JSON.parse(readFileSync(desktopPackageJsonPath, "utf8"));
+  const ids = [];
+  for (const name of Object.keys(desktopPackage.dependencies ?? {}).sort()) {
+    if (!name.startsWith("@borg/distribution-")) {
+      continue;
+    }
+    let loaded;
+    try {
+      loaded = requireFromDesktop(name);
+    } catch (error) {
+      throw new Error(
+        `Could not load ${name}. Build the distribution package before generating bundled plugins.`,
+        { cause: error },
+      );
+    }
+    const distributions = Object.values(loaded).filter(isDistribution);
+    if (distributions.length === 0) {
+      throw new Error(`${name} did not export a distribution`);
+    }
+    for (const distribution of distributions) {
+      for (const entry of distribution.plugins) {
+        ids.push(pluginId(entry, name));
+      }
+    }
+  }
+  if (ids.length === 0) {
+    throw new Error("apps/desktop has no @borg/distribution-* dependencies");
+  }
+  return ids;
+}
+
+const declaredIds = declaredPluginIds();
 const declaredIdSet = new Set(declaredIds);
 
 async function discoverPackages(directory) {

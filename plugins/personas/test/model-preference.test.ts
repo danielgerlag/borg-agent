@@ -4,7 +4,7 @@ import {
   matchesModelPreference,
 } from "../src/model-preference";
 
-describe("chat model preferences", () => {
+describe("persona model preferences", () => {
   it("labels models with their provider", () => {
     expect(
       displayModelName({

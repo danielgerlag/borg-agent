@@ -14,7 +14,6 @@ import { Button, Panel } from "@borg/ui-kit";
 import {
   Activity,
   Bot,
-  Box,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -242,7 +241,10 @@ export const App: Component<AppProps> = (props) => {
             blockedStepIndex={firstIncompleteWizardIndex()}
             canContinue={canContinue()}
             completing={completingSetup()}
-            hasChat={primaryViews().some((view) => view.id === "borg.chat.workspace")}
+            chatWorkplace={primaryViews().some(
+              (view) => view.id === "borg.chat.workspace",
+            )}
+            workplaceLabel={primaryViews()[0]?.label ?? "your workspace"}
             pluginErrors={[
               ...props.pluginErrors,
               ...wizardReadinessErrors(),
@@ -280,7 +282,7 @@ export const App: Component<AppProps> = (props) => {
                         : `workspace-view-tab-${view.id}`
                     }
                     onClick={() => openWorkspace(view.id)}
-                    icon={workspaceIcon(view.id)}
+                    icon={(view.icon ?? workspaceIcon(view.id)) as typeof MessageCircle}
                   />
                 )}
               </For>
@@ -549,7 +551,8 @@ const SetupWizard: Component<{
   readonly blockedStepIndex: number | undefined;
   readonly canContinue: boolean;
   readonly completing: boolean;
-  readonly hasChat: boolean;
+  readonly chatWorkplace: boolean;
+  readonly workplaceLabel: string;
   readonly pluginErrors: readonly string[];
   onBack(): void;
   onContinue(): void;
@@ -620,9 +623,9 @@ const SetupWizard: Component<{
               Your local AI workspace
             </h1>
             <p class="mx-auto mt-4 max-w-lg text-base leading-7 text-[var(--text-muted)]">
-              {props.hasChat
+              {props.chatWorkplace
                 ? "Set up secure storage and choose your assistant. You will be ready to start a conversation in about two minutes."
-                : "Set up secure storage and connect a model. Design opens when you finish."}
+                : `Set up secure storage and connect a model. ${props.workplaceLabel} opens when you finish.`}
             </p>
           </div>
         </Show>
@@ -664,19 +667,19 @@ const SetupWizard: Component<{
             </p>
             <h1 class="mt-3 text-4xl font-semibold tracking-tight">
               {props.ready
-                ? props.hasChat
+                ? props.chatWorkplace
                   ? "You are ready to chat"
-                  : "You are ready to design"
+                  : `You are ready to open ${props.workplaceLabel}`
                 : "Review your setup"}
             </h1>
             <p class="mx-auto mt-4 max-w-lg text-base leading-7 text-[var(--text-muted)]">
               {props.ready
-                ? props.hasChat
+                ? props.chatWorkplace
                   ? "Borg will use your selected assistant and keep credentials protected on this device. You can change either later in Settings."
                   : "Borg keeps credentials on this device. Provider setup stays in Settings."
-                : props.hasChat
+                : props.chatWorkplace
                   ? "A required setting is no longer ready. Use the review link below to fix it before starting a chat."
-                  : "A required setting is no longer ready. Use the review link below to fix it before opening Design."}
+                  : `A required setting is no longer ready. Use the review link below to fix it before opening ${props.workplaceLabel}.`}
             </p>
           </div>
         </Show>
@@ -748,9 +751,9 @@ const SetupWizard: Component<{
           {props.completing
             ? "Opening Borg…"
             : props.currentIndex === props.finalIndex
-              ? props.hasChat
+              ? props.chatWorkplace
                 ? "Start chatting"
-                : "Open Design"
+                : `Open ${props.workplaceLabel}`
               : props.currentIndex === 0
                 ? "Get started"
                 : "Continue"}
@@ -762,9 +765,6 @@ const SetupWizard: Component<{
 );
 
 function workspaceIcon(id: string): typeof MessageCircle {
-  if (id.includes("print-bench")) {
-    return Box;
-  }
   if (id.includes(".graphs.")) {
     return GitBranch;
   }

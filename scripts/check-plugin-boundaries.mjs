@@ -262,7 +262,7 @@ for (const packageName of ["kernel", "plugin-sdk", "contracts"]) {
 }
 
 // A distribution declares plugins by id and runs on the kernel. Its sources
-// may import only @borg-agent/kernel and zod, and relative files inside its own src.
+// may import @borg-agent/kernel, @borg/harness, zod, and relative files inside its own src.
 for (const distributionDirectory of distributionDirectories) {
   const sourceDirectory = path.join(distributionDirectory, "src");
   const label = path.relative(projectRoot, sourceDirectory).split(path.sep).join("/");
@@ -275,9 +275,13 @@ for (const distributionDirectory of distributionDirectories) {
         }
         continue;
       }
-      if (specifier !== "@borg-agent/kernel" && specifier !== "zod") {
+      if (
+        specifier !== "@borg-agent/kernel" &&
+        specifier !== "@borg/harness" &&
+        specifier !== "zod"
+      ) {
         failures.push(
-          `${relative} imports ${specifier}; ${label} may import only @borg-agent/kernel, zod, and relative files inside that directory`,
+          `${relative} imports ${specifier}; ${label} may import only @borg-agent/kernel, @borg/harness, zod, and relative files inside that directory`,
         );
       }
     }
